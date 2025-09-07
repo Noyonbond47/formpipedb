@@ -105,8 +105,12 @@ async def create_user_database(db_data: DatabaseCreate, auth_details: dict = Dep
             "description": db_data.description
         }
         response = supabase.table("user_databases").insert(new_db_data, returning="representation").execute()
-        # The data is returned as a list, so we take the first element.
-        return response.data[0]
+        
+        # --- DIAGNOSTIC V7 ---
+        # Modify the response to prove the new code is running.
+        new_db = response.data[0]
+        new_db['name'] = f"V7_SUCCESS: {new_db['name']}"
+        return new_db
     except Exception as e:
         # Catch the specific error for duplicate names
         if "user_databases_user_id_name_key" in str(e):
