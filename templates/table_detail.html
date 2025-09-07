@@ -1,36 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Table Structure - FormPipeDB</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
-    <style> 
-        body { font-family: 'Inter', sans-serif; }
-        [x-cloak] { display: none !important; }
-    </style>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-</head>
-<body class="bg-gray-100" x-data="tableDetailApp()" x-init="init('{{ database_id }}', '{{ table_id }}')">
-    <div class="flex h-screen bg-gray-100">
-        <!-- Sidebar -->
-        <aside class="flex-shrink-0 w-64 flex flex-col border-r bg-white transition-all duration-300 md:flex">
-            <div class="h-16 flex-shrink-0 flex items-center justify-center border-b text-xl font-bold text-gray-800">
-                FormPipeDB
-            </div>
-            <nav class="flex-1 flex flex-col overflow-y-auto">
-                <a x-bind:href="`/app/database/${databaseId}`" class="p-4 flex items-center text-gray-600 hover:bg-gray-100">
-                    <svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-                    Back to Database
-                </a>
-            </nav>
-        </aside>
-
-        <div class="flex-1 flex flex-col overflow-hidden">
             <!-- Header -->
             <header class="flex justify-between items-center p-4 bg-white border-b">
                 <div class="flex-1">
@@ -261,67 +228,6 @@
                     });
                     sql += ');';
                     return sql;
-                },
-
-                async signOut() {
-                    await supabase.auth.signOut();
-                }
-            }
-        }
-    </script>
-</body>
-</html>
-                        </div>
-                    </div>
-                </div>
-            </main>
-        </div>
-    </div>
-
-    <script>
-        const supabaseUrl = '{{ supabase_url }}';
-        const supabaseAnonKey = '{{ supabase_anon_key }}';
-        if (!supabaseUrl || !supabaseAnonKey) console.error("Supabase credentials missing.");
-        const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
-
-        function tableDetailApp() {
-            return {
-                session: null,
-                databaseId: null,
-                tableId: null,
-                table: { name: 'Loading...', columns: [] },
-                isLoading: true,
-
-                init(dbId, tableId) {
-                    this.databaseId = dbId;
-                    this.tableId = tableId;
-                    supabase.auth.onAuthStateChange((_event, session) => {
-                        if (!session) { window.location.href = '/login'; return; }
-                        this.session = session;
-                        this.updateUserInfo(session);
-                        this.fetchTableDetails();
-                    });
-                },
-
-                updateUserInfo(session) {
-                    const user = session.user;
-                    document.getElementById('user-email').textContent = user.email;
-                    const fullName = user.user_metadata.full_name;
-                    document.getElementById('user-avatar').textContent = fullName ? fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : user.email.substring(0, 1).toUpperCase();
-                },
-
-                async fetchTableDetails() {
-                    this.isLoading = true;
-                    try {
-                        const response = await fetch(`/api/v1/tables/${this.tableId}`, { headers: { 'Authorization': `Bearer ${this.session.access_token}` } });
-                        if (!response.ok) throw new Error('Failed to fetch table details');
-                        this.table = await response.json();
-                    } catch (error) { 
-                        console.error(error);
-                        alert('Could not load table details.');
-                    } finally {
-                        this.isLoading = false;
-                    }
                 },
 
                 async signOut() {
