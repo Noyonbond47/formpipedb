@@ -54,31 +54,31 @@
             <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
                 <div class="max-w-7xl mx-auto">
                     <div class="flex justify-between items-center mb-6">
-                        <h1 class="text-2xl font-semibold text-gray-800">My Forms</h1>
-                        <button @click="showCreateModal = true" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none">Create New Form</button>
+                        <h1 class="text-2xl font-semibold text-gray-800">My Databases</h1>
+                        <button @click="showCreateModal = true" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none">Create New Database</button>
                     </div>
 
                     <!-- Loading State -->
                     <div x-show="isLoading" class="text-center py-10">
-                        <p>Loading your forms...</p>
+                        <p>Loading your databases...</p>
                     </div>
 
                     <!-- Empty State -->
-                    <div x-show="!isLoading && forms.length === 0" class="text-center bg-white p-12 rounded-lg shadow">
-                        <h2 class="text-xl font-medium text-gray-800">No forms yet!</h2>
-                        <p class="text-gray-500 mt-2">Get started by creating your first form.</p>
-                        <button @click="showCreateModal = true" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none">Create New Form</button>
+                    <div x-show="!isLoading && databases.length === 0" class="text-center bg-white p-12 rounded-lg shadow">
+                        <h2 class="text-xl font-medium text-gray-800">No databases yet!</h2>
+                        <p class="text-gray-500 mt-2">Get started by creating your first database.</p>
+                        <button @click="showCreateModal = true" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none">Create New Database</button>
                     </div>
 
                     <!-- Forms List -->
-                    <div x-show="!isLoading && forms.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        <template x-for="form in forms" :key="form.id">
-                            <a x-bind:href="`/app/form/${form.id}`" class="block bg-white p-6 rounded-lg shadow hover:shadow-lg transition-shadow">
+                    <div x-show="!isLoading && databases.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <template x-for="database in databases" :key="database.id">
+                            <a x-bind:href="`/app/database/${database.id}`" class="block bg-white p-6 rounded-lg shadow hover:shadow-lg transition-shadow">
                                 <div class="flex justify-between items-start">
-                                    <h3 class="text-lg font-semibold text-gray-900" x-text="form.name"></h3>
+                                    <h3 class="text-lg font-semibold text-gray-900" x-text="database.name"></h3>
                                 </div>
-                                <p class="text-gray-600 mt-2 text-sm h-10" x-text="form.description || 'No description'"></p>
-                                <p class="text-gray-400 mt-4 text-xs" x-text="`${form.columns.length} columns`"></p>
+                                <p class="text-gray-600 mt-2 text-sm h-10" x-text="database.description || 'No description'"></p>
+                                <p class="text-gray-400 mt-4 text-xs" x-text="`Created on: ${new Date(database.created_at).toLocaleDateString()}`"></p>
                             </a>
                         </template>
                     </div>
@@ -90,28 +90,11 @@
     <!-- Create Form Modal -->
     <div x-show="showCreateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-20" @keydown.escape.window="showCreateModal = false">
         <div @click.outside="showCreateModal = false" class="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6">
-            <h2 class="text-2xl font-bold mb-4">Create a New Form</h2>
-            <form @submit.prevent="createForm()">
+            <h2 class="text-2xl font-bold mb-4">Create a New Database</h2>
+            <form @submit.prevent="createDatabase()">
                 <div class="space-y-4">
-                    <input type="text" x-model="newForm.name" placeholder="Form Name (e.g., 'Contact Leads')" required class="w-full p-2 border rounded">
-                    <textarea x-model="newForm.description" placeholder="Description (optional)" class="w-full p-2 border rounded" rows="2"></textarea>
-                    
-                    <h3 class="font-semibold pt-2">Columns</h3>
-                    <div class="space-y-2">
-                        <template x-for="(column, index) in newForm.columns" :key="index">
-                            <div class="flex items-center space-x-2">
-                                <input type="text" x-model="column.name" placeholder="Column Name" required class="w-1/2 p-2 border rounded">
-                                <select x-model="column.type" class="w-1/2 p-2 border rounded bg-white">
-                                    <option value="text">Text</option>
-                                    <option value="number">Number</option>
-                                    <option value="date">Date</option>
-                                    <option value="boolean">Checkbox (true/false)</option>
-                                </select>
-                                <button type="button" @click="removeColumn(index)" x-show="newForm.columns.length > 1" class="text-red-500 hover:text-red-700">&times;</button>
-                            </div>
-                        </template>
-                    </div>
-                    <button type="button" @click="addColumn()" class="text-sm text-blue-600 hover:underline">+ Add Column</button>
+                    <input type="text" x-model="newDatabase.name" placeholder="Database Name (e.g., 'Project Alpha')" required class="w-full p-2 border rounded">
+                    <textarea x-model="newDatabase.description" placeholder="Description (optional)" class="w-full p-2 border rounded" rows="2"></textarea>
                 </div>
                 <div class="mt-6 flex justify-end space-x-4">
                     <button type="button" @click="showCreateModal = false" class="px-4 py-2 bg-gray-200 rounded">Cancel</button>
@@ -132,10 +115,10 @@
         function app() {
             return {
                 sidebarOpen: false,
-                forms: [],
+                databases: [],
                 isLoading: true,
                 showCreateModal: false,
-                newForm: { name: '', description: '', columns: [{ name: '', type: 'text' }] },
+                newDatabase: { name: '', description: '' },
                 session: null,
 
                 init() {
@@ -145,7 +128,7 @@
                         } else {
                             this.session = session;
                             this.updateUserInfo(session);
-                            this.fetchForms();
+                            this.fetchDatabases();
                         }
                     });
                 },
@@ -163,38 +146,38 @@
                     }
                 },
 
-                async fetchForms() {
+                async fetchDatabases() {
                     this.isLoading = true;
                     try {
-                        const response = await fetch('/api/v1/forms', {
+                        const response = await fetch('/api/v1/databases', {
                             headers: { 'Authorization': `Bearer ${this.session.access_token}` }
                         });
-                        if (!response.ok) throw new Error(`Failed to fetch forms: ${response.statusText}`);
-                        this.forms = await response.json();
+                        if (!response.ok) throw new Error(`Failed to fetch databases: ${response.statusText}`);
+                        this.databases = await response.json();
                     } catch (error) {
-                        console.error('Error fetching forms:', error);
+                        console.error('Error fetching databases:', error);
                     } finally {
                         this.isLoading = false;
                     }
                 },
 
-                async createForm() {
+                async createDatabase() {
                     try {
-                        const response = await fetch('/api/v1/forms', {
+                        const response = await fetch('/api/v1/databases', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
                                 'Authorization': `Bearer ${this.session.access_token}`
                             },
-                            body: JSON.stringify(this.newForm)
+                            body: JSON.stringify(this.newDatabase)
                         });
-                        if (!response.ok) throw new Error('Form creation failed');
+                        if (!response.ok) throw new Error('Database creation failed');
                         this.showCreateModal = false;
-                        this.resetNewForm();
-                        this.fetchForms(); // Refresh the list
+                        this.resetNewDatabase();
+                        this.fetchDatabases(); // Refresh the list
                     } catch (error) {
-                        console.error('Error creating form:', error);
-                        alert('Could not create form. Please check the details and try again.');
+                        console.error('Error creating database:', error);
+                        alert('Could not create database. Please check the details and try again.');
                     }
                 },
 
@@ -203,9 +186,7 @@
                     if (!error) window.location.href = '/';
                 },
 
-                addColumn() { this.newForm.columns.push({ name: '', type: 'text' }); },
-                removeColumn(index) { if (this.newForm.columns.length > 1) this.newForm.columns.splice(index, 1); },
-                resetNewForm() { this.newForm = { name: '', description: '', columns: [{ name: '', type: 'text' }] }; }
+                resetNewDatabase() { this.newDatabase = { name: '', description: '' }; }
             }
         }
     </script>
