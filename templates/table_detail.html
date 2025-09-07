@@ -228,16 +228,25 @@
 
                 async saveStructure() {
                     try {
+                        // Create a payload that matches the backend's TableUpdate model.
+                        // This prevents sending the 'id' field, which would cause an error.
+                        const payload = {
+                            name: this.editableTable.name,
+                            columns: this.editableTable.columns
+                        };
                         const response = await fetch(`/api/v1/tables/${this.tableId}`, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.session.access_token}` },
-                            body: JSON.stringify(this.editableTable)
+                            body: JSON.stringify(payload)
                         });
-                        if (!response.ok) throw new Error('Failed to save structure');
+                        if (!response.ok) {
+                            const err = await response.json();
+                            throw new Error(err.detail || 'Failed to save structure');
+                        }
                         this.table = await response.json();
                         this.editableTable = JSON.parse(JSON.stringify(this.table));
                         alert('Table structure saved successfully!');
-                    } catch (error) { console.error(error); alert('Could not save table structure.'); }
+                    } catch (error) { console.error(error); alert(`Could not save table structure: ${error.message}`); }
                 },
 
                 addColumnAfter(index) {
