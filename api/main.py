@@ -96,11 +96,22 @@ async def create_user_database(db_data: DatabaseCreate, auth_details: dict = Dep
     """
     Creates a new Database for the logged-in user.
     """
-    # =================== DIAGNOSTIC TEST ===================
-    # This line is a temporary test. It will prove if the new code is running.
-    # We expect to see an alert box with this exact message.
-    raise HTTPException(status_code=418, detail="DIAGNOSTIC_V5_SUCCESS: The new API code is live!")
-    # =======================================================
+    try:
+        supabase = auth_details["client"]
+        user = auth_details["user"]
+        new_db_data = {
+            "user_id": user.id,
+            "name": db_data.name,
+            "description": db_data.description
+        }
+        response = supabase.table("user_databases").insert(new_db_data, returning="representation").execute()
+        # The data is returned as a list, so we take the first element.
+        return response.data[0]
+    except Exception as e:
+        # Catch the specific error for duplicate names
+        if "user_databases_user_id_name_key" in str(e):
+             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A database with the name '{db_data.name}' already exists.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"API Error: {str(e)}")
 
 @app.get("/api/v1/databases/{database_id}", response_model=DatabaseResponse)
 async def get_single_database(database_id: int, auth_details: dict = Depends(get_current_user_details)):
