@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App - FormPipeDB</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>The App is Under Construction</h1>
+        <p>Welcome! We're glad to have you here. The main application is still being built.</p>
+        <button id="signout-button">Sign Out</button>
+    </div>
+
+    <script>
+        const supabaseUrl = '{{ supabase_url }}';
+        const supabaseAnonKey = '{{ supabase_anon_key }}';
+
+        if (!supabaseUrl || !supabaseAnonKey) {
+            console.error("Supabase URL or Anon Key is missing.");
+        }
+
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+
+        // Check if user is logged in, otherwise redirect to login
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (!session) {
+                window.location.href = '/login';
+            }
+        });
+
+        const signoutButton = document.getElementById('signout-button');
+        signoutButton.addEventListener('click', async () => {
+            const { error } = await supabase.auth.signOut();
+            if (!error) {
+                window.location.href = '/';
+            }
+        });
+    </script>
+</body>
+</html>

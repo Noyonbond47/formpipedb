@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - FormPipeDB</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Create an Account</h1>
+        <form id="signup-form">
+            <input type="email" id="email" placeholder="Email" required>
+            <input type="password" id="password" placeholder="Password" required>
+            <button type="submit">Sign Up</button>
+        </form>
+        <p id="error-message" style="color: red;"></p>
+    </div>
+
+    <script>
+        const supabaseUrl = '{{ supabase_url }}';
+        const supabaseAnonKey = '{{ supabase_anon_key }}';
+
+        // Important: Check if the credentials are provided
+        if (!supabaseUrl || !supabaseAnonKey) {
+            console.error("Supabase URL or Anon Key is missing. Make sure environment variables are set in Vercel.");
+            document.getElementById('error-message').textContent = 'Configuration error. Please contact support.';
+        }
+
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+
+        const signupForm = document.getElementById('signup-form');
+        signupForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            const { data, error } = await supabase.auth.signUp({
+                email: email,
+                password: password,
+            });
+
+            if (error) {
+                document.getElementById('error-message').textContent = error.message;
+            } else {
+                // Redirect to a confirmation page or directly to the app
+                window.location.href = '/app';
+            }
+        });
+    </script>
+</body>
+</html>
