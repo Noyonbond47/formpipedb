@@ -72,8 +72,8 @@ async def get_current_user_details(authorization: str = Header(None)) -> dict:
         if not user:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid token or user not found")
         
-        # Return the authenticated client and user details
-        return {"user": user, "client": supabase}
+        # Return the authenticated client, user details, and the token for explicit auth on write operations
+        return {"user": user, "client": supabase, "token": token}
     except Exception as e:
         # This could be a PostgrestError or other exception
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Invalid token: {str(e)}")
@@ -99,12 +99,13 @@ async def create_user_database(db_data: DatabaseCreate, auth_details: dict = Dep
     try:
         supabase = auth_details["client"]
         user = auth_details["user"]
+        token = auth_details["token"]
         new_db_data = {
             "user_id": user.id,
             "name": db_data.name,
             "description": db_data.description
         }
-        response = supabase.table("user_databases").insert(new_db_data).select("*").single().execute()
+        response = supabase.table("user_databases").insert(new_db_data).select("*").single().auth(token).execute()
         return response.data
     except Exception as e:
         # Catch the specific error for duplicate names
@@ -146,6 +147,7 @@ async def create_database_table(database_id: int, table_data: TableCreate, auth_
     try:
         supabase = auth_details["client"]
         user = auth_details["user"]
+        token = auth_details["token"]
 
         # Verify user has access to the parent database first
         db_check = supabase.table("user_databases").select("id").eq("id", database_id).maybe_single().execute()
@@ -158,7 +160,7 @@ async def create_database_table(database_id: int, table_data: TableCreate, auth_
             "name": table_data.name,
             "columns": [col.dict() for col in table_data.columns]
         }
-        response = supabase.table("user_tables").insert(new_table_data).select("*").single().execute()
+        response = supabase.table("user_tables").insert(new_table_data).select("*").single().auth(token).execute()
         return response.data
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create table: {str(e)}")
