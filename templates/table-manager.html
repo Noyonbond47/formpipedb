@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Table Manager - FormPipeDB</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
@@ -57,23 +58,8 @@
                             <th class="p-3 text-left font-semibold">Foreign Key</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y">
-                        <tr>
-                            <td class="p-3 font-mono">id</td>
-                            <td class="p-3 font-mono text-purple-600">INTEGER</td>
-                            <td class="p-3 text-center text-green-600">&#10003;</td>
-                            <td class="p-3 text-center text-green-600">&#10003;</td>
-                            <td class="p-3 text-center text-green-600">&#10003;</td>
-                            <td class="p-3 font-mono"></td>
-                        </tr>
-                        <tr>
-                            <td class="p-3 font-mono">email</td>
-                            <td class="p-3 font-mono text-purple-600">TEXT</td>
-                            <td class="p-3 text-center text-green-600">&#10003;</td>
-                            <td class="p-3 text-center"></td>
-                            <td class="p-3 text-center text-green-600">&#10003;</td>
-                            <td class="p-3 font-mono"></td>
-                        </tr>
+                    <tbody id="structure-tbody" class="divide-y">
+                        <!-- Structure rows will be injected here -->
                     </tbody>
                 </table>
             </div>
@@ -85,28 +71,17 @@
 
         <!-- Data Tab Content -->
         <div id="data-tab-content" class="tab-content hidden">
-            <div class="flex justify-end mb-4">
-                <button class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Add Row</button>
-                <button class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 ml-2">Delete Selected Row(s)</button>
+            <div class="flex justify-end mb-4 gap-2">
+                <button id="add-row-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Add Row</button>
                 <button class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 ml-2">Export to CSV</button>
             </div>
             <div class="bg-white rounded-lg shadow-sm border overflow-auto max-h-[70vh]">
                 <table class="min-w-full text-sm">
                     <thead class="bg-gray-50 sticky top-0">
-                        <tr>
-                            <th class="p-3 text-left font-semibold">id</th>
-                            <th class="p-3 text-left font-semibold">email</th>
-                        </tr>
+                        <!-- Data header will be injected here -->
                     </thead>
-                    <tbody class="divide-y">
-                        <tr>
-                            <td class="p-3 font-mono">1</td>
-                            <td class="p-3 font-mono">test@example.com</td>
-                        </tr>
-                        <tr>
-                            <td class="p-3 font-mono">2</td>
-                            <td class="p-3 font-mono">user@example.com</td>
-                        </tr>
+                    <tbody id="data-tbody" class="divide-y">
+                        <!-- Data rows will be injected here -->
                     </tbody>
                 </table>
             </div>
@@ -117,6 +92,24 @@
     <div id="placeholder-content" class="flex-1 flex items-center justify-center text-gray-500">
         Select a table to view its structure and data.
     </div>
+</div>
+
+<!-- Create Table Modal -->
+<div id="create-table-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+    <form id="create-table-form" class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        <div class="p-6 border-b">
+            <h3 class="text-xl font-semibold">Create New Table</h3>
+        </div>
+        <div class="p-6 space-y-4 overflow-y-auto">
+            <input id="new-table-name" type="text" placeholder="Table Name" required class="w-full p-2 border rounded-md">
+            <div id="new-columns-list" class="space-y-2"></div>
+            <button id="add-column-to-modal-btn" type="button" class="text-sm text-blue-600 hover:underline">+ Add Column</button>
+        </div>
+        <div class="p-6 mt-auto border-t bg-gray-50 flex justify-end gap-4">
+            <button id="cancel-create-table-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Create Table</button>
+        </div>
+    </form>
 </div>
 
 <!-- Add Column Modal -->
@@ -176,47 +169,187 @@
     </div>
 </div>
 
+<!-- Delete Table Confirmation Modal -->
+<div id="delete-table-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+        <h3 class="text-lg font-semibold mb-4">Confirm Table Deletion</h3>
+        <p>Are you sure you want to delete the table "<strong id="modal-table-name"></strong>"? This will permanently delete all of its data. This action cannot be undone.</p>
+        <div class="mt-6 flex justify-end gap-4">
+            <button id="cancel-delete-table-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+            <button id="confirm-delete-table-btn" class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700">Delete</button>
+        </div>
+    </div>
+</div>
+
 <script>
+const supabaseUrl = '{{ supabase_url }}';
+const supabaseAnonKey = '{{ supabase_anon_key }}';
+const supabase = supabaseUrl && supabaseAnonKey ? window.supabase.createClient(supabaseUrl, supabaseAnonKey) : null;
+
 document.addEventListener('DOMContentLoaded', () => {
+    // State
+    let state = {
+        dbId: null,
+        dbName: '{{ db_name }}',
+        tables: [],
+        selectedTable: null,
+    };
+
+    // DOM Elements
     const tableList = document.getElementById('table-list');
     const mainContent = document.getElementById('main-content');
     const placeholderContent = document.getElementById('placeholder-content');
     const deleteTableBtn = document.getElementById('delete-table-btn');
     const tabButtons = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
+    const createTableBtn = document.getElementById('create-table-btn');
+    const createTableModal = document.getElementById('create-table-modal');
+    const createTableForm = document.getElementById('create-table-form');
+    const cancelCreateTableBtn = document.getElementById('cancel-create-table-btn');
+    const addColumnToModalBtn = document.getElementById('add-column-to-modal-btn');
+    const deleteTableModal = document.getElementById('delete-table-modal');
+    const modalTableName = document.getElementById('modal-table-name');
+    const cancelDeleteTableBtn = document.getElementById('cancel-delete-table-btn');
+    const confirmDeleteTableBtn = document.getElementById('confirm-delete-table-btn');
+    const addRowBtn = document.getElementById('add-row-btn');
+    const dataTbody = document.getElementById('data-tbody');
 
-    // Mock data
-    const mockTables = [
-        { id: 1, name: 'users' },
-        { id: 2, name: 'products' },
-        { id: 3, name: 'orders' }
-    ];
 
-    function renderTables() {
+    function getAuthToken() {
+        return localStorage.getItem('supabase_token');
+    }
+
+    async function fetchDbIdAndTables() {
+        try {
+            // 1. Fetch all databases to find the ID for the current dbName
+            const dbsResponse = await fetch('/api/v1/databases', { headers: { 'Authorization': `Bearer ${getAuthToken()}` } });
+            if (!dbsResponse.ok) throw new Error('Could not fetch databases to find ID.');
+            const databases = await dbsResponse.json();
+            const currentDb = databases.find(db => db.name === state.dbName);
+            
+            if (!currentDb) throw new Error(`Database '${state.dbName}' not found.`);
+            state.dbId = currentDb.id;
+
+            // 2. Fetch tables for the found database ID
+            const tablesResponse = await fetch(`/api/v1/databases/${state.dbId}/tables`, { headers: { 'Authorization': `Bearer ${getAuthToken()}` } });
+            if (!tablesResponse.ok) throw new Error('Could not fetch tables.');
+            state.tables = await tablesResponse.json();
+            renderTables(state.tables);
+
+        } catch (error) {
+            console.error(error);
+            placeholderContent.textContent = `Error: ${error.message}`;
+        }
+    }
+
+    function renderTables(tables) {
         tableList.innerHTML = '';
-        mockTables.forEach(table => {
+        if (tables.length === 0) {
+            tableList.innerHTML = `<p class="text-sm text-gray-500 p-2">No tables yet.</p>`;
+            return;
+        }
+        tables.forEach(table => {
             const tableLink = document.createElement('a');
             tableLink.href = '#';
             tableLink.className = 'block p-2 rounded-md hover:bg-gray-100';
             tableLink.textContent = table.name;
-            tableLink.setAttribute('data-table-name', table.name);
+            tableLink.dataset.tableId = table.id;
             tableList.appendChild(tableLink);
         });
     }
 
-    tableList.addEventListener('click', (e) => {
+    function handleTableSelect(e) {
         if (e.target.tagName === 'A') {
             e.preventDefault();
-            // Remove active class from all
+            const tableId = e.target.dataset.tableId;
+            state.selectedTable = state.tables.find(t => t.id == tableId);
+            if (!state.selectedTable) return;
+
             tableList.querySelectorAll('a').forEach(a => a.classList.remove('bg-blue-100', 'text-blue-700', 'font-semibold'));
-            // Add active class to clicked
             e.target.classList.add('bg-blue-100', 'text-blue-700', 'font-semibold');
             
             mainContent.classList.remove('hidden');
             placeholderContent.classList.add('hidden');
             deleteTableBtn.disabled = false;
+
+            renderStructure(state.selectedTable.columns);
+            fetchAndRenderData(state.selectedTable.id);
         }
-    });
+    }
+
+    function renderStructure(columns) {
+        const tbody = document.getElementById('structure-tbody');
+        tbody.innerHTML = ''; // Clear existing
+        if (!columns || columns.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">This table has no columns defined.</td></tr>`;
+            return;
+        }
+
+        columns.forEach(col => {
+            const tr = document.createElement('tr');
+            const checkmark = `<span class="text-green-600 font-bold">&#10003;</span>`;
+            tr.innerHTML = `
+                <td class="p-3 font-mono">${col.name}</td>
+                <td class="p-3 font-mono text-purple-600 uppercase">${col.type}</td>
+                <td class="p-3 text-center">${col.is_not_null ? checkmark : ''}</td>
+                <td class="p-3 text-center">${col.is_primary_key ? checkmark : ''}</td>
+                <td class="p-3 text-center">${col.is_unique ? checkmark : ''}</td>
+                <td class="p-3 font-mono text-xs">${col.foreign_key ? `-> ${col.foreign_key.table_id}.${col.foreign_key.column_name}` : ''}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    async function fetchAndRenderData(tableId) {
+        const dataTable = document.querySelector('#data-tab-content table');
+        const thead = dataTable.querySelector('thead');
+        const tbody = document.getElementById('data-tbody');
+
+        thead.innerHTML = `<tr><th class="p-3 text-left font-semibold">Loading...</th></tr>`;
+        tbody.innerHTML = '';
+
+        try {
+            const response = await fetch(`/api/v1/tables/${tableId}/rows`, {
+                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+            });
+            if (!response.ok) throw new Error('Failed to fetch rows');
+            const rows = await response.json();
+
+            const columns = state.selectedTable.columns;
+            const headerRow = document.createElement('tr');
+            // Add an empty header for the actions column
+            headerRow.innerHTML += `<th class="p-3 w-12"></th>`;
+            columns.forEach(col => {
+                headerRow.innerHTML += `<th class="p-3 text-left font-semibold">${col.name}</th>`;
+            });
+            thead.innerHTML = '';
+            thead.appendChild(headerRow);
+
+            if (rows.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="${columns.length + 1}" class="p-8 text-center text-gray-500">No data in this table.</td></tr>`;
+                return;
+            }
+
+            rows.forEach(row => {
+                const tr = document.createElement('tr');
+                // Add delete button cell
+                tr.innerHTML += `
+                    <td class="p-3 text-center">
+                        <button data-row-id="${row.id}" class="delete-row-btn text-gray-400 hover:text-red-600" title="Delete Row">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </td>
+                `;
+                columns.forEach(col => {
+                    tr.innerHTML += `<td class="p-3 font-mono text-sm">${row.data[col.name] ?? ''}</td>`;
+                });
+                tbody.appendChild(tr);
+            });
+        } catch (error) {
+            console.error(error);
+            tbody.innerHTML = `<tr><td colspan="99" class="p-4 text-center text-red-500">Error loading data.</td></tr>`;
+        }
+    }
 
     tabButtons.forEach(button => {
         button.addEventListener('click', () => {
@@ -239,6 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+
     // Modal Logic
     const addColumnModal = document.getElementById('add-column-modal');
     const addColumnBtn = document.getElementById('add-column-btn');
@@ -256,19 +390,228 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => modal.classList.add('hidden'), 250);
     }
 
+    function createColumnRow(isPk = false) {
+        const id = `col-${Date.now()}`;
+        const tableOptions = state.tables.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+
+        const div = document.createElement('div');
+        div.className = 'column-row grid grid-cols-12 gap-2 items-center border-t pt-2';
+        div.innerHTML = `
+            <div class="col-span-12 grid grid-cols-12 gap-2 items-center">
+                <input type="text" data-key="name" placeholder="column_name" required class="col-span-4 p-2 border rounded-md" ${isPk ? 'value="id" readonly' : ''}>
+                <select data-key="type" class="col-span-3 p-2 border rounded-md bg-white" ${isPk ? 'disabled' : ''}>
+                    ${isPk ? '<option value="serial" selected>SERIAL (PK)</option>' : `
+                    <option value="text" selected>TEXT</option>
+                    <option value="integer">INTEGER</option>
+                    <option value="real">REAL</option>
+                    <option value="boolean">BOOLEAN</option>
+                    <option value="timestamp">TIMESTAMP</option>
+                    <option value="jsonb">JSONB</option>
+                    `}
+                </select>
+                <div class="col-span-4 flex items-center justify-around text-xs">
+                    <label class="flex flex-col items-center"><input data-key="is_not_null" type="checkbox" class="h-4 w-4 rounded" ${isPk ? 'checked disabled' : ''}><span>Not Null</span></label>
+                    <label class="flex flex-col items-center"><input data-key="is_unique" type="checkbox" class="h-4 w-4 rounded" ${isPk ? 'checked disabled' : ''}><span>Unique</span></label>
+                </div>
+            </div>
+            <div class="col-span-12 mt-2 pl-1">
+                <label class="flex items-center text-xs cursor-pointer"><input type="checkbox" data-key="is_foreign_key" class="fk-checkbox h-4 w-4 rounded mr-2" ${isPk ? 'disabled' : ''}><span>Is Foreign Key</span></label>
+                <div class="fk-options-container hidden grid grid-cols-2 gap-2 mt-2 pl-6">
+                    <select data-key="fk_table_id" class="fk-table-select p-1 border rounded-md bg-white text-xs">
+                        <option value="">-- Select Table --</option>
+                        ${tableOptions}
+                    </select>
+                    <select data-key="fk_column_name" class="fk-column-select p-1 border rounded-md bg-white text-xs" disabled><option value="">-- Select Column --</option></select>
+                </div>
+            </div>
+            <div class="col-span-1 flex justify-end">
+                ${!isPk ? '<button type="button" class="remove-column-btn text-red-500 hover:text-red-700">&times;</button>' : ''}
+            </div>
+            <input type="hidden" data-key="is_primary_key" value="${isPk}">
+        `;
+        return div;
+    }
+
+    function resetCreateTableModal() {
+        document.getElementById('new-table-name').value = '';
+        const columnsList = document.getElementById('new-columns-list');
+        columnsList.innerHTML = '';
+        columnsList.appendChild(createColumnRow(true)); // Add default PK
+    }
+
+    async function handleCreateTableSubmit(e) {
+        e.preventDefault();
+        const tableName = document.getElementById('new-table-name').value.trim();
+        const columnRows = document.querySelectorAll('#new-columns-list .column-row');
+        
+        const columns = Array.from(columnRows).map(row => {
+            const isFk = row.querySelector('[data-key="is_foreign_key"]').checked;
+            let foreignKey = null;
+            if (isFk) {
+                const tableId = row.querySelector('[data-key="fk_table_id"]').value;
+                const columnName = row.querySelector('[data-key="fk_column_name"]').value;
+                if (tableId && columnName) {
+                    foreignKey = {
+                        table_id: parseInt(tableId, 10),
+                        column_name: columnName
+                    };
+                }
+            }
+            return {
+                name: row.querySelector('[data-key="name"]').value,
+                type: row.querySelector('[data-key="type"]').value,
+                is_primary_key: row.querySelector('[data-key="is_primary_key"]').value === 'true',
+                is_not_null: row.querySelector('[data-key="is_not_null"]').checked,
+                is_unique: row.querySelector('[data-key="is_unique"]').checked,
+                foreign_key: foreignKey
+            };
+        });
+
+        const payload = { name: tableName, columns };
+
+        try {
+            const response = await fetch(`/api/v1/databases/${state.dbId}/tables`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${getAuthToken()}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || 'Failed to create table');
+            }
+            closeModal(createTableModal);
+            fetchDbIdAndTables(); // Refresh table list
+        } catch (error) {
+            alert(`Error: ${error.message}`);
+        }
+    }
+
+    async function handleDeleteTable() {
+        if (!state.selectedTable) return;
+        try {
+            const response = await fetch(`/api/v1/tables/${state.selectedTable.id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || 'Failed to delete table');
+            }
+            // Success
+            closeModal(deleteTableModal);
+            mainContent.classList.add('hidden');
+            placeholderContent.classList.remove('hidden');
+            deleteTableBtn.disabled = true;
+            state.selectedTable = null;
+            await fetchDbIdAndTables(); // Refresh list
+        } catch (error) {
+            alert(`Error: ${error.message}`);
+        }
+    }
+
+    async function handleAddRow() {
+        if (!state.selectedTable) return;
+        try {
+            const response = await fetch(`/api/v1/tables/${state.selectedTable.id}/rows`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || 'Failed to add row');
+            }
+            await fetchAndRenderData(state.selectedTable.id);
+        } catch (error) {
+            alert(`Error: ${error.message}`);
+        }
+    }
+
+    async function handleDeleteRow(rowId) {
+        if (confirm('Are you sure you want to delete this row?')) {
+            try {
+                const response = await fetch(`/api/v1/rows/${rowId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                });
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || 'Failed to delete row');
+                }
+                // On success, just remove the row from the UI for a faster feel
+                document.querySelector(`button.delete-row-btn[data-row-id="${rowId}"]`).closest('tr').remove();
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+    }
+
+    // Event Listeners
+    tableList.addEventListener('click', handleTableSelect);
     addColumnBtn.addEventListener('click', () => openModal(addColumnModal));
     cancelAddColumnBtn.addEventListener('click', () => closeModal(addColumnModal));
+    
+    createTableBtn.addEventListener('click', () => {
+        resetCreateTableModal();
+        openModal(createTableModal);
+    });
+    cancelCreateTableBtn.addEventListener('click', () => closeModal(createTableModal));
+    createTableForm.addEventListener('submit', handleCreateTableSubmit);
+    
+    deleteTableBtn.addEventListener('click', () => {
+        if (!state.selectedTable) return;
+        modalTableName.textContent = state.selectedTable.name;
+        openModal(deleteTableModal);
+    });
+    cancelDeleteTableBtn.addEventListener('click', () => closeModal(deleteTableModal));
+    confirmDeleteTableBtn.addEventListener('click', handleDeleteTable);
 
-    isFkCheckbox.addEventListener('change', (e) => {
-        if (e.target.checked) {
-            fkOptions.classList.remove('hidden');
-        } else {
-            fkOptions.classList.add('hidden');
+    addRowBtn.addEventListener('click', handleAddRow);
+    dataTbody.addEventListener('click', (e) => {
+        const deleteBtn = e.target.closest('.delete-row-btn');
+        if (deleteBtn) {
+            const rowId = deleteBtn.dataset.rowId;
+            handleDeleteRow(rowId);
         }
     });
 
-    // Initial render
-    renderTables();
+    addColumnToModalBtn.addEventListener('click', () => {
+        document.getElementById('new-columns-list').appendChild(createColumnRow());
+    });
+
+    document.getElementById('new-columns-list').addEventListener('change', (e) => {
+        // FK checkbox toggle
+        if (e.target.classList.contains('fk-checkbox')) {
+            const container = e.target.closest('.column-row').querySelector('.fk-options-container');
+            container.classList.toggle('hidden', !e.target.checked);
+        }
+        // FK table select
+        if (e.target.classList.contains('fk-table-select')) {
+            const tableId = e.target.value;
+            const columnSelect = e.target.closest('.fk-options-container').querySelector('.fk-column-select');
+            columnSelect.innerHTML = '<option value="">-- Select Column --</option>';
+            columnSelect.disabled = true;
+
+            if (tableId) {
+                const targetTable = state.tables.find(t => t.id == tableId);
+                if (targetTable) {
+                    targetTable.columns.forEach(col => {
+                        columnSelect.innerHTML += `<option value="${col.name}">${col.name}</option>`;
+                    });
+                    columnSelect.disabled = false;
+                }
+            }
+        }
+    });
+
+    document.getElementById('new-columns-list').addEventListener('click', (e) => {
+        if (e.target.classList.contains('remove-column-btn')) {
+            e.target.closest('.column-row').remove();
+        }
+    });
+
+    // Initial Load
+    fetchDbIdAndTables();
+
 });
 </script>
 
