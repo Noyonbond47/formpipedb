@@ -171,13 +171,17 @@
                             },
                             body: JSON.stringify(this.newDatabase)
                         });
-                        if (!response.ok) throw new Error('Database creation failed');
+                        if (!response.ok) {
+                            const err = await response.json();
+                            throw new Error(err.detail || 'Database creation failed');
+                        }
                         this.showCreateModal = false;
                         this.resetNewDatabase();
                         this.fetchDatabases(); // Refresh the list
                     } catch (error) {
                         console.error('Error creating database:', error);
-                        alert('Could not create database. Please check the details and try again.');
+                        // Display the specific error from the backend
+                        alert(`Could not create database: ${error.message}`);
                     }
                 },
 

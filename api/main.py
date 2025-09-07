@@ -59,13 +59,21 @@ async def get_current_user_details(authorization: str = Header(None)) -> dict:
     token = authorization.split(" ")[1]
     
     try:
+        # Create a new Supabase client for each request
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+        
+        # Set the authorization for this client instance.
+        # All subsequent requests with this client will be authenticated as the user.
+        supabase.postgrest.auth(token)
+        
+        # We still need to verify the token is valid and get user details
         user_response = supabase.auth.get_user(token)
         user = user_response.user
         if not user:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid token or user not found")
         
-        return {"user": user, "token": token, "client": supabase}
+        # Return the authenticated client and user details
+        return {"user": user, "client": supabase}
     except Exception as e:
         # This could be a PostgrestError or other exception
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Invalid token: {str(e)}")
@@ -78,8 +86,7 @@ async def get_user_databases(auth_details: dict = Depends(get_current_user_detai
     """
     try:
         supabase = auth_details["client"]
-        token = auth_details["token"]
-        response = supabase.table("user_databases").select("id, created_at, name, description").order("created_at", desc=True).auth(token).execute()
+        response = supabase.table("user_databases").select("id, created_at, name, description").order("created_at", desc=True).execute()
         return response.data
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
@@ -100,6 +107,9 @@ async def create_user_database(db_data: DatabaseCreate, auth_details: dict = Dep
         response = supabase.table("user_databases").insert(new_db_data).select("*").single().execute()
         return response.data
     except Exception as e:
+        # Catch the specific error for duplicate names
+        if "user_databases_user_id_name_key" in str(e):
+             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A database with the name '{db_data.name}' already exists.")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create database: {str(e)}")
 
 @app.get("/api/v1/databases/{database_id}", response_model=DatabaseResponse)
@@ -109,8 +119,7 @@ async def get_single_database(database_id: int, auth_details: dict = Depends(get
     """
     try:
         supabase = auth_details["client"]
-        token = auth_details["token"]
-        response = supabase.table("user_databases").select("*").eq("id", database_id).single().auth(token).execute()
+        response = supabase.table("user_databases").select("*").eq("id", database_id).single().execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Database not found")
         return response.data
@@ -124,8 +133,7 @@ async def get_database_tables(database_id: int, auth_details: dict = Depends(get
     """
     try:
         supabase = auth_details["client"]
-        token = auth_details["token"]
-        response = supabase.table("user_tables").select("id, name, columns").eq("database_id", database_id).order("name").auth(token).execute()
+        response = supabase.table("user_tables").select("id, name, columns").eq("database_id", database_id).order("name").execute()
         return response.data
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
@@ -138,10 +146,9 @@ async def create_database_table(database_id: int, table_data: TableCreate, auth_
     try:
         supabase = auth_details["client"]
         user = auth_details["user"]
-        token = auth_details["token"]
 
         # Verify user has access to the parent database first
-        db_check = supabase.table("user_databases").select("id").eq("id", database_id).maybe_single().auth(token).execute()
+        db_check = supabase.table("user_databases").select("id").eq("id", database_id).maybe_single().execute()
         if not db_check.data:
             raise HTTPException(status_code=404, detail="Parent database not found or access denied")
 
