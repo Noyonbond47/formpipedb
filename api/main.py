@@ -36,10 +36,18 @@ class DatabaseResponse(BaseModel):
     name: str
     description: Optional[str] = None
 
+class ForeignKeyDefinition(BaseModel):
+    table_id: int
+    column_name: str
+
 class ColumnDefinition(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     # In the future, this can be expanded with more constraints
     type: str = Field(..., min_length=1) 
+    is_primary_key: bool = False
+    is_unique: bool = False
+    is_not_null: bool = False
+    foreign_key: Optional[ForeignKeyDefinition] = None
 
 class TableCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
