@@ -17,7 +17,7 @@ SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 # Get the root directory of the project
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-app = FastAPI()
+app = FastAPI(title="FormPipeDB API - The Correct One")
 
 # Mount the static files directory
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
