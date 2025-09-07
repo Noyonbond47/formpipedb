@@ -68,9 +68,14 @@
                     <div x-show="!isLoading && tables.length > 0" class="bg-white shadow overflow-hidden rounded-lg">
                         <ul class="divide-y divide-gray-200">
                             <template x-for="table in tables" :key="table.id">
-                                <li class="px-6 py-4 hover:bg-gray-50 cursor-pointer">
-                                    <h3 class="text-lg font-semibold text-blue-600" x-text="table.name"></h3>
-                                    <p class="text-sm text-gray-500" x-text="`${table.columns.length} columns`"></p>
+                                <li class="px-6 py-4 flex justify-between items-center group hover:bg-gray-50">
+                                    <a href="#" class="flex-grow cursor-pointer"> <!-- Link will be added later -->
+                                        <h3 class="text-lg font-semibold text-blue-600" x-text="table.name"></h3>
+                                        <p class="text-sm text-gray-500" x-text="`${table.columns.length} columns`"></p>
+                                    </a>
+                                    <button @click.prevent="confirmDeleteTable(table)" class="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    </button>
                                 </li>
                             </template>
                         </ul>
@@ -145,6 +150,18 @@
         </div>
     </div>
 
+    <!-- Delete Table Confirmation Modal -->
+    <div x-show="tableToDelete" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-20" @keydown.escape.window="tableToDelete = null">
+        <div @click.outside="tableToDelete = null" class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h2 class="text-2xl font-bold mb-4">Delete Table</h2>
+            <p>Are you sure you want to delete the table <strong x-text="tableToDelete?.name"></strong>? This will permanently delete all of its data. This action cannot be undone.</p>
+            <div class="mt-6 flex justify-end space-x-4">
+                <button type="button" @click="tableToDelete = null" class="px-4 py-2 bg-gray-200 rounded-md">Cancel</button>
+                <button type="button" @click="deleteTable()" class="px-4 py-2 bg-red-600 text-white rounded-md">Delete</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const supabaseUrl = '{{ supabase_url }}';
         const supabaseAnonKey = '{{ supabase_anon_key }}';
@@ -160,6 +177,7 @@
                 isLoading: true,
                 showCreateTableModal: false,
                 newTable: { name: '', columns: [] },
+                tableToDelete: null,
 
                 init(dbId) {
                     this.databaseId = dbId;
@@ -220,6 +238,30 @@
 
                 async signOut() {
                     await supabase.auth.signOut();
+                },
+
+                confirmDeleteTable(table) {
+                    this.tableToDelete = table;
+                },
+
+                async deleteTable() {
+                    if (!this.tableToDelete) return;
+                    try {
+                        const response = await fetch(`/api/v1/tables/${this.tableToDelete.id}`, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': `Bearer ${this.session.access_token}` }
+                        });
+                        if (!response.ok) {
+                            const err = await response.json();
+                            throw new Error(err.detail || 'Failed to delete table');
+                        }
+                        // Remove from UI
+                        this.tables = this.tables.filter(t => t.id !== this.tableToDelete.id);
+                        this.tableToDelete = null;
+                    } catch (error) {
+                        console.error('Error deleting table:', error);
+                        alert(`Could not delete table: ${error.message}`);
+                    }
                 },
 
                 // --- Modal Helper Functions ---

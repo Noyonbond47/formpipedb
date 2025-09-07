@@ -73,13 +73,18 @@
                     <!-- Forms List -->
                     <div x-show="!isLoading && databases.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <template x-for="database in databases" :key="database.id">
-                            <a x-bind:href="`/app/database/${database.id}`" class="block bg-white p-6 rounded-lg shadow hover:shadow-lg transition-shadow">
-                                <div class="flex justify-between items-start">
-                                    <h3 class="text-lg font-semibold text-gray-900" x-text="database.name"></h3>
-                                </div>
-                                <p class="text-gray-600 mt-2 text-sm h-10" x-text="database.description || 'No description'"></p>
-                                <p class="text-gray-400 mt-4 text-xs" x-text="`Created on: ${new Date(database.created_at).toLocaleDateString()}`"></p>
-                            </a>
+                            <div class="relative bg-white p-6 rounded-lg shadow group transition-shadow hover:shadow-lg">
+                                <a x-bind:href="`/app/database/${database.id}`" class="block">
+                                    <div class="flex justify-between items-start">
+                                        <h3 class="text-lg font-semibold text-gray-900" x-text="database.name"></h3>
+                                    </div>
+                                    <p class="text-gray-600 mt-2 text-sm h-10" x-text="database.description || 'No description'"></p>
+                                    <p class="text-gray-400 mt-4 text-xs" x-text="`Created on: ${new Date(database.created_at).toLocaleDateString()}`"></p>
+                                </a>
+                                <button @click.prevent="confirmDeleteDatabase(database)" class="absolute top-4 right-4 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
+                            </div>
                         </template>
                     </div>
                 </div>
@@ -104,6 +109,18 @@
         </div>
     </div>
 
+    <!-- Delete Database Confirmation Modal -->
+    <div x-show="databaseToDelete" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-20" @keydown.escape.window="databaseToDelete = null">
+        <div @click.outside="databaseToDelete = null" class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h2 class="text-2xl font-bold mb-4">Delete Database</h2>
+            <p>Are you sure you want to delete the database <strong x-text="databaseToDelete?.name"></strong>? This will permanently delete all of its tables and data. This action cannot be undone.</p>
+            <div class="mt-6 flex justify-end space-x-4">
+                <button type="button" @click="databaseToDelete = null" class="px-4 py-2 bg-gray-200 rounded-md">Cancel</button>
+                <button type="button" @click="deleteDatabase()" class="px-4 py-2 bg-red-600 text-white rounded-md">Delete</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const supabaseUrl = '{{ supabase_url }}';
         const supabaseAnonKey = '{{ supabase_anon_key }}';
@@ -119,6 +136,7 @@
                 isLoading: true,
                 showCreateModal: false,
                 newDatabase: { name: '', description: '' },
+                databaseToDelete: null,
                 session: null,
 
                 init() {
@@ -188,6 +206,30 @@
                 async signOut() {
                     const { error } = await supabase.auth.signOut();
                     if (!error) window.location.href = '/';
+                },
+
+                confirmDeleteDatabase(database) {
+                    this.databaseToDelete = database;
+                },
+
+                async deleteDatabase() {
+                    if (!this.databaseToDelete) return;
+                    try {
+                        const response = await fetch(`/api/v1/databases/${this.databaseToDelete.id}`, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': `Bearer ${this.session.access_token}` }
+                        });
+                        if (!response.ok) {
+                            const err = await response.json();
+                            throw new Error(err.detail || 'Failed to delete database');
+                        }
+                        // Remove from UI
+                        this.databases = this.databases.filter(db => db.id !== this.databaseToDelete.id);
+                        this.databaseToDelete = null;
+                    } catch (error) {
+                        console.error('Error deleting database:', error);
+                        alert(`Could not delete database: ${error.message}`);
+                    }
                 },
 
                 resetNewDatabase() { this.newDatabase = { name: '', description: '' }; }

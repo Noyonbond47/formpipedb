@@ -173,6 +173,37 @@ async def create_database_table(database_id: int, table_data: TableCreate, auth_
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"API v3 Error: Could not create table: {str(e)}")
 
+@app.delete("/api/v1/databases/{database_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user_database(database_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Deletes a database and all its associated tables and rows.
+    RLS and cascade delete handles the security and data integrity.
+    """
+    try:
+        supabase = auth_details["client"]
+        # The RLS policy ensures the user can only match their own database ID.
+        # The 'returning="representation"' ensures data is returned to check if a row was actually deleted.
+        response = supabase.table("user_databases").delete(returning="representation").eq("id", database_id).execute()
+        
+        if not response.data:
+             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Database not found or you do not have permission to delete it.")
+
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete database: {str(e)}")
+
+@app.delete("/api/v1/tables/{table_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_database_table(table_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Deletes a table and all its associated rows.
+    """
+    try:
+        supabase = auth_details["client"]
+        response = supabase.table("user_tables").delete(returning="representation").eq("id", table_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found or you do not have permission to delete it.")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete table: {str(e)}")
+
 # --- HTML Serving Endpoints ---
 
 @app.get("/", response_class=HTMLResponse)
