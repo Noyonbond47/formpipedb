@@ -330,6 +330,13 @@ async def app_page(request: Request):
         {"request": request, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY}
     )
 
+@app.get("/app/database/{db_name}", response_class=HTMLResponse)
+async def table_manager_page(request: Request, db_name: str):
+    return templates.TemplateResponse(
+        "table-manager.html",
+        {"request": request, "db_name": db_name}
+    )
+
 @app.get("/about", response_class=HTMLResponse)
 async def about_page(request: Request):
     return templates.TemplateResponse("about.html", {"request": request})
