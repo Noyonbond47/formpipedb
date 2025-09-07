@@ -3,8 +3,8 @@ from fastapi import FastAPI, Request, Header, HTTPException, status
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from typing import List, Optional
-from pydantic import BaseModel
+from typing import List, Optional, Any
+from pydantic import BaseModel, Field
 from supabase import create_client, Client
 
 # It's a good practice to load environment variables at the start
@@ -22,12 +22,24 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # --- API Models ---
+# This defines the structure of a column within a form.
+class ColumnDefinition(BaseModel):
+    name: str
+    type: str # e.g., 'text', 'number', 'date'
+
+# This is the data we expect from the frontend when creating a form.
+class FormCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    columns: List[ColumnDefinition]
+
 # This defines the data structure for a form when we send it to the frontend.
 class FormResponse(BaseModel):
     id: int
     created_at: str
     name: str
     description: Optional[str] = None
+    columns: List[ColumnDefinition]
 
 # --- API Endpoints ---
 # We'll prefix our data endpoints with /api/v1
@@ -45,13 +57,46 @@ async def get_user_forms(authorization: str = Header(None)):
         # Use the user's token to make an authenticated request.
         # This tells Supabase "execute this query as the user who owns this token".
         # Supabase then applies the RLS policies automatically.
-        response = supabase.table("forms").select("id, created_at, name, description").auth(token).execute()
+        response = supabase.table("forms").select("id, created_at, name, description, columns").order("created_at", desc=True).auth(token).execute()
 
         # The response.data will contain only the forms belonging to the user.
         return response.data
     except Exception as e:
         # This could happen if the token is invalid/expired
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Access denied: {str(e)}")
+
+@app.post("/api/v1/forms", response_model=FormResponse, status_code=status.HTTP_201_CREATED)
+async def create_user_form(
+    form_data: FormCreate,
+    authorization: str = Header(None)
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization header missing or invalid")
+
+    token = authorization.split(" ")[1]
+    
+    try:
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+        
+        # Get user from token to securely get their ID
+        user_response = supabase.auth.get_user(token)
+        user = user_response.user
+        if not user:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid token or user not found")
+
+        # Prepare data for insertion, ensuring it's associated with the correct user
+        new_form_data = {
+            "user_id": user.id,
+            "name": form_data.name,
+            "description": form_data.description,
+            "columns": [col.dict() for col in form_data.columns]
+        }
+
+        response = supabase.table("forms").insert(new_form_data).select("*").single().execute()
+        
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create form: {str(e)}")
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
