@@ -35,9 +35,9 @@
             <header class="flex justify-between items-center p-4 bg-white border-b">
                 <div class="flex-1">
                     <h1 class="text-xl font-semibold text-gray-800" x-text="table.name || 'Loading...'"></h1>
-                    <p class="text-sm text-gray-500">Table Structure</p>
+                    <p class="text-sm text-gray-500">Table Workspace</p>
                 </div>
-                <div x-data="{ dropdownOpen: false }" @click.outside="dropdownOpen = false" class="relative">
+                <div x-data="{ dropdownOpen: false }" @click.outside="dropdownOpen = false" class="relative ml-4">
                     <button @click="dropdownOpen = !dropdownOpen" class="relative block h-8 w-8 rounded-full overflow-hidden shadow focus:outline-none">
                         <span id="user-avatar" class="h-full w-full object-cover bg-gray-300 flex items-center justify-center text-gray-600 font-bold"></span>
                     </button>
@@ -49,42 +49,228 @@
                 </div>
             </header>
 
-            <!-- Main content -->
-            <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
-                <div class="max-w-7xl mx-auto">
-                    <div class="flex justify-end mb-4">
-                        <button @click="alert('This feature is coming soon!')" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none">Add Column</button>
-                    </div>
-
-                    <!-- Columns List -->
-                    <div class="bg-white shadow overflow-hidden rounded-lg">
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full divide-y divide-gray-200">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Column Name</th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data Type</th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Constraints</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
-                                    <template x-for="column in table.columns" :key="column.name">
+            <!-- Main content with bottom tabs -->
+            <div class="flex-1 flex flex-col overflow-hidden">
+                <main class="flex-1 overflow-x-auto overflow-y-auto bg-gray-100 p-6">
+                    <div class="max-w-full mx-auto">
+                        <!-- Data Grid View -->
+                        <div x-show="currentTab === 'data'">
+                            <div class="flex justify-end mb-4">
+                                <button @click="addRow()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none">Add Row</button>
+                            </div>
+                            <div class="bg-white shadow overflow-auto rounded-lg">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50 sticky top-0">
                                         <tr>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                <div class="flex items-center">
-                                                    <svg x-show="column.is_primary_key" class="w-4 h-4 text-blue-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd"></path></svg>
-                                                    <span x-text="column.name"></span>
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="column.type"></td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                <span x-show="column.is_unique" class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">UNIQUE</span>
-                                                <span x-show="column.is_not_null" class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">NOT NULL</span>
-                                            </td>
+                                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
+                                            <template x-for="column in table.columns" :key="column.name">
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" x-text="column.name"></th>
+                                            </template>
                                         </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-200">
+                                        <template x-for="row in rows" :key="row.id">
+                                            <tr class="hover:bg-gray-50 group">
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                    <button @click="deleteRow(row.id)" class="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100">&times;</button>
+                                                </td>
+                                                <template x-for="column in table.columns" :key="column.name">
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700" contenteditable="true" @blur="updateRow(row, column.name, $event.target.innerText)" x-text="row.data[column.name] || ''"></td>
+                                                </template>
+                                            </tr>
+                                        </template>
+                                        <tr x-show="rows.length === 0">
+                                            <td :colspan="table.columns.length + 1" class="text-center py-10 text-gray-500">No data yet. Click "Add Row" to get started.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Structure View -->
+                        <div x-show="currentTab === 'structure'">
+                            <div class="bg-white p-6 rounded-lg shadow">
+                                <h3 class="text-lg font-semibold mb-4">Edit Table Structure</h3>
+                                <div class="space-y-3 mt-2">
+                                    <template x-for="(column, index) in editableTable.columns" :key="index">
+                                        <div class="relative p-4 pl-6 border rounded-md" :class="{'bg-blue-50 border-blue-200': column.is_primary_key, 'bg-gray-50': !column.is_primary_key}">
+                                            <div class="absolute left-2 top-1/2 -translate-y-1/2" x-show="column.is_primary_key"><svg class="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd"></path></svg></div>
+                                            <div class="flex items-center space-x-2 mb-3">
+                                                <input type="text" x-model="column.name" placeholder="Column Name" required class="w-1/2 p-2 border rounded" :disabled="column.is_primary_key">
+                                                <select x-model="column.type" class="w-1/2 p-2 border rounded bg-white" :disabled="column.is_primary_key"><option value="serial" disabled>Primary Key</option><option value="text">Text</option><option value="number">Number</option><option value="date">Date</option><option value="boolean">Checkbox</option><option value="timestamp">Timestamp</option><option value="jsonb">JSON</option></select>
+                                                <button type="button" @click="removeColumn(index)" x-show="!column.is_primary_key" class="text-red-500 hover:text-red-700 p-1 rounded-full">&times;</button>
+                                            </div>
+                                            <button type="button" @click="addColumnAfter(index)" class="w-full text-center text-xs text-blue-600 hover:underline py-1 mt-2">+ Add column below</button>
+                                        </div>
                                     </template>
-                                </tbody>
-                            </table>
+                                </div>
+                                <div class="mt-6 flex justify-end">
+                                    <button @click="saveStructure()" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">Save Structure Changes</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SQL View -->
+                        <div x-show="currentTab === 'sql'">
+                            <div class="bg-gray-800 text-white p-6 rounded-lg shadow font-mono text-sm overflow-x-auto">
+                                <pre><code x-text="generatedSql"></code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </main>
+                <!-- Bottom Tabs -->
+                <footer class="p-2 bg-white border-t">
+                    <div class="flex space-x-4">
+                        <button @click="currentTab = 'data'" :class="{'bg-gray-200': currentTab === 'data'}" class="px-3 py-1 text-sm rounded-md text-gray-700 hover:bg-gray-200">Data</button>
+                        <button @click="currentTab = 'structure'" :class="{'bg-gray-200': currentTab === 'structure'}" class="px-3 py-1 text-sm rounded-md text-gray-700 hover:bg-gray-200">Structure</button>
+                        <button @click="currentTab = 'sql'" :class="{'bg-gray-200': currentTab === 'sql'}" class="px-3 py-1 text-sm rounded-md text-gray-700 hover:bg-gray-200">SQL</button>
+                    </div>
+                </footer>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const supabaseUrl = '{{ supabase_url }}';
+        const supabaseAnonKey = '{{ supabase_anon_key }}';
+        if (!supabaseUrl || !supabaseAnonKey) console.error("Supabase credentials missing.");
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+
+        function tableDetailApp() {
+            return {
+                session: null,
+                databaseId: null,
+                tableId: null,
+                table: { name: 'Loading...', columns: [] },
+                editableTable: { name: '', columns: [] },
+                rows: [],
+                isLoading: true,
+                currentTab: 'data',
+
+                init(dbId, tableId) {
+                    this.databaseId = dbId;
+                    this.tableId = tableId;
+                    supabase.auth.onAuthStateChange((_event, session) => {
+                        if (!session) { window.location.href = '/login'; return; }
+                        this.session = session;
+                        this.updateUserInfo(session);
+                        this.fetchTableDetails();
+                        this.fetchRows();
+                    });
+                },
+
+                updateUserInfo(session) {
+                    const user = session.user;
+                    document.getElementById('user-email').textContent = user.email;
+                    const fullName = user.user_metadata.full_name;
+                    document.getElementById('user-avatar').textContent = fullName ? fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : user.email.substring(0, 1).toUpperCase();
+                },
+
+                async fetchTableDetails() {
+                    this.isLoading = true;
+                    try {
+                        const response = await fetch(`/api/v1/tables/${this.tableId}`, { headers: { 'Authorization': `Bearer ${this.session.access_token}` } });
+                        if (!response.ok) throw new Error('Failed to fetch table details');
+                        this.table = await response.json();
+                        this.editableTable = JSON.parse(JSON.stringify(this.table)); // Deep copy for editing
+                    } catch (error) { 
+                        console.error(error);
+                        alert('Could not load table details.');
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+
+                async fetchRows() {
+                    try {
+                        const response = await fetch(`/api/v1/tables/${this.tableId}/rows`, { headers: { 'Authorization': `Bearer ${this.session.access_token}` } });
+                        if (!response.ok) throw new Error('Failed to fetch rows');
+                        this.rows = await response.json();
+                    } catch (error) { console.error(error); }
+                },
+
+                async addRow() {
+                    try {
+                        const response = await fetch(`/api/v1/tables/${this.tableId}/rows`, { method: 'POST', headers: { 'Authorization': `Bearer ${this.session.access_token}` } });
+                        if (!response.ok) throw new Error('Failed to add row');
+                        const newRow = await response.json();
+                        this.rows.push(newRow);
+                    } catch (error) { console.error(error); alert('Could not add new row.'); }
+                },
+
+                async updateRow(row, columnName, newValue) {
+                    const originalValue = row.data[columnName];
+                    row.data[columnName] = newValue; // Optimistic update
+                    try {
+                        const response = await fetch(`/api/v1/rows/${row.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.session.access_token}` },
+                            body: JSON.stringify({ data: row.data })
+                        });
+                        if (!response.ok) throw new Error('Failed to update row');
+                    } catch (error) {
+                        console.error(error);
+                        row.data[columnName] = originalValue; // Revert on failure
+                        alert('Failed to save changes.');
+                    }
+                },
+
+                async deleteRow(rowId) {
+                    if (!confirm('Are you sure you want to delete this row?')) return;
+                    try {
+                        const response = await fetch(`/api/v1/rows/${rowId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${this.session.access_token}` } });
+                        if (!response.ok) throw new Error('Failed to delete row');
+                        this.rows = this.rows.filter(r => r.id !== rowId);
+                    } catch (error) { console.error(error); alert('Could not delete row.'); }
+                },
+
+                async saveStructure() {
+                    try {
+                        const response = await fetch(`/api/v1/tables/${this.tableId}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.session.access_token}` },
+                            body: JSON.stringify(this.editableTable)
+                        });
+                        if (!response.ok) throw new Error('Failed to save structure');
+                        this.table = await response.json();
+                        this.editableTable = JSON.parse(JSON.stringify(this.table));
+                        alert('Table structure saved successfully!');
+                    } catch (error) { console.error(error); alert('Could not save table structure.'); }
+                },
+
+                addColumnAfter(index) {
+                    const newColumn = { name: '', type: 'text', is_primary_key: false, is_unique: false, is_not_null: false, foreign_key: null };
+                    this.editableTable.columns.splice(index + 1, 0, newColumn);
+                },
+                removeColumn(index) {
+                    if (!this.editableTable.columns[index].is_primary_key) {
+                        this.editableTable.columns.splice(index, 1);
+                    }
+                },
+
+                get generatedSql() {
+                    if (!this.table.name) return 'Generating SQL...';
+                    let sql = `CREATE TABLE "${this.table.name}" (\n`;
+                    this.table.columns.forEach((col, index) => {
+                        sql += `  "${col.name}" ${col.type}`;
+                        if (col.is_primary_key) sql += ' PRIMARY KEY';
+                        if (col.is_not_null) sql += ' NOT NULL';
+                        if (col.is_unique) sql += ' UNIQUE';
+                        if (index < this.table.columns.length - 1) sql += ',';
+                        sql += '\n';
+                    });
+                    sql += ');';
+                    return sql;
+                },
+
+                async signOut() {
+                    await supabase.auth.signOut();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
                         </div>
                     </div>
                 </div>

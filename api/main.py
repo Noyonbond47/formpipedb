@@ -53,10 +53,23 @@ class TableCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     columns: List[ColumnDefinition]
 
+class TableUpdate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    columns: List[ColumnDefinition]
+
 class TableResponse(BaseModel):
     id: int
     name: str
     columns: List[ColumnDefinition]
+
+class RowResponse(BaseModel):
+    id: int
+    created_at: str
+    table_id: int
+    data: dict[str, Any]
+
+class RowCreate(BaseModel):
+    data: dict[str, Any]
 
 # --- Reusable Dependencies ---
 # This dependency handles getting the user's token, validating it, and providing the user object.
@@ -173,6 +186,22 @@ async def create_database_table(database_id: int, table_data: TableCreate, auth_
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"API v3 Error: Could not create table: {str(e)}")
 
+@app.put("/api/v1/tables/{table_id}", response_model=TableResponse)
+async def update_database_table(table_id: int, table_data: TableUpdate, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Updates a table's structure (name and columns).
+    """
+    try:
+        supabase = auth_details["client"]
+        update_data = {
+            "name": table_data.name,
+            "columns": [col.dict() for col in table_data.columns]
+        }
+        response = supabase.table("user_tables").update(update_data, returning="representation").eq("id", table_id).execute()
+        return response.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update table: {str(e)}")
+
 @app.delete("/api/v1/databases/{database_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user_database(database_id: int, auth_details: dict = Depends(get_current_user_details)):
     """
@@ -217,6 +246,62 @@ async def get_single_table(table_id: int, auth_details: dict = Depends(get_curre
         return response.data
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@app.get("/api/v1/tables/{table_id}/rows", response_model=List[RowResponse])
+async def get_table_rows(table_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Fetches all data rows for a specific table.
+    """
+    try:
+        supabase = auth_details["client"]
+        # RLS on table_rows ensures user can only access rows they own.
+        response = supabase.table("table_rows").select("*").eq("table_id", table_id).order("id").execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@app.post("/api/v1/tables/{table_id}/rows", response_model=RowResponse, status_code=status.HTTP_201_CREATED)
+async def create_table_row(table_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Creates a new, empty row for a table.
+    """
+    try:
+        supabase = auth_details["client"]
+        user = auth_details["user"]
+        new_row_data = {
+            "user_id": user.id,
+            "table_id": table_id,
+            "data": {} # Start with empty data
+        }
+        response = supabase.table("table_rows").insert(new_row_data, returning="representation").execute()
+        return response.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create row: {str(e)}")
+
+@app.put("/api/v1/rows/{row_id}", response_model=RowResponse)
+async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Updates the data for a specific row.
+    """
+    try:
+        supabase = auth_details["client"]
+        response = supabase.table("table_rows").update({"data": row_data.data}, returning="representation").eq("id", row_id).execute()
+        return response.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update row: {str(e)}")
+
+@app.delete("/api/v1/rows/{row_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_table_row(row_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Deletes a specific row.
+    """
+    try:
+        supabase = auth_details["client"]
+        response = supabase.table("table_rows").delete(returning="representation").eq("id", row_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Row not found or you do not have permission to delete it.")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete row: {str(e)}")
 
 # --- HTML Serving Endpoints ---
 
