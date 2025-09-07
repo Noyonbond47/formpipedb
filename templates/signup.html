@@ -11,8 +11,11 @@
     <div class="container">
         <h1>Create an Account</h1>
         <form id="signup-form">
+            <input type="text" id="full_name" placeholder="Full Name" required>
             <input type="email" id="email" placeholder="Email" required>
+            <input type="email" id="confirm_email" placeholder="Confirm Email" required>
             <input type="password" id="password" placeholder="Password" required>
+            <input type="password" id="confirm_password" placeholder="Confirm Password" required>
             <button type="submit">Sign Up</button>
         </form>
         <p id="error-message" style="color: red;"></p>
@@ -21,11 +24,12 @@
     <script>
         const supabaseUrl = '{{ supabase_url }}';
         const supabaseAnonKey = '{{ supabase_anon_key }}';
+        const errorMessage = document.getElementById('error-message');
 
         // Important: Check if the credentials are provided
         if (!supabaseUrl || !supabaseAnonKey) {
             console.error("Supabase URL or Anon Key is missing. Make sure environment variables are set in Vercel.");
-            document.getElementById('error-message').textContent = 'Configuration error. Please contact support.';
+            errorMessage.textContent = 'Configuration error. Please contact support.';
         }
 
         const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
@@ -33,19 +37,40 @@
         const signupForm = document.getElementById('signup-form');
         signupForm.addEventListener('submit', async (event) => {
             event.preventDefault();
+            errorMessage.textContent = ''; // Clear previous errors
 
+            const fullName = document.getElementById('full_name').value;
             const email = document.getElementById('email').value;
+            const confirmEmail = document.getElementById('confirm_email').value;
             const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('confirm_password').value;
+
+            // --- Client-side validation ---
+            if (email !== confirmEmail) {
+                errorMessage.textContent = 'Emails do not match.';
+                return;
+            }
+
+            if (password !== confirmPassword) {
+                errorMessage.textContent = 'Passwords do not match.';
+                return;
+            }
 
             const { data, error } = await supabase.auth.signUp({
                 email: email,
                 password: password,
+                options: {
+                    data: {
+                        full_name: fullName
+                    }
+                }
             });
 
             if (error) {
-                document.getElementById('error-message').textContent = error.message;
+                errorMessage.textContent = error.message;
             } else {
-                // Redirect to a confirmation page or directly to the app
+                // If email confirmation is turned on, you might want to show a message here.
+                // For now, we redirect directly to the app.
                 window.location.href = '/app';
             }
         });

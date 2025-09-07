@@ -10,7 +10,7 @@
 <body>
     <div class="container">
         <h1>The App is Under Construction</h1>
-        <p>Welcome! We're glad to have you here. The main application is still being built.</p>
+        <p id="welcome-message">Welcome! We're glad to have you here. The main application is still being built.</p>
         <button id="signout-button">Sign Out</button>
     </div>
 
@@ -23,11 +23,19 @@
         }
 
         const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+        const welcomeMessage = document.getElementById('welcome-message');
 
         // Check if user is logged in, otherwise redirect to login
-        supabase.auth.getSession().then(({ data: { session } }) => {
+        supabase.auth.onAuthStateChange((event, session) => {
             if (!session) {
                 window.location.href = '/login';
+            } else {
+                const user = session.user;
+                // Check for full_name in user_metadata
+                const fullName = user.user_metadata.full_name;
+                if (fullName) {
+                    welcomeMessage.textContent = `Welcome, ${fullName}! We're glad to have you here. The main application is still being built.`;
+                }
             }
         });
 
