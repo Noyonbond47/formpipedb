@@ -87,23 +87,24 @@
 
     <!-- Create Table Modal -->
     <div x-show="showCreateTableModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-20" @keydown.escape.window="showCreateTableModal = false">
-        <div @click.outside="showCreateTableModal = false" class="bg-white rounded-lg shadow-xl w-full max-w-3xl p-6 max-h-[90vh] flex flex-col">
+        <div @click.outside="showCreateTableModal = false" class="bg-white rounded-lg shadow-xl w-full max-w-4xl p-6 max-h-[90vh] flex flex-col">
             <h2 class="text-2xl font-bold mb-4">Create a New Table</h2>
             <form @submit.prevent="createTable()" class="flex-grow overflow-y-auto pr-2">
                 <div class="space-y-4 mb-4">
                     <input type="text" x-model="newTable.name" placeholder="Table Name (e.g., 'customers', 'products')" required class="w-full p-2 border rounded">
                 </div>
                 
-                <h3 class="font-semibold pt-4 border-t">Columns</h3>
+                <h3 class="font-semibold pt-4 border-t mb-2">Columns</h3>
                 <div class="space-y-3 mt-2">
-                    <div class="p-3 border rounded-md bg-gray-100">
-                        <p class="text-sm text-gray-700">A unique, auto-incrementing `id` column will be automatically added as the default primary key to every table.</p>
-                    </div>
                     <template x-for="(column, index) in newTable.columns" :key="index">
-                        <div class="p-3 border rounded-md bg-gray-50 space-y-3">
-                            <div class="flex items-center space-x-2">
+                        <div class="relative p-4 pl-6 border rounded-md" :class="{'bg-blue-50 border-blue-200': column.is_primary_key, 'bg-gray-50': !column.is_primary_key}">
+                            <div class="absolute left-2 top-1/2 -translate-y-1/2" x-show="column.is_primary_key">
+                                <svg class="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd"></path></svg>
+                            </div>
+                            <div class="flex items-center space-x-2 mb-3">
                                 <input type="text" x-model="column.name" placeholder="Column Name" required class="w-1/2 p-2 border rounded" :disabled="column.foreign_key && column.foreign_key.table_id">
-                                <select x-model="column.type" class="w-1/2 p-2 border rounded bg-white" :disabled="column.foreign_key && column.foreign_key.table_id">
+                                <select x-model="column.type" class="w-1/2 p-2 border rounded bg-white" :disabled="column.is_primary_key || (column.foreign_key && column.foreign_key.table_id)">
+                                    <option value="serial" disabled>Primary Key (Auto-Incrementing)</option>
                                     <option value="text">Text</option>
                                     <option value="number">Number</option>
                                     <option value="date">Date</option>
@@ -111,18 +112,18 @@
                                     <option value="timestamp">Timestamp</option>
                                     <option value="jsonb">JSON</option>
                                 </select>
-                                <button type="button" @click="removeColumn(index)" x-show="newTable.columns.length > 0" class="text-red-500 hover:text-red-700 p-1 rounded-full">&times;</button>
+                                <button type="button" @click="removeColumn(index)" x-show="!column.is_primary_key" class="text-red-500 hover:text-red-700 p-1 rounded-full">&times;</button>
                             </div>
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 text-sm">
-                                <label class="flex items-center space-x-2" :class="{'opacity-50': column.foreign_key && column.foreign_key.table_id}">
-                                    <input type="checkbox" x-model="column.is_unique" :disabled="column.foreign_key && column.foreign_key.table_id">
+                                <label class="flex items-center space-x-2" :class="{'opacity-50': column.is_primary_key || (column.foreign_key && column.foreign_key.table_id)}">
+                                    <input type="checkbox" x-model="column.is_unique" :disabled="column.is_primary_key || (column.foreign_key && column.foreign_key.table_id)">
                                     <span>Unique</span>
                                 </label>
-                                <label class="flex items-center space-x-2" :class="{'opacity-50': column.foreign_key && column.foreign_key.table_id}">
-                                    <input type="checkbox" x-model="column.is_not_null" :disabled="column.foreign_key && column.foreign_key.table_id">
+                                <label class="flex items-center space-x-2" :class="{'opacity-50': column.is_primary_key || (column.foreign_key && column.foreign_key.table_id)}">
+                                    <input type="checkbox" x-model="column.is_not_null" :disabled="column.is_primary_key || (column.foreign_key && column.foreign_key.table_id)">
                                     <span>Not Null</span>
                                 </label>
-                                <label class="flex items-center space-x-2">
+                                <label class="flex items-center space-x-2" :class="{'opacity-50': column.is_primary_key}">
                                     <input type="checkbox" x-model="column.is_foreign_key" @change="handleFkToggle(column)">
                                     <span>Foreign Key</span>
                                 </label>
@@ -138,11 +139,11 @@
                                     <template x-for="targetCol in getTableColumns(column.foreign_key.table_id)" :key="targetCol.name"><option :value="targetCol.name" x-text="targetCol.name"></option></template>
                                 </select>
                             </div>
+                            <button type="button" @click="addColumnAfter(index)" class="w-full text-center text-xs text-blue-600 hover:underline py-1 mt-2">+ Add column below</button>
                         </div>
                     </template>
                 </div>
-                <button type="button" @click="addColumn()" class="text-sm text-blue-600 hover:underline mt-3">+ Add Column</button>
-                <div class="mt-6 flex justify-end space-x-4 sticky bottom-0 bg-white py-4">
+                <div class="mt-6 flex justify-end space-x-4 sticky bottom-0 bg-white py-4 border-t">
                     <button type="button" @click="showCreateTableModal = false" class="px-4 py-2 bg-gray-200 rounded-md">Cancel</button>
                     <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md">Create Table</button>
                 </div>
@@ -265,14 +266,18 @@
                 },
 
                 // --- Modal Helper Functions ---
-                addColumn() { 
-                    this.newTable.columns.push({ name: '', type: 'text', is_primary_key: false, is_unique: false, is_not_null: false, is_foreign_key: false, foreign_key: null }); 
+                addColumnAfter(index) {
+                    const newColumn = { name: '', type: 'text', is_primary_key: false, is_unique: false, is_not_null: false, is_foreign_key: false, foreign_key: null };
+                    this.newTable.columns.splice(index + 1, 0, newColumn);
                 },
                 removeColumn(index) { 
-                    this.newTable.columns.splice(index, 1); 
+                    // Prevent deleting the primary key
+                    if (!this.newTable.columns[index].is_primary_key) {
+                        this.newTable.columns.splice(index, 1); 
+                    }
                 },
                 resetNewTable() { 
-                    this.newTable = { name: '', columns: [{ name: '', type: 'text', is_primary_key: false, is_unique: false, is_not_null: false, is_foreign_key: false, foreign_key: null }] }; 
+                    this.newTable = { name: '', columns: [{ name: 'id', type: 'serial', is_primary_key: true, is_unique: true, is_not_null: true, is_foreign_key: false, foreign_key: null }] }; 
                 },
                 handleFkToggle(column) {
                     if (column.is_foreign_key) {
