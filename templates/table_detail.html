@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Table Structure - FormPipeDB</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style> 
+        body { font-family: 'Inter', sans-serif; }
+        [x-cloak] { display: none !important; }
+    </style>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-100" x-data="tableDetailApp()" x-init="init('{{ database_id }}', '{{ table_id }}')">
+    <div class="flex h-screen bg-gray-100">
+        <!-- Sidebar -->
+        <aside class="flex-shrink-0 w-64 flex flex-col border-r bg-white transition-all duration-300 md:flex">
+            <div class="h-16 flex-shrink-0 flex items-center justify-center border-b text-xl font-bold text-gray-800">
+                FormPipeDB
+            </div>
+            <nav class="flex-1 flex flex-col overflow-y-auto">
+                <a x-bind:href="`/app/database/${databaseId}`" class="p-4 flex items-center text-gray-600 hover:bg-gray-100">
+                    <svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                    Back to Database
+                </a>
+            </nav>
+        </aside>
+
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Header -->
+            <header class="flex justify-between items-center p-4 bg-white border-b">
+                <div class="flex-1">
+                    <h1 class="text-xl font-semibold text-gray-800" x-text="table.name || 'Loading...'"></h1>
+                    <p class="text-sm text-gray-500">Table Structure</p>
+                </div>
+                <div x-data="{ dropdownOpen: false }" @click.outside="dropdownOpen = false" class="relative">
+                    <button @click="dropdownOpen = !dropdownOpen" class="relative block h-8 w-8 rounded-full overflow-hidden shadow focus:outline-none">
+                        <span id="user-avatar" class="h-full w-full object-cover bg-gray-300 flex items-center justify-center text-gray-600 font-bold"></span>
+                    </button>
+                    <div x-cloak x-show="dropdownOpen" class="absolute right-0 mt-2 w-48 bg-white rounded-md overflow-hidden shadow-xl z-10">
+                        <div class="px-4 py-2 text-sm text-gray-700" id="user-email">Loading...</div>
+                        <a href="/app/profile" class="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-500 hover:text-white">Profile</a>
+                        <a href="#" @click.prevent="signOut()" class="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-500 hover:text-white">Sign Out</a>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Main content -->
+            <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
+                <div class="max-w-7xl mx-auto">
+                    <div class="flex justify-end mb-4">
+                        <button @click="alert('This feature is coming soon!')" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none">Add Column</button>
+                    </div>
+
+                    <!-- Columns List -->
+                    <div class="bg-white shadow overflow-hidden rounded-lg">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Column Name</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data Type</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Constraints</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <template x-for="column in table.columns" :key="column.name">
+                                        <tr>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                <div class="flex items-center">
+                                                    <svg x-show="column.is_primary_key" class="w-4 h-4 text-blue-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd"></path></svg>
+                                                    <span x-text="column.name"></span>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="column.type"></td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                <span x-show="column.is_unique" class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">UNIQUE</span>
+                                                <span x-show="column.is_not_null" class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">NOT NULL</span>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        const supabaseUrl = '{{ supabase_url }}';
+        const supabaseAnonKey = '{{ supabase_anon_key }}';
+        if (!supabaseUrl || !supabaseAnonKey) console.error("Supabase credentials missing.");
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+
+        function tableDetailApp() {
+            return {
+                session: null,
+                databaseId: null,
+                tableId: null,
+                table: { name: 'Loading...', columns: [] },
+                isLoading: true,
+
+                init(dbId, tableId) {
+                    this.databaseId = dbId;
+                    this.tableId = tableId;
+                    supabase.auth.onAuthStateChange((_event, session) => {
+                        if (!session) { window.location.href = '/login'; return; }
+                        this.session = session;
+                        this.updateUserInfo(session);
+                        this.fetchTableDetails();
+                    });
+                },
+
+                updateUserInfo(session) {
+                    const user = session.user;
+                    document.getElementById('user-email').textContent = user.email;
+                    const fullName = user.user_metadata.full_name;
+                    document.getElementById('user-avatar').textContent = fullName ? fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : user.email.substring(0, 1).toUpperCase();
+                },
+
+                async fetchTableDetails() {
+                    this.isLoading = true;
+                    try {
+                        const response = await fetch(`/api/v1/tables/${this.tableId}`, { headers: { 'Authorization': `Bearer ${this.session.access_token}` } });
+                        if (!response.ok) throw new Error('Failed to fetch table details');
+                        this.table = await response.json();
+                    } catch (error) { 
+                        console.error(error);
+                        alert('Could not load table details.');
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+
+                async signOut() {
+                    await supabase.auth.signOut();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
