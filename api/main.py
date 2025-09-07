@@ -199,6 +199,13 @@ async def database_detail_page(request: Request, database_id: int):
         {"request": request, "database_id": database_id, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY}
     )
 
+@app.get("/app/profile", response_class=HTMLResponse)
+async def profile_page(request: Request):
+    return templates.TemplateResponse(
+        "profile.html", 
+        {"request": request, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY}
+    )
+
 @app.get("/about", response_class=HTMLResponse)
 async def about_page(request: Request):
     return templates.TemplateResponse("about.html", {"request": request})
