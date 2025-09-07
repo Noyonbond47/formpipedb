@@ -330,33 +330,6 @@ async def app_page(request: Request):
         {"request": request, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY}
     )
 
-@app.get("/app/database/{database_id}", response_class=HTMLResponse)
-async def database_detail_page(request: Request, database_id: int):
-    return templates.TemplateResponse(
-        "database_detail.html", 
-        {"request": request, "database_id": database_id, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY}
-    )
-
-@app.get("/app/database/{database_id}/table/{table_id}", response_class=HTMLResponse)
-async def table_detail_page(request: Request, database_id: int, table_id: int):
-    return templates.TemplateResponse(
-        "table_detail.html", 
-        {
-            "request": request, 
-            "database_id": database_id,
-            "table_id": table_id,
-            "supabase_url": SUPABASE_URL, 
-            "supabase_anon_key": SUPABASE_ANON_KEY
-        }
-    )
-
-@app.get("/app/profile", response_class=HTMLResponse)
-async def profile_page(request: Request):
-    return templates.TemplateResponse(
-        "profile.html", 
-        {"request": request, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY}
-    )
-
 @app.get("/about", response_class=HTMLResponse)
 async def about_page(request: Request):
     return templates.TemplateResponse("about.html", {"request": request})

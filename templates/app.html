@@ -52,72 +52,16 @@
 
             <!-- Main content -->
             <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
-                <div class="max-w-7xl mx-auto">
-                    <div class="flex justify-between items-center mb-6">
-                        <h1 class="text-2xl font-semibold text-gray-800">My Databases</h1>
-                        <button @click="showCreateModal = true" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none">Create New Database</button>
-                    </div>
-
-                    <!-- Loading State -->
-                    <div x-show="isLoading" class="text-center py-10">
-                        <p>Loading your databases...</p>
-                    </div>
-
-                    <!-- Empty State -->
-                    <div x-show="!isLoading && databases.length === 0" class="text-center bg-white p-12 rounded-lg shadow">
-                        <h2 class="text-xl font-medium text-gray-800">No databases yet!</h2>
-                        <p class="text-gray-500 mt-2">Get started by creating your first database.</p>
-                        <button @click="showCreateModal = true" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none">Create New Database</button>
-                    </div>
-
-                    <!-- Forms List -->
-                    <div x-show="!isLoading && databases.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        <template x-for="database in databases" :key="database.id">
-                            <div class="relative bg-white p-6 rounded-lg shadow group transition-shadow hover:shadow-lg">
-                                <a x-bind:href="`/app/database/${database.id}`" class="block">
-                                    <div class="flex justify-between items-start">
-                                        <h3 class="text-lg font-semibold text-gray-900" x-text="database.name"></h3>
-                                    </div>
-                                    <p class="text-gray-600 mt-2 text-sm h-10" x-text="database.description || 'No description'"></p>
-                                    <p class="text-gray-400 mt-4 text-xs" x-text="`Created on: ${new Date(database.created_at).toLocaleDateString()}`"></p>
-                                </a>
-                                <button @click.prevent="confirmDeleteDatabase(database)" class="absolute top-4 right-4 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                </button>
-                            </div>
-                        </template>
+                <div class="max-w-7xl mx-auto flex items-center justify-center h-full">
+                    <div class="text-center bg-white p-12 rounded-lg shadow-sm border">
+                        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <h2 class="mt-6 text-xl font-medium text-gray-800">App Under Construction</h2>
+                        <p class="text-gray-500 mt-2">We're building something great. Please check back soon!</p>
                     </div>
                 </div>
             </main>
-        </div>
-    </div>
-
-    <!-- Create Form Modal -->
-    <div x-show="showCreateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-20" @keydown.escape.window="showCreateModal = false">
-        <div @click.outside="showCreateModal = false" class="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6">
-            <h2 class="text-2xl font-bold mb-4">Create a New Database</h2>
-            <form @submit.prevent="createDatabase()">
-                <div class="space-y-4">
-                    <input type="text" x-model="newDatabase.name" placeholder="Database Name (e.g., 'Project Alpha')" required class="w-full p-2 border rounded">
-                    <textarea x-model="newDatabase.description" placeholder="Description (optional)" class="w-full p-2 border rounded" rows="2"></textarea>
-                </div>
-                <div class="mt-6 flex justify-end space-x-4">
-                    <button type="button" @click="showCreateModal = false" class="px-4 py-2 bg-gray-200 rounded">Cancel</button>
-                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">Create</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Delete Database Confirmation Modal -->
-    <div x-show="databaseToDelete" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-20" @keydown.escape.window="databaseToDelete = null">
-        <div @click.outside="databaseToDelete = null" class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-            <h2 class="text-2xl font-bold mb-4">Delete Database</h2>
-            <p>Are you sure you want to delete the database <strong x-text="databaseToDelete?.name"></strong>? This will permanently delete all of its tables and data. This action cannot be undone.</p>
-            <div class="mt-6 flex justify-end space-x-4">
-                <button type="button" @click="databaseToDelete = null" class="px-4 py-2 bg-gray-200 rounded-md">Cancel</button>
-                <button type="button" @click="deleteDatabase()" class="px-4 py-2 bg-red-600 text-white rounded-md">Delete</button>
-            </div>
         </div>
     </div>
 
@@ -132,11 +76,6 @@
         function app() {
             return {
                 sidebarOpen: false,
-                databases: [],
-                isLoading: true,
-                showCreateModal: false,
-                newDatabase: { name: '', description: '' },
-                databaseToDelete: null,
                 session: null,
 
                 init() {
@@ -146,7 +85,6 @@
                         } else {
                             this.session = session;
                             this.updateUserInfo(session);
-                            this.fetchDatabases();
                         }
                     });
                 },
@@ -164,75 +102,10 @@
                     }
                 },
 
-                async fetchDatabases() {
-                    this.isLoading = true;
-                    try {
-                        const response = await fetch('/api/v1/databases', {
-                            headers: { 'Authorization': `Bearer ${this.session.access_token}` }
-                        });
-                        if (!response.ok) throw new Error(`Failed to fetch databases: ${response.statusText}`);
-                        this.databases = await response.json();
-                    } catch (error) {
-                        console.error('Error fetching databases:', error);
-                    } finally {
-                        this.isLoading = false;
-                    }
-                },
-
-                async createDatabase() {
-                    try {
-                        const response = await fetch('/api/v1/databases', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${this.session.access_token}`
-                            },
-                            body: JSON.stringify(this.newDatabase)
-                        });
-                        if (!response.ok) {
-                            const err = await response.json();
-                            throw new Error(err.detail || 'Database creation failed');
-                        }
-                        this.showCreateModal = false;
-                        this.resetNewDatabase();
-                        this.fetchDatabases(); // Refresh the list
-                    } catch (error) {
-                        console.error('Error creating database:', error);
-                        // Display the specific error from the backend
-                        alert(`Could not create database: ${error.message}`);
-                    }
-                },
-
                 async signOut() {
                     const { error } = await supabase.auth.signOut();
                     if (!error) window.location.href = '/';
-                },
-
-                confirmDeleteDatabase(database) {
-                    this.databaseToDelete = database;
-                },
-
-                async deleteDatabase() {
-                    if (!this.databaseToDelete) return;
-                    try {
-                        const response = await fetch(`/api/v1/databases/${this.databaseToDelete.id}`, {
-                            method: 'DELETE',
-                            headers: { 'Authorization': `Bearer ${this.session.access_token}` }
-                        });
-                        if (!response.ok) {
-                            const err = await response.json();
-                            throw new Error(err.detail || 'Failed to delete database');
-                        }
-                        // Remove from UI
-                        this.databases = this.databases.filter(db => db.id !== this.databaseToDelete.id);
-                        this.databaseToDelete = null;
-                    } catch (error) {
-                        console.error('Error deleting database:', error);
-                        alert(`Could not delete database: ${error.message}`);
-                    }
-                },
-
-                resetNewDatabase() { this.newDatabase = { name: '', description: '' }; }
+                }
             }
         }
     </script>
