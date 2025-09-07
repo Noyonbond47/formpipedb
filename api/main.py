@@ -45,6 +45,16 @@ class FormResponse(BaseModel):
     description: Optional[str] = None
     columns: List[ColumnDefinition]
 
+# --- New Models for Submissions ---
+class SubmissionResponse(BaseModel):
+    id: int
+    created_at: str
+    form_id: int
+    data: dict[str, Any]
+
+class SubmissionCreate(BaseModel):
+    data: dict[str, Any]
+
 # --- Reusable Dependencies ---
 # This dependency handles getting the user's token, validating it, and providing the user object.
 async def get_current_user_details(authorization: str = Header(None)) -> dict:
@@ -93,6 +103,60 @@ async def create_user_form(form_data: FormCreate, auth_details: dict = Depends(g
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create form: {str(e)}")
 
+@app.get("/api/v1/forms/{form_id}", response_model=FormResponse)
+async def get_single_form(form_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Fetches the details for a single form. RLS policy ensures the user owns it.
+    """
+    try:
+        supabase = auth_details["client"]
+        token = auth_details["token"]
+        response = supabase.table("forms").select("*").eq("id", form_id).single().auth(token).execute()
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Form not found")
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@app.get("/api/v1/forms/{form_id}/submissions", response_model=List[SubmissionResponse])
+async def get_form_submissions(form_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Fetches all submissions for a specific form.
+    """
+    try:
+        supabase = auth_details["client"]
+        token = auth_details["token"]
+        # First, verify user has access to the form itself. RLS on the forms table does this.
+        form_check = supabase.table("forms").select("id").eq("id", form_id).maybe_single().auth(token).execute()
+        if not form_check.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Form not found or access denied")
+        
+        # Now fetch submissions, which is also protected by RLS.
+        response = supabase.table("submissions").select("*").eq("form_id", form_id).order("created_at", desc=True).auth(token).execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@app.post("/api/v1/forms/{form_id}/submissions", response_model=SubmissionResponse, status_code=status.HTTP_201_CREATED)
+async def create_submission(form_id: int, submission_data: SubmissionCreate, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Creates a new submission (row) for a form.
+    """
+    try:
+        supabase = auth_details["client"]
+        user = auth_details["user"]
+        
+        new_submission = {
+            "form_id": form_id,
+            "user_id": user.id,
+            "data": submission_data.data
+        }
+        response = supabase.table("submissions").insert(new_submission).select("*").single().execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create submission: {str(e)}")
+
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
@@ -116,6 +180,13 @@ async def app_page(request: Request):
     return templates.TemplateResponse(
         "app.html", 
         {"request": request, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY}
+    )
+
+@app.get("/app/form/{form_id}", response_class=HTMLResponse)
+async def form_detail_page(request: Request, form_id: int):
+    return templates.TemplateResponse(
+        "form_detail.html", 
+        {"request": request, "form_id": form_id, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY}
     )
 
 @app.get("/about", response_class=HTMLResponse)
