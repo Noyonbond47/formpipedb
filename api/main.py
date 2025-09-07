@@ -36,6 +36,20 @@ class DatabaseResponse(BaseModel):
     name: str
     description: Optional[str] = None
 
+class ColumnDefinition(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    # In the future, this can be expanded with more constraints
+    type: str = Field(..., min_length=1) 
+
+class TableCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    columns: List[ColumnDefinition]
+
+class TableResponse(BaseModel):
+    id: int
+    name: str
+    columns: List[ColumnDefinition]
+
 # --- Reusable Dependencies ---
 # This dependency handles getting the user's token, validating it, and providing the user object.
 async def get_current_user_details(authorization: str = Header(None)) -> dict:
@@ -87,6 +101,60 @@ async def create_user_database(db_data: DatabaseCreate, auth_details: dict = Dep
         return response.data
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create database: {str(e)}")
+
+@app.get("/api/v1/databases/{database_id}", response_model=DatabaseResponse)
+async def get_single_database(database_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Fetches the details for a single database. RLS policy ensures the user owns it.
+    """
+    try:
+        supabase = auth_details["client"]
+        token = auth_details["token"]
+        response = supabase.table("user_databases").select("*").eq("id", database_id).single().auth(token).execute()
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Database not found")
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@app.get("/api/v1/databases/{database_id}/tables", response_model=List[TableResponse])
+async def get_database_tables(database_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Fetches all tables for a specific database.
+    """
+    try:
+        supabase = auth_details["client"]
+        token = auth_details["token"]
+        response = supabase.table("user_tables").select("id, name, columns").eq("database_id", database_id).order("name").auth(token).execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@app.post("/api/v1/databases/{database_id}/tables", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
+async def create_database_table(database_id: int, table_data: TableCreate, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Creates a new table within a specific database.
+    """
+    try:
+        supabase = auth_details["client"]
+        user = auth_details["user"]
+        token = auth_details["token"]
+
+        # Verify user has access to the parent database first
+        db_check = supabase.table("user_databases").select("id").eq("id", database_id).maybe_single().auth(token).execute()
+        if not db_check.data:
+            raise HTTPException(status_code=404, detail="Parent database not found or access denied")
+
+        new_table_data = {
+            "user_id": user.id,
+            "database_id": database_id,
+            "name": table_data.name,
+            "columns": [col.dict() for col in table_data.columns]
+        }
+        response = supabase.table("user_tables").insert(new_table_data).select("*").single().execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create table: {str(e)}")
 
 # --- HTML Serving Endpoints ---
 

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Workspace - FormPipeDB</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style> 
+        body { font-family: 'Inter', sans-serif; }
+        [x-cloak] { display: none !important; }
+    </style>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-100" x-data="dbDetailApp()" x-init="init('{{ database_id }}')">
+    <div class="flex h-screen bg-gray-100">
+        <!-- Sidebar -->
+        <aside class="flex-shrink-0 w-64 flex flex-col border-r bg-white transition-all duration-300 md:flex">
+            <div class="h-16 flex-shrink-0 flex items-center justify-center border-b text-xl font-bold text-gray-800">
+                FormPipeDB
+            </div>
+            <nav class="flex-1 flex flex-col overflow-y-auto">
+                <a href="/app" class="p-4 flex items-center text-gray-600 hover:bg-gray-100">
+                    <svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                    All Databases
+                </a>
+            </nav>
+        </aside>
+
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Header -->
+            <header class="flex justify-between items-center p-4 bg-white border-b">
+                <div class="flex-1">
+                    <h1 class="text-xl font-semibold text-gray-800" x-text="database.name || 'Loading...'"></h1>
+                    <p class="text-sm text-gray-500" x-text="database.description || ''"></p>
+                </div>
+                <div x-data="{ dropdownOpen: false }" @click.outside="dropdownOpen = false" class="relative">
+                    <button @click="dropdownOpen = !dropdownOpen" class="relative block h-8 w-8 rounded-full overflow-hidden shadow focus:outline-none">
+                        <span id="user-avatar" class="h-full w-full object-cover bg-gray-300 flex items-center justify-center text-gray-600 font-bold"></span>
+                    </button>
+                    <div x-cloak x-show="dropdownOpen" class="absolute right-0 mt-2 w-48 bg-white rounded-md overflow-hidden shadow-xl z-10">
+                        <div class="px-4 py-2 text-sm text-gray-700" id="user-email">Loading...</div>
+                        <a href="#" @click.prevent="signOut()" class="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-500 hover:text-white">Sign Out</a>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Main content -->
+            <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
+                <div class="max-w-7xl mx-auto">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-2xl font-semibold text-gray-800">Tables</h2>
+                        <button @click="showCreateTableModal = true" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none">Create New Table</button>
+                    </div>
+
+                    <!-- Empty State -->
+                    <div x-show="!isLoading && tables.length === 0" class="text-center bg-white p-12 rounded-lg shadow">
+                        <h2 class="text-xl font-medium text-gray-800">This database is empty!</h2>
+                        <p class="text-gray-500 mt-2">Get started by creating your first table.</p>
+                        <button @click="showCreateTableModal = true" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none">Create New Table</button>
+                    </div>
+
+                    <!-- Tables List -->
+                    <div x-show="!isLoading && tables.length > 0" class="bg-white shadow overflow-hidden rounded-lg">
+                        <ul class="divide-y divide-gray-200">
+                            <template x-for="table in tables" :key="table.id">
+                                <li class="px-6 py-4 hover:bg-gray-50 cursor-pointer">
+                                    <h3 class="text-lg font-semibold text-blue-600" x-text="table.name"></h3>
+                                    <p class="text-sm text-gray-500" x-text="`${table.columns.length} columns`"></p>
+                                </li>
+                            </template>
+                        </ul>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Create Table Modal -->
+    <div x-show="showCreateTableModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-20" @keydown.escape.window="showCreateTableModal = false">
+        <div @click.outside="showCreateTableModal = false" class="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6">
+            <h2 class="text-2xl font-bold mb-4">Create a New Table</h2>
+            <form @submit.prevent="createTable()">
+                <div class="space-y-4">
+                    <input type="text" x-model="newTable.name" placeholder="Table Name (e.g., 'customers', 'products')" required class="w-full p-2 border rounded">
+                    
+                    <h3 class="font-semibold pt-2 border-t mt-4">Columns</h3>
+                    <div class="space-y-2">
+                        <template x-for="(column, index) in newTable.columns" :key="index">
+                            <div class="flex items-center space-x-2">
+                                <input type="text" x-model="column.name" placeholder="Column Name" required class="w-1/2 p-2 border rounded">
+                                <select x-model="column.type" class="w-1/2 p-2 border rounded bg-white">
+                                    <option value="text">Text</option>
+                                    <option value="number">Number</option>
+                                    <option value="date">Date</option>
+                                    <option value="boolean">Checkbox (true/false)</option>
+                                    <option value="timestamp">Timestamp</option>
+                                    <option value="jsonb">JSON</option>
+                                </select>
+                                <button type="button" @click="removeColumn(index)" x-show="newTable.columns.length > 1" class="text-red-500 hover:text-red-700 p-1 rounded-full">&times;</button>
+                            </div>
+                        </template>
+                    </div>
+                    <button type="button" @click="addColumn()" class="text-sm text-blue-600 hover:underline">+ Add Column</button>
+                </div>
+                <div class="mt-6 flex justify-end space-x-4">
+                    <button type="button" @click="showCreateTableModal = false" class="px-4 py-2 bg-gray-200 rounded">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">Create Table</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const supabaseUrl = '{{ supabase_url }}';
+        const supabaseAnonKey = '{{ supabase_anon_key }}';
+        if (!supabaseUrl || !supabaseAnonKey) console.error("Supabase credentials missing.");
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+
+        function dbDetailApp() {
+            return {
+                session: null,
+                databaseId: null,
+                database: {},
+                tables: [],
+                isLoading: true,
+                showCreateTableModal: false,
+                newTable: { name: '', columns: [{ name: '', type: 'text' }] },
+
+                init(dbId) {
+                    this.databaseId = dbId;
+                    supabase.auth.onAuthStateChange((_event, session) => {
+                        if (!session) { window.location.href = '/login'; return; }
+                        this.session = session;
+                        this.updateUserInfo(session);
+                        this.fetchDatabaseDetails();
+                        this.fetchTables();
+                    });
+                },
+
+                updateUserInfo(session) {
+                    const user = session.user;
+                    document.getElementById('user-email').textContent = user.email;
+                    const fullName = user.user_metadata.full_name;
+                    document.getElementById('user-avatar').textContent = fullName ? fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : user.email.substring(0, 1).toUpperCase();
+                },
+
+                async fetchDatabaseDetails() {
+                    try {
+                        const response = await fetch(`/api/v1/databases/${this.databaseId}`, { headers: { 'Authorization': `Bearer ${this.session.access_token}` } });
+                        if (!response.ok) throw new Error('Failed to fetch database details');
+                        this.database = await response.json();
+                    } catch (error) { console.error(error); }
+                },
+
+                async fetchTables() {
+                    this.isLoading = true;
+                    try {
+                        const response = await fetch(`/api/v1/databases/${this.databaseId}/tables`, { headers: { 'Authorization': `Bearer ${this.session.access_token}` } });
+                        if (!response.ok) throw new Error('Failed to fetch tables');
+                        this.tables = await response.json();
+                    } catch (error) { console.error(error);
+                    } finally { this.isLoading = false; }
+                },
+
+                async createTable() {
+                    try {
+                        const response = await fetch(`/api/v1/databases/${this.databaseId}/tables`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.session.access_token}` },
+                            body: JSON.stringify(this.newTable)
+                        });
+                        if (!response.ok) {
+                            const err = await response.json();
+                            throw new Error(err.detail || 'Table creation failed');
+                        }
+                        this.showCreateTableModal = false;
+                        this.resetNewTable();
+                        this.fetchTables(); // Refresh the list
+                    } catch (error) {
+                        console.error('Error creating table:', error);
+                        alert(`Could not create table: ${error.message}`);
+                    }
+                },
+
+                async signOut() {
+                    await supabase.auth.signOut();
+                },
+
+                addColumn() { this.newTable.columns.push({ name: '', type: 'text' }); },
+                removeColumn(index) { if (this.newTable.columns.length > 1) this.newTable.columns.splice(index, 1); },
+                resetNewTable() { this.newTable = { name: '', columns: [{ name: '', type: 'text' }] }; }
+            }
+        }
+    </script>
+</body>
+</html>
