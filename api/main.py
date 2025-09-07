@@ -105,17 +105,13 @@ async def create_user_database(db_data: DatabaseCreate, auth_details: dict = Dep
             "description": db_data.description
         }
         response = supabase.table("user_databases").insert(new_db_data, returning="representation").execute()
-        
-        # --- DIAGNOSTIC V7 ---
-        # Modify the response to prove the new code is running.
-        new_db = response.data[0]
-        new_db['name'] = f"V7_SUCCESS: {new_db['name']}"
-        return new_db
+        # The data is returned as a list, so we take the first element.
+        return response.data[0]
     except Exception as e:
         # Catch the specific error for duplicate names
         if "user_databases_user_id_name_key" in str(e):
              raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A database with the name '{db_data.name}' already exists.")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"API Error: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create database: {str(e)}")
 
 @app.get("/api/v1/databases/{database_id}", response_model=DatabaseResponse)
 async def get_single_database(database_id: int, auth_details: dict = Depends(get_current_user_details)):
