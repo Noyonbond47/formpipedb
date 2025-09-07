@@ -15,51 +15,37 @@
     </style>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
-<body class="bg-gray-100">
-    <div x-data="{ sidebarOpen: false }" class="flex h-screen bg-gray-100">
+<body class="bg-gray-100" x-data="app()" x-init="init()">
+    <div class="flex h-screen bg-gray-100">
         <!-- Sidebar -->
-        <aside class="flex-shrink-0 w-64 flex flex-col border-r bg-white transition-all duration-300 md:flex" :class="{'-ml-64': !sidebarOpen}">
+        <aside class="flex-shrink-0 w-64 flex flex-col border-r bg-white transition-all duration-300 md:flex" :class="{' -ml-64': !sidebarOpen }">
             <div class="h-16 flex-shrink-0 flex items-center justify-center border-b text-xl font-bold text-gray-800">
                 FormPipeDB
             </div>
             <nav class="flex-1 flex flex-col overflow-y-auto">
-                <a href="#" class="p-4 flex items-center text-gray-700 bg-gray-200">
+                <a href="/app" class="p-4 flex items-center text-gray-700 bg-gray-200">
                     <svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>
                     Dashboard
                 </a>
-                <a href="#" class="p-4 flex items-center text-gray-600 hover:bg-gray-100">
-                    <svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                    Forms
-                </a>
-                <a href="#" class="p-4 flex items-center text-gray-600 hover:bg-gray-100">
-                    <svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l-4 4-4-4-4 4"></path></svg>
-                    API Keys
-                </a>
-                <a href="#" class="p-4 flex items-center text-gray-600 hover:bg-gray-100">
-                    <svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                    Settings
-                </a>
+                <!-- Other links can be added here later -->
             </nav>
         </aside>
 
         <div class="flex-1 flex flex-col overflow-hidden">
             <!-- Header -->
             <header class="flex justify-between items-center p-4 bg-white border-b">
-                <div class="flex items-center">
-                    <button @click="sidebarOpen = !sidebarOpen" class="text-gray-500 focus:outline-none md:hidden">
-                        <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                    </button>
-                </div>
-
-                <div x-data="{ dropdownOpen: false }" class="relative">
+                <button @click="sidebarOpen = !sidebarOpen" class="text-gray-500 focus:outline-none md:hidden">
+                    <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                </button>
+                <div class="flex-1"></div> <!-- Spacer -->
+                <div x-data="{ dropdownOpen: false }" @click.outside="dropdownOpen = false" class="relative">
                     <button @click="dropdownOpen = !dropdownOpen" class="relative block h-8 w-8 rounded-full overflow-hidden shadow focus:outline-none">
                         <span id="user-avatar" class="h-full w-full object-cover bg-gray-300 flex items-center justify-center text-gray-600 font-bold"></span>
                     </button>
-
-                    <div x-cloak @click.away="dropdownOpen = false" x-show="dropdownOpen" class="absolute right-0 mt-2 w-48 bg-white rounded-md overflow-hidden shadow-xl z-10">
+                    <div x-cloak x-show="dropdownOpen" class="absolute right-0 mt-2 w-48 bg-white rounded-md overflow-hidden shadow-xl z-10">
                         <div class="px-4 py-2 text-sm text-gray-700" id="user-email">Loading...</div>
                         <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-500 hover:text-white">Profile</a>
-                        <a href="#" id="signout-button" class="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-500 hover:text-white">Sign Out</a>
+                        <a href="#" @click.prevent="signOut()" class="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-500 hover:text-white">Sign Out</a>
                     </div>
                 </div>
             </header>
@@ -67,76 +53,159 @@
             <!-- Main content -->
             <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
                 <div class="max-w-7xl mx-auto">
-                    <h1 class="text-2xl font-semibold text-gray-800" id="welcome-message">Welcome!</h1>
-                    <p class="text-gray-600 mt-1">Here's your application dashboard. Configuration options will appear here.</p>
+                    <div class="flex justify-between items-center mb-6">
+                        <h1 class="text-2xl font-semibold text-gray-800">My Forms</h1>
+                        <button @click="showCreateModal = true" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none">Create New Form</button>
+                    </div>
 
-                    <!-- Placeholder for app configuration -->
-                    <div class="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        <div class="bg-white p-6 rounded-lg shadow">
-                            <h2 class="text-lg font-semibold text-gray-700">Total Forms</h2>
-                            <p class="mt-2 text-3xl font-bold text-gray-900">0</p>
-                        </div>
-                        <div class="bg-white p-6 rounded-lg shadow">
-                            <h2 class="text-lg font-semibold text-gray-700">Submissions Today</h2>
-                            <p class="mt-2 text-3xl font-bold text-gray-900">0</p>
-                        </div>
-                        <div class="bg-white p-6 rounded-lg shadow">
-                            <h2 class="text-lg font-semibold text-gray-700">API Usage</h2>
-                            <p class="mt-2 text-3xl font-bold text-gray-900">0%</p>
-                        </div>
+                    <!-- Loading State -->
+                    <div x-show="isLoading" class="text-center py-10">
+                        <p>Loading your forms...</p>
+                    </div>
+
+                    <!-- Empty State -->
+                    <div x-show="!isLoading && forms.length === 0" class="text-center bg-white p-12 rounded-lg shadow">
+                        <h2 class="text-xl font-medium text-gray-800">No forms yet!</h2>
+                        <p class="text-gray-500 mt-2">Get started by creating your first form.</p>
+                        <button @click="showCreateModal = true" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none">Create New Form</button>
+                    </div>
+
+                    <!-- Forms List -->
+                    <div x-show="!isLoading && forms.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <template x-for="form in forms" :key="form.id">
+                            <div class="bg-white p-6 rounded-lg shadow hover:shadow-lg transition-shadow cursor-pointer">
+                                <h3 class="text-lg font-semibold text-gray-900" x-text="form.name"></h3>
+                                <p class="text-gray-600 mt-2 text-sm" x-text="form.description || 'No description'"></p>
+                                <p class="text-gray-400 mt-4 text-xs" x-text="`Columns: ${form.columns.length}`"></p>
+                            </div>
+                        </template>
                     </div>
                 </div>
             </main>
         </div>
     </div>
 
+    <!-- Create Form Modal -->
+    <div x-show="showCreateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-20" @keydown.escape.window="showCreateModal = false">
+        <div @click.outside="showCreateModal = false" class="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6">
+            <h2 class="text-2xl font-bold mb-4">Create a New Form</h2>
+            <form @submit.prevent="createForm()">
+                <div class="space-y-4">
+                    <input type="text" x-model="newForm.name" placeholder="Form Name (e.g., 'Contact Leads')" required class="w-full p-2 border rounded">
+                    <textarea x-model="newForm.description" placeholder="Description (optional)" class="w-full p-2 border rounded" rows="2"></textarea>
+                    
+                    <h3 class="font-semibold pt-2">Columns</h3>
+                    <div class="space-y-2">
+                        <template x-for="(column, index) in newForm.columns" :key="index">
+                            <div class="flex items-center space-x-2">
+                                <input type="text" x-model="column.name" placeholder="Column Name" required class="w-1/2 p-2 border rounded">
+                                <select x-model="column.type" class="w-1/2 p-2 border rounded bg-white">
+                                    <option value="text">Text</option>
+                                    <option value="number">Number</option>
+                                    <option value="date">Date</option>
+                                    <option value="boolean">Checkbox (true/false)</option>
+                                </select>
+                                <button type="button" @click="removeColumn(index)" x-show="newForm.columns.length > 1" class="text-red-500 hover:text-red-700">&times;</button>
+                            </div>
+                        </template>
+                    </div>
+                    <button type="button" @click="addColumn()" class="text-sm text-blue-600 hover:underline">+ Add Column</button>
+                </div>
+                <div class="mt-6 flex justify-end space-x-4">
+                    <button type="button" @click="showCreateModal = false" class="px-4 py-2 bg-gray-200 rounded">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         const supabaseUrl = '{{ supabase_url }}';
         const supabaseAnonKey = '{{ supabase_anon_key }}';
-
         if (!supabaseUrl || !supabaseAnonKey) {
             console.error("Supabase URL or Anon Key is missing. Check Vercel environment variables.");
         }
-
         const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
-        const welcomeMessage = document.getElementById('welcome-message');
-        const userEmailDisplay = document.getElementById('user-email');
-        const userAvatar = document.getElementById('user-avatar');
 
-        // Listen for auth state changes
-        supabase.auth.onAuthStateChange((event, session) => {
-            if (!session) {
-                window.location.href = '/login';
-            } else {
-                const user = session.user;
-                const fullName = user.user_metadata.full_name;
-                const email = user.email;
+        function app() {
+            return {
+                sidebarOpen: false,
+                forms: [],
+                isLoading: true,
+                showCreateModal: false,
+                newForm: { name: '', description: '', columns: [{ name: '', type: 'text' }] },
+                session: null,
 
-                if (fullName) {
-                    welcomeMessage.textContent = `Welcome, ${fullName}!`;
-                    // Use initials for avatar
-                    const initials = fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-                    userAvatar.textContent = initials;
-                } else {
-                    // Fallback to email initial
-                    userAvatar.textContent = email.substring(0, 1).toUpperCase();
-                }
-                
-                userEmailDisplay.textContent = email;
+                init() {
+                    supabase.auth.onAuthStateChange((_event, session) => {
+                        if (!session) {
+                            window.location.href = '/login';
+                        } else {
+                            this.session = session;
+                            this.updateUserInfo(session);
+                            this.fetchForms();
+                        }
+                    });
+                },
+
+                updateUserInfo(session) {
+                    const user = session.user;
+                    const fullName = user.user_metadata.full_name;
+                    const email = user.email;
+                    document.getElementById('user-email').textContent = email;
+                    if (fullName) {
+                        const initials = fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                        document.getElementById('user-avatar').textContent = initials;
+                    } else {
+                        document.getElementById('user-avatar').textContent = email.substring(0, 1).toUpperCase();
+                    }
+                },
+
+                async fetchForms() {
+                    this.isLoading = true;
+                    try {
+                        const response = await fetch('/api/v1/forms', {
+                            headers: { 'Authorization': `Bearer ${this.session.access_token}` }
+                        });
+                        if (!response.ok) throw new Error(`Failed to fetch forms: ${response.statusText}`);
+                        this.forms = await response.json();
+                    } catch (error) {
+                        console.error('Error fetching forms:', error);
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+
+                async createForm() {
+                    try {
+                        const response = await fetch('/api/v1/forms', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${this.session.access_token}`
+                            },
+                            body: JSON.stringify(this.newForm)
+                        });
+                        if (!response.ok) throw new Error('Form creation failed');
+                        this.showCreateModal = false;
+                        this.resetNewForm();
+                        this.fetchForms(); // Refresh the list
+                    } catch (error) {
+                        console.error('Error creating form:', error);
+                        alert('Could not create form. Please check the details and try again.');
+                    }
+                },
+
+                async signOut() {
+                    const { error } = await supabase.auth.signOut();
+                    if (!error) window.location.href = '/';
+                },
+
+                addColumn() { this.newForm.columns.push({ name: '', type: 'text' }); },
+                removeColumn(index) { if (this.newForm.columns.length > 1) this.newForm.columns.splice(index, 1); },
+                resetNewForm() { this.newForm = { name: '', description: '', columns: [{ name: '', type: 'text' }] }; }
             }
-        });
-
-        const signoutButton = document.getElementById('signout-button');
-        signoutButton.addEventListener('click', async () => {
-            signoutButton.textContent = 'Signing out...';
-            const { error } = await supabase.auth.signOut();
-            if (!error) {
-                window.location.href = '/';
-            } else {
-                console.error('Sign out error:', error);
-                signoutButton.textContent = 'Sign Out';
-            }
-        });
+        }
     </script>
 </body>
 </html>

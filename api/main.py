@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from fastapi import FastAPI, Request, Header, HTTPException, status
+from fastapi import FastAPI, Request, Header, HTTPException, status, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -45,59 +45,50 @@ class FormResponse(BaseModel):
     description: Optional[str] = None
     columns: List[ColumnDefinition]
 
-# --- API Endpoints ---
-# We'll prefix our data endpoints with /api/v1
-@app.get("/api/v1/forms", response_model=List[FormResponse])
-async def get_user_forms(authorization: str = Header(None)):
+# --- Reusable Dependencies ---
+# This dependency handles getting the user's token, validating it, and providing the user object.
+async def get_current_user_details(authorization: str = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization header missing or invalid")
-
-    token = authorization.split(" ")[1]
     
-    try:
-        # Create the main Supabase client
-        supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-        
-        # Use the user's token to make an authenticated request.
-        # This tells Supabase "execute this query as the user who owns this token".
-        # Supabase then applies the RLS policies automatically.
-        response = supabase.table("forms").select("id, created_at, name, description, columns").order("created_at", desc=True).auth(token).execute()
-
-        # The response.data will contain only the forms belonging to the user.
-        return response.data
-    except Exception as e:
-        # This could happen if the token is invalid/expired
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Access denied: {str(e)}")
-
-@app.post("/api/v1/forms", response_model=FormResponse, status_code=status.HTTP_201_CREATED)
-async def create_user_form(
-    form_data: FormCreate,
-    authorization: str = Header(None)
-):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization header missing or invalid")
-
     token = authorization.split(" ")[1]
     
     try:
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-        
-        # Get user from token to securely get their ID
         user_response = supabase.auth.get_user(token)
         user = user_response.user
         if not user:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid token or user not found")
+        
+        return {"user": user, "token": token, "client": supabase}
+    except Exception as e:
+        # This could be a PostgrestError or other exception
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Invalid token: {str(e)}")
 
-        # Prepare data for insertion, ensuring it's associated with the correct user
+# --- API Endpoints ---
+# We'll prefix our data endpoints with /api/v1
+@app.get("/api/v1/forms", response_model=List[FormResponse])
+async def get_user_forms(auth_details: dict = Depends(get_current_user_details)):
+    try:
+        supabase = auth_details["client"]
+        token = auth_details["token"]
+        response = supabase.table("forms").select("id, created_at, name, description, columns").order("created_at", desc=True).auth(token).execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@app.post("/api/v1/forms", response_model=FormResponse, status_code=status.HTTP_201_CREATED)
+async def create_user_form(form_data: FormCreate, auth_details: dict = Depends(get_current_user_details)):
+    try:
+        supabase = auth_details["client"]
+        user = auth_details["user"]
         new_form_data = {
             "user_id": user.id,
             "name": form_data.name,
             "description": form_data.description,
             "columns": [col.dict() for col in form_data.columns]
         }
-
         response = supabase.table("forms").insert(new_form_data).select("*").single().execute()
-        
         return response.data
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create form: {str(e)}")
