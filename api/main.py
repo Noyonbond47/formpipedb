@@ -104,8 +104,9 @@ async def create_user_database(db_data: DatabaseCreate, auth_details: dict = Dep
             "name": db_data.name,
             "description": db_data.description
         }
-        response = supabase.table("user_databases").insert(new_db_data).select("*").single().execute()
-        return response.data
+        response = supabase.table("user_databases").insert(new_db_data).execute()
+        # The data is returned as a list, so we take the first element.
+        return response.data[0]
     except Exception as e:
         # Catch the specific error for duplicate names
         if "user_databases_user_id_name_key" in str(e):
@@ -158,8 +159,9 @@ async def create_database_table(database_id: int, table_data: TableCreate, auth_
             "name": table_data.name,
             "columns": [col.dict() for col in table_data.columns]
         }
-        response = supabase.table("user_tables").insert(new_table_data).select("*").single().execute()
-        return response.data
+        response = supabase.table("user_tables").insert(new_table_data).execute()
+        # The data is returned as a list, so we take the first element.
+        return response.data[0]
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create table: {str(e)}")
 
