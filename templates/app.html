@@ -4,14 +4,90 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>App - FormPipeDB</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style> 
+        body { font-family: 'Inter', sans-serif; }
+        [x-cloak] { display: none !important; }
+    </style>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
-<body>
-    <div class="container">
-        <h1>The App is Under Construction</h1>
-        <p id="welcome-message">Welcome! We're glad to have you here. The main application is still being built.</p>
-        <button id="signout-button">Sign Out</button>
+<body class="bg-gray-100">
+    <div x-data="{ sidebarOpen: false }" class="flex h-screen bg-gray-100">
+        <!-- Sidebar -->
+        <aside class="flex-shrink-0 w-64 flex flex-col border-r bg-white transition-all duration-300 md:flex" :class="{'-ml-64': !sidebarOpen}">
+            <div class="h-16 flex-shrink-0 flex items-center justify-center border-b text-xl font-bold text-gray-800">
+                FormPipeDB
+            </div>
+            <nav class="flex-1 flex flex-col overflow-y-auto">
+                <a href="#" class="p-4 flex items-center text-gray-700 bg-gray-200">
+                    <svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>
+                    Dashboard
+                </a>
+                <a href="#" class="p-4 flex items-center text-gray-600 hover:bg-gray-100">
+                    <svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    Forms
+                </a>
+                <a href="#" class="p-4 flex items-center text-gray-600 hover:bg-gray-100">
+                    <svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l-4 4-4-4-4 4"></path></svg>
+                    API Keys
+                </a>
+                <a href="#" class="p-4 flex items-center text-gray-600 hover:bg-gray-100">
+                    <svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    Settings
+                </a>
+            </nav>
+        </aside>
+
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Header -->
+            <header class="flex justify-between items-center p-4 bg-white border-b">
+                <div class="flex items-center">
+                    <button @click="sidebarOpen = !sidebarOpen" class="text-gray-500 focus:outline-none md:hidden">
+                        <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                    </button>
+                </div>
+
+                <div x-data="{ dropdownOpen: false }" class="relative">
+                    <button @click="dropdownOpen = !dropdownOpen" class="relative block h-8 w-8 rounded-full overflow-hidden shadow focus:outline-none">
+                        <span id="user-avatar" class="h-full w-full object-cover bg-gray-300 flex items-center justify-center text-gray-600 font-bold"></span>
+                    </button>
+
+                    <div x-cloak @click.away="dropdownOpen = false" x-show="dropdownOpen" class="absolute right-0 mt-2 w-48 bg-white rounded-md overflow-hidden shadow-xl z-10">
+                        <div class="px-4 py-2 text-sm text-gray-700" id="user-email">Loading...</div>
+                        <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-500 hover:text-white">Profile</a>
+                        <a href="#" id="signout-button" class="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-500 hover:text-white">Sign Out</a>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Main content -->
+            <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
+                <div class="max-w-7xl mx-auto">
+                    <h1 class="text-2xl font-semibold text-gray-800" id="welcome-message">Welcome!</h1>
+                    <p class="text-gray-600 mt-1">Here's your application dashboard. Configuration options will appear here.</p>
+
+                    <!-- Placeholder for app configuration -->
+                    <div class="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div class="bg-white p-6 rounded-lg shadow">
+                            <h2 class="text-lg font-semibold text-gray-700">Total Forms</h2>
+                            <p class="mt-2 text-3xl font-bold text-gray-900">0</p>
+                        </div>
+                        <div class="bg-white p-6 rounded-lg shadow">
+                            <h2 class="text-lg font-semibold text-gray-700">Submissions Today</h2>
+                            <p class="mt-2 text-3xl font-bold text-gray-900">0</p>
+                        </div>
+                        <div class="bg-white p-6 rounded-lg shadow">
+                            <h2 class="text-lg font-semibold text-gray-700">API Usage</h2>
+                            <p class="mt-2 text-3xl font-bold text-gray-900">0%</p>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
     </div>
 
     <script>
@@ -19,31 +95,46 @@
         const supabaseAnonKey = '{{ supabase_anon_key }}';
 
         if (!supabaseUrl || !supabaseAnonKey) {
-            console.error("Supabase URL or Anon Key is missing.");
+            console.error("Supabase URL or Anon Key is missing. Check Vercel environment variables.");
         }
 
         const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
         const welcomeMessage = document.getElementById('welcome-message');
+        const userEmailDisplay = document.getElementById('user-email');
+        const userAvatar = document.getElementById('user-avatar');
 
-        // Check if user is logged in, otherwise redirect to login
+        // Listen for auth state changes
         supabase.auth.onAuthStateChange((event, session) => {
             if (!session) {
                 window.location.href = '/login';
             } else {
                 const user = session.user;
-                // Check for full_name in user_metadata
                 const fullName = user.user_metadata.full_name;
+                const email = user.email;
+
                 if (fullName) {
-                    welcomeMessage.textContent = `Welcome, ${fullName}! We're glad to have you here. The main application is still being built.`;
+                    welcomeMessage.textContent = `Welcome, ${fullName}!`;
+                    // Use initials for avatar
+                    const initials = fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                    userAvatar.textContent = initials;
+                } else {
+                    // Fallback to email initial
+                    userAvatar.textContent = email.substring(0, 1).toUpperCase();
                 }
+                
+                userEmailDisplay.textContent = email;
             }
         });
 
         const signoutButton = document.getElementById('signout-button');
         signoutButton.addEventListener('click', async () => {
+            signoutButton.textContent = 'Signing out...';
             const { error } = await supabase.auth.signOut();
             if (!error) {
                 window.location.href = '/';
+            } else {
+                console.error('Sign out error:', error);
+                signoutButton.textContent = 'Sign Out';
             }
         });
     </script>
