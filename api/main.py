@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from fastapi import FastAPI, Request, Header, HTTPException, status, Depends
+from fastapi import FastAPI, Request, Header, HTTPException, status, Depends, Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -72,6 +72,10 @@ class RowResponse(BaseModel):
 
 class RowCreate(BaseModel):
     data: dict[str, Any]
+
+class PaginatedRowResponse(BaseModel):
+    total: int
+    data: List[RowResponse]
 
 # --- Reusable Dependencies ---
 # This dependency handles getting the user's token, validating it, and providing the user object.
@@ -186,7 +190,10 @@ async def create_database_table(database_id: int, table_data: TableCreate, auth_
         # The data is returned as a list, so we take the first element.
         return response.data[0]
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"API v3 Error: Could not create table: {str(e)}")
+        # Check for a unique constraint violation on the table name for that database
+        if "user_tables_database_id_name_key" in str(e):
+             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A table with the name '{table_data.name}' already exists in this database.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create table: {str(e)}")
 
 @app.put("/api/v1/tables/{table_id}", response_model=TableResponse)
 async def update_database_table(table_id: int, table_data: TableUpdate, auth_details: dict = Depends(get_current_user_details)):
@@ -249,16 +256,35 @@ async def get_single_table(table_id: int, auth_details: dict = Depends(get_curre
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-@app.get("/api/v1/tables/{table_id}/rows", response_model=List[RowResponse])
-async def get_table_rows(table_id: int, auth_details: dict = Depends(get_current_user_details)):
+@app.get("/api/v1/tables/{table_id}/rows", response_model=PaginatedRowResponse)
+async def get_table_rows(
+    table_id: int, 
+    auth_details: dict = Depends(get_current_user_details),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    search: Optional[str] = Query(None)
+):
     """
-    Fetches all data rows for a specific table.
+    Fetches data rows for a specific table with pagination and search.
     """
     try:
         supabase = auth_details["client"]
+        
+        query = supabase.table("table_rows").select("*", count='exact').eq("table_id", table_id)
+
+        if search:
+            # To perform a search, we need the column names of the table.
+            table_info_res = supabase.table("user_tables").select("columns").eq("id", table_id).single().execute()
+            if table_info_res.data and table_info_res.data.get("columns"):
+                # Search across all columns by casting their JSONB value to text
+                all_columns = [col["name"] for col in table_info_res.data["columns"]]
+                if all_columns:
+                    or_filter = ",".join([f"data->>{col}.ilike.%{search}%" for col in all_columns])
+                    query = query.or_(or_filter)
+
         # RLS on table_rows ensures user can only access rows they own.
-        response = supabase.table("table_rows").select("*").eq("table_id", table_id).order("id").execute()
-        return response.data
+        response = query.order("id").range(offset, offset + limit - 1).execute()
+        return {"total": response.count, "data": response.data}
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 

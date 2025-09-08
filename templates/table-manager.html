@@ -68,9 +68,14 @@
 
         <!-- Data Tab Content -->
         <div id="data-tab-content" class="tab-content">
-            <div class="flex justify-end mb-4 gap-2">
-                <button id="add-row-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Add Row</button>
-                <button class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 ml-2">Export to CSV</button>
+            <div class="flex justify-between items-center mb-4 gap-2">
+                <div class="w-1/3">
+                    <input type="search" id="row-search-input" placeholder="Search rows..." class="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div class="flex gap-2">
+                    <button id="add-row-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Add Row</button>
+                    <button class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 ml-2">Export to CSV</button>
+                </div>
             </div>
             <div class="bg-white rounded-lg shadow-sm border overflow-auto max-h-[70vh]">
                 <table class="min-w-full text-sm">
@@ -81,6 +86,9 @@
                         <!-- Data rows will be injected here -->
                     </tbody>
                 </table>
+            </div>
+            <div id="pagination-controls" class="mt-4 flex justify-between items-center text-sm text-gray-600">
+                <!-- Pagination controls will be injected here -->
             </div>
         </div>
     </main>
@@ -174,6 +182,11 @@ document.addEventListener('DOMContentLoaded', () => {
         dbName: '{{ db_name }}',
         tables: [],
         selectedTable: null,
+        pagination: {
+            currentPage: 1,
+            limit: 50, // This should match the default limit in the API
+            totalRows: 0
+        }
     };
 
     // DOM Elements
@@ -198,10 +211,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const structureTbody = document.getElementById('structure-tbody');
     const addRowBtn = document.getElementById('add-row-btn');
     const dataTbody = document.getElementById('data-tbody');
+    const searchInput = document.getElementById('row-search-input');
 
 
     function getAuthToken() {
         return localStorage.getItem('supabase_token');
+    }
+
+    function debounce(func, timeout = 300){
+        let timer;
+        return (...args) => {
+            clearTimeout(timer);
+            timer = setTimeout(() => { func.apply(this, args); }, timeout);
+        };
     }
 
     async function fetchDbIdAndTables() {
@@ -257,8 +279,9 @@ document.addEventListener('DOMContentLoaded', () => {
             placeholderContent.classList.add('hidden');
             deleteTableBtn.disabled = false;
 
+            // Reset to page 1 whenever a new table is selected
             renderStructure(state.selectedTable.columns);
-            fetchAndRenderData(state.selectedTable.id);
+            fetchAndRenderData(state.selectedTable.id, 1);
         }
     }
 
@@ -293,22 +316,31 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function fetchAndRenderData(tableId) {
+    async function fetchAndRenderData(tableId, page = 1, searchTerm = '') {
+        state.pagination.currentPage = page;
+        const offset = (page - 1) * state.pagination.limit;
+
         const dataTable = document.querySelector('#data-tab-content table');
         const thead = dataTable.querySelector('thead');
         const tbody = document.getElementById('data-tbody');
+        const columns = state.selectedTable.columns;
+        const colspan = columns.length + 1;
 
-        thead.innerHTML = `<tr><th class="p-3 text-left font-semibold">Loading...</th></tr>`;
-        tbody.innerHTML = '';
+        thead.innerHTML = ''; // Clear old header while loading
+        tbody.innerHTML = `<tr><td colspan="${colspan}" class="p-8 text-center text-gray-500"><div class="flex justify-center items-center gap-2"><svg class="animate-spin h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span>Loading data...</span></div></td></tr>`;
+        renderPagination(); // Render empty pagination while loading
+
+        const searchParam = searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : '';
 
         try {
-            const response = await fetch(`/api/v1/tables/${tableId}/rows`, {
+            const response = await fetch(`/api/v1/tables/${tableId}/rows?limit=${state.pagination.limit}&offset=${offset}${searchParam}`, {
                 headers: { 'Authorization': `Bearer ${getAuthToken()}` }
             });
             if (!response.ok) throw new Error('Failed to fetch rows');
-            const rows = await response.json();
+            const result = await response.json();
+            const rows = result.data;
+            state.pagination.totalRows = result.total;
 
-            const columns = state.selectedTable.columns;
             const headerRow = document.createElement('tr');
             // Add an empty header for the actions column
             headerRow.innerHTML += `<th class="p-3 w-12"></th>`;
@@ -318,13 +350,16 @@ document.addEventListener('DOMContentLoaded', () => {
             thead.innerHTML = '';
             thead.appendChild(headerRow);
 
+            tbody.innerHTML = ''; // Clear loading indicator
             if (rows.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="${columns.length + 1}" class="p-8 text-center text-gray-500">No data in this table.</td></tr>`;
+                renderPagination();
                 return;
             }
 
             rows.forEach(row => {
                 const tr = document.createElement('tr');
+                tr.dataset.rowId = row.id;
                 // Add delete button cell
                 tr.innerHTML += `
                     <td class="p-3 text-center">
@@ -338,6 +373,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 tbody.appendChild(tr);
             });
+            renderPagination();
         } catch (error) {
             console.error(error);
             tbody.innerHTML = `<tr><td colspan="99" class="p-4 text-center text-red-500">Error loading data.</td></tr>`;
@@ -468,7 +504,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(err.detail || 'Failed to create table');
             }
             closeModal(createTableModal);
-            fetchDbIdAndTables(); // Refresh table list
+            const newTable = await response.json();
+            await fetchDbIdAndTables(); // Refresh table list
+            
+            // Auto-select the newly created table
+            const newTableLink = tableList.querySelector(`a[data-table-id="${newTable.id}"]`);
+            if (newTableLink) {
+                newTableLink.click();
+            }
         } catch (error) {
             alert(`Error: ${error.message}`);
         }
@@ -566,6 +609,32 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(`Error saving data: ${error.message}`);
             fetchAndRenderData(state.selectedTable.id); // Revert UI on failure
         }
+    }
+
+    function renderPagination() {
+        const { currentPage, limit, totalRows } = state.pagination;
+        const paginationControls = document.getElementById('pagination-controls');
+        paginationControls.innerHTML = '';
+
+        if (totalRows <= limit && currentPage === 1) return;
+
+        const totalPages = Math.ceil(totalRows / limit);
+        const startRow = totalRows > 0 ? (currentPage - 1) * limit + 1 : 0;
+        const endRow = Math.min(currentPage * limit, totalRows);
+
+        const info = document.createElement('div');
+        info.textContent = `Showing ${startRow} to ${endRow} of ${totalRows} rows`;
+        
+        const buttons = document.createElement('div');
+        buttons.className = 'flex gap-2';
+        buttons.innerHTML = `
+            <button data-page="${currentPage - 1}" class="prev-page-btn px-3 py-1 border rounded-md bg-white hover:bg-gray-100" ${currentPage === 1 ? 'disabled' : ''}>Previous</button>
+            <span class="px-3 py-1">Page ${currentPage} of ${totalPages}</span>
+            <button data-page="${currentPage + 1}" class="next-page-btn px-3 py-1 border rounded-md bg-white hover:bg-gray-100" ${currentPage >= totalPages ? 'disabled' : ''}>Next</button>
+        `;
+
+        paginationControls.appendChild(info);
+        paginationControls.appendChild(buttons);
     }
 
     async function saveTableStructure() {
@@ -676,6 +745,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, true); // Use capture phase to handle event delegation properly
 
+    const debouncedSearch = debounce(() => {
+        const searchTerm = searchInput.value.trim();
+        if (state.selectedTable) {
+            fetchAndRenderData(state.selectedTable.id, 1, searchTerm);
+        }
+    });
+
+    searchInput.addEventListener('input', debouncedSearch);
+
+    document.getElementById('pagination-controls').addEventListener('click', (e) => {
+        const target = e.target.closest('button');
+        if (target && (target.classList.contains('prev-page-btn') || target.classList.contains('next-page-btn'))) {
+            const page = parseInt(target.dataset.page, 10);
+            if (page && state.selectedTable) {
+                fetchAndRenderData(state.selectedTable.id, page);
+            }
+        }
+    });
     addRowBtn.addEventListener('click', handleAddRow);
     addColumnToModalBtn.addEventListener('click', () => {
         document.getElementById('new-columns-list').appendChild(createColumnRow());
