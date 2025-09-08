@@ -87,28 +87,34 @@ class QueryRequest(BaseModel):
 # This dependency handles getting the user's token, validating it, and providing the user object.
 async def get_current_user_details(authorization: str = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization header missing or invalid")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Authorization header missing or invalid"
+        )
     
     token = authorization.split(" ")[1]
     
     try:
-        # Create a new Supabase client for each request
+        # In a serverless environment like Vercel, creating a new client per request is a safe
+        # and stateless pattern. The client is lightweight.
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
         
         # Set the authorization for this client instance.
         # All subsequent requests with this client will be authenticated as the user.
         supabase.postgrest.auth(token)
         
-        # We still need to verify the token is valid and get user details
+        # Explicitly validate the JWT to ensure it's not expired or tampered with by fetching the user.
+        # This call to Supabase Auth also returns the user's details.
         user_response = supabase.auth.get_user(token)
         user = user_response.user
+
         if not user:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid token or user not found")
         
         # Return the authenticated client and user details
         return {"user": user, "client": supabase}
     except Exception as e:
-        # This could be a PostgrestError or other exception
+        # This could be a PostgrestError or another exception
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Invalid token: {str(e)}")
 
 # --- API Endpoints ---
@@ -213,8 +219,13 @@ async def update_database_table(table_id: int, table_data: TableUpdate, auth_det
             "columns": [col.dict() for col in table_data.columns]
         }
         response = supabase.table("user_tables").update(update_data, returning="representation").eq("id", table_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found or access denied.")
         return response.data[0]
     except Exception as e:
+        # Handle case where the new table name conflicts with an existing one in the same database.
+        if "user_tables_database_id_name_key" in str(e):
+             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A table with the name '{table_data.name}' already exists in this database.")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update table: {str(e)}")
 
 @app.delete("/api/v1/databases/{database_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -334,6 +345,8 @@ async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict 
     try:
         supabase = auth_details["client"]
         response = supabase.table("table_rows").update({"data": row_data.data}, returning="representation").eq("id", row_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Row not found or access denied.")
         return response.data[0]
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update row: {str(e)}")
@@ -393,10 +406,11 @@ async def export_database_as_sql(database_id: int, auth_details: dict = Depends(
                 values_to_insert = []
                 for v in row.data.values():
                     if isinstance(v, str):
-                        # Basic escaping for strings
-                        values_to_insert.append(f"'{str(v).replace(\"'\", \"''\")}'")
+                        values_to_insert.append(f"'{str(v).replace(\"'\", \"''\")}'") # Basic escaping for strings
                     elif v is None:
                         values_to_insert.append("NULL")
+                    elif isinstance(v, bool):
+                        values_to_insert.append("TRUE" if v else "FALSE")
                     else:
                         values_to_insert.append(str(v))
                 

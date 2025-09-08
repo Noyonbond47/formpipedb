@@ -98,18 +98,24 @@
 
         <!-- SQL Runner Tab Content -->
         <div id="sql-tab-content" class="tab-content hidden">
-            <div class="bg-white rounded-lg shadow-sm border p-4">
-                <h3 class="text-lg font-semibold mb-2">Custom Query Runner</h3>
-                <p class="text-sm text-gray-600 mb-4">
-                    This feature is currently in a planning phase. Executing arbitrary SQL securely in a multi-tenant environment requires a robust parsing and translation layer to convert standard SQL into queries that work against our underlying data structure. This is a significant architectural task. For now, you can use the search bar on the Data tab for basic filtering.
-                </p>
-                <div class="bg-gray-800 text-white p-4 rounded-md font-mono text-sm">
-                    <textarea id="sql-query-input" class="w-full h-48 bg-transparent text-white outline-none resize-none" placeholder="-- Example: SELECT * FROM your_table_name WHERE id > 10;"></textarea>
+            <div class="space-y-6">
+                <div class="bg-white rounded-lg shadow-sm border">
+                    <div class="p-4 border-b">
+                        <h3 class="text-lg font-semibold">SQL Runner</h3>
+                        <p class="text-sm text-gray-500 mt-1">Execute custom SQL queries against your database.</p>
+                    </div>
+                    <div class="p-4">
+                        <div class="bg-gray-900 text-white p-4 rounded-md font-mono text-sm ring-1 ring-gray-200">
+                            <textarea id="sql-query-input" class="w-full h-40 bg-transparent text-white outline-none resize-none" placeholder="-- Example: SELECT * FROM users WHERE id > 10;"></textarea>
+                        </div>
+                        <div class="mt-4 flex justify-end">
+                            <button id="run-query-btn" class="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 font-semibold">Run Query</button>
+                        </div>
+                    </div>
                 </div>
-                <div class="mt-4 flex justify-end">
-                    <button id="run-query-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed" disabled>Run Query</button>
+                <div id="query-results-container" class="bg-white rounded-lg shadow-sm border min-h-[10rem]">
+                    <!-- Query results or errors will be displayed here -->
                 </div>
-                <div id="query-results-container" class="mt-6"></div>
             </div>
         </div>
     </main>
@@ -234,6 +240,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const dataTbody = document.getElementById('data-tbody');
     const exportCsvBtn = document.getElementById('export-csv-btn');
     const searchInput = document.getElementById('row-search-input');
+    const runQueryBtn = document.getElementById('run-query-btn');
+    const sqlQueryInput = document.getElementById('sql-query-input');
+    const queryResultsContainer = document.getElementById('query-results-container');
 
 
     /**
@@ -789,6 +798,86 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function renderQueryResults(result) {
+        queryResultsContainer.innerHTML = '';
+        if (result.error) {
+            queryResultsContainer.innerHTML = `
+                <div class="p-4 border-b bg-red-50 text-red-700 font-semibold">Error</div>
+                <div class="p-4 font-mono text-sm text-red-600 whitespace-pre-wrap">${result.error}</div>
+            `;
+            return;
+        }
+
+        const data = result.data;
+        if (!data || data.length === 0) {
+            queryResultsContainer.innerHTML = `
+                <div class="p-4 border-b font-semibold">Success</div>
+                <div class="p-4 text-gray-500">Query executed successfully, but returned no rows.</div>
+            `;
+            return;
+        }
+
+        const headers = Object.keys(data[0]);
+        const table = document.createElement('table');
+        table.className = 'min-w-full text-sm';
+        table.innerHTML = `
+            <thead class="bg-gray-50">
+                <tr>${headers.map(h => `<th class="p-3 text-left font-semibold">${h}</th>`).join('')}</tr>
+            </thead>
+            <tbody class="divide-y">
+                ${data.map(row => `<tr>${headers.map(h => `<td class="p-3 font-mono">${row[h]}</td>`).join('')}</tr>`).join('')}
+            </tbody>
+        `;
+        queryResultsContainer.appendChild(table);
+    }
+
+    async function handleRunQuery() {
+        const query = sqlQueryInput.value.trim();
+        if (!query) return;
+
+        runQueryBtn.disabled = true;
+        runQueryBtn.textContent = 'Running...';
+        queryResultsContainer.innerHTML = `<div class="p-4 text-gray-500 flex items-center gap-2"><svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Executing query...</div>`;
+
+        // --- MOCK IMPLEMENTATION ---
+        // This section simulates an API call. Replace this with the real fetchWithAuth call
+        // once the backend endpoint is ready.
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate network delay
+        if (query.toLowerCase().includes('error')) {
+            renderQueryResults({ error: 'SYNTAX ERROR at or near "error"\nLINE 1: ...' });
+        } else if (query.toLowerCase().startsWith('select')) {
+            renderQueryResults({ data: [
+                { id: 1, name: 'John Doe', email: 'john.doe@example.com' },
+                { id: 2, name: 'Jane Smith', email: 'jane.smith@example.com' }
+            ]});
+        } else {
+            renderQueryResults({ data: [] }); // For INSERT, UPDATE, etc.
+        }
+        // --- END MOCK IMPLEMENTATION ---
+
+        /*
+        // --- REAL IMPLEMENTATION (when backend is ready) ---
+        try {
+            const response = await fetchWithAuth(`/api/v1/databases/${state.dbId}/execute-query`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: query })
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                renderQueryResults({ error: result.detail || 'An unknown error occurred.' });
+            } else {
+                renderQueryResults({ data: result });
+            }
+        } catch (error) {
+            renderQueryResults({ error: error.message });
+        }
+        */
+
+        runQueryBtn.disabled = false;
+        runQueryBtn.textContent = 'Run Query';
+    }
+
     // Event Listeners
     tableList.addEventListener('click', handleTableSelect);
     
@@ -835,6 +924,7 @@ document.addEventListener('DOMContentLoaded', () => {
             handleDeleteRow(rowId);
         }
     });
+    runQueryBtn.addEventListener('click', handleRunQuery);
     exportCsvBtn.addEventListener('click', handleExportCsv);
     dataTbody.addEventListener('blur', (e) => {
         // The 'blur' event fires when a user clicks away from an editable cell.
