@@ -3,8 +3,9 @@
 
 import os
 from pathlib import Path
+import io, csv
 from fastapi import FastAPI, Request, Header, HTTPException, status, Depends, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from typing import List, Optional, Any
@@ -77,6 +78,10 @@ class RowCreate(BaseModel):
 class PaginatedRowResponse(BaseModel):
     total: int
     data: List[RowResponse]
+
+class QueryRequest(BaseModel):
+    query: str
+
 
 # --- Reusable Dependencies ---
 # This dependency handles getting the user's token, validating it, and providing the user object.
@@ -289,6 +294,20 @@ async def get_table_rows(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+@app.get("/api/v1/tables/{table_id}/all-rows", response_model=List[RowResponse])
+async def get_all_table_rows(table_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Fetches ALL data rows for a specific table, bypassing pagination.
+    Used for features like CSV export.
+    """
+    try:
+        supabase = auth_details["client"]
+        # RLS on table_rows ensures user can only access rows they own.
+        response = supabase.table("table_rows").select("*").eq("table_id", table_id).order("id").execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
 @app.post("/api/v1/tables/{table_id}/rows", response_model=RowResponse, status_code=status.HTTP_201_CREATED)
 async def create_table_row(table_id: int, auth_details: dict = Depends(get_current_user_details)):
     """
@@ -331,6 +350,65 @@ async def delete_table_row(row_id: int, auth_details: dict = Depends(get_current
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Row not found or you do not have permission to delete it.")
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete row: {str(e)}")
+
+@app.get("/api/v1/databases/{database_id}/export-sql", response_class=PlainTextResponse)
+async def export_database_as_sql(database_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Generates a full SQL script for a database, including CREATE TABLE and INSERT statements.
+    """
+    supabase = auth_details["client"]
+    
+    # Fetch database name
+    db_res = await get_single_database(database_id, auth_details)
+    db_name = db_res.name
+
+    # Fetch all tables for the database
+    tables = await get_database_tables(database_id, auth_details)
+    
+    sql_script = f"-- SQL Dump for database: {db_name}\n\n"
+
+    for table in tables:
+        # Generate CREATE TABLE statement
+        sql_script += f"-- Structure for table: {table.name}\n"
+        create_statement = f"CREATE TABLE \"{table.name}\" (\n"
+        column_defs = []
+        for col in table.columns:
+            col_def = f"  \"{col.name}\" {col.type.upper()}"
+            if col.is_primary_key: col_def += " PRIMARY KEY"
+            if col.is_not_null: col_def += " NOT NULL"
+            if col.is_unique: col_def += " UNIQUE"
+            # Note: Foreign key constraints are complex to script dynamically and are omitted for simplicity.
+            column_defs.append(col_def)
+        create_statement += ",\n".join(column_defs)
+        create_statement += "\n);\n\n"
+        sql_script += create_statement
+
+        # Generate INSERT statements
+        rows = await get_all_table_rows(table.id, auth_details)
+        if rows:
+            sql_script += f"-- Data for table: {table.name}\n"
+            for row in rows:
+                # We only insert data from the 'data' blob, not the primary key 'id'
+                columns_to_insert = [f'"{k}"' for k in row.data.keys()]
+                values_to_insert = []
+                for v in row.data.values():
+                    if isinstance(v, str):
+                        # Basic escaping for strings
+                        values_to_insert.append(f"'{str(v).replace(\"'\", \"''\")}'")
+                    elif v is None:
+                        values_to_insert.append("NULL")
+                    else:
+                        values_to_insert.append(str(v))
+                
+                if columns_to_insert:
+                    sql_script += f"INSERT INTO \"{table.name}\" ({', '.join(columns_to_insert)}) VALUES ({', '.join(values_to_insert)});\n"
+            sql_script += "\n"
+
+    return PlainTextResponse(content=sql_script)
+
+@app.post("/api/v1/databases/{database_id}/execute-query")
+async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_details: dict = Depends(get_current_user_details)):
+    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Custom query execution is a planned feature and not yet available. It requires significant architectural work to securely parse and translate user SQL against the underlying data store.")
 
 # --- HTML Serving Endpoints ---
 
