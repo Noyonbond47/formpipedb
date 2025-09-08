@@ -1,5 +1,3 @@
-# Forcing a new Vercel build on [current date]
-
 import os
 from pathlib import Path
 from fastapi import FastAPI, Request, Header, HTTPException, status, Depends
@@ -336,7 +334,12 @@ async def app_page(request: Request):
 async def table_manager_page(request: Request, db_name: str):
     return templates.TemplateResponse(
         "table-manager.html",
-        {"request": request, "db_name": db_name}
+        {
+            "request": request,
+            "db_name": db_name,
+            "supabase_url": SUPABASE_URL,
+            "supabase_anon_key": SUPABASE_ANON_KEY,
+        },
     )
 
 @app.get("/about", response_class=HTMLResponse)
