@@ -39,13 +39,13 @@
     <main id="main-content" class="flex-1 p-8 overflow-auto hidden">
         <div class="border-b mb-6">
             <nav class="flex space-x-6">
-                <button data-tab="structure" class="tab-btn py-2 px-1 font-medium border-b-2 border-blue-500 text-blue-600">Structure</button>
-                <button data-tab="data" class="tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Data</button>
+                <button data-tab="data" class="tab-btn py-2 px-1 font-medium border-b-2 border-blue-500 text-blue-600">Data</button>
+                <button data-tab="structure" class="tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Structure</button>
             </nav>
         </div>
 
         <!-- Structure Tab Content -->
-        <div id="structure-tab-content" class="tab-content">
+        <div id="structure-tab-content" class="tab-content hidden">
             <div class="bg-white rounded-lg shadow-sm border overflow-hidden">
                 <table class="min-w-full text-sm">
                     <thead class="bg-gray-50">
@@ -67,7 +67,7 @@
         </div>
 
         <!-- Data Tab Content -->
-        <div id="data-tab-content" class="tab-content hidden">
+        <div id="data-tab-content" class="tab-content">
             <div class="flex justify-end mb-4 gap-2">
                 <button id="add-row-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Add Row</button>
                 <button class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 ml-2">Export to CSV</button>
@@ -334,7 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                 `;
                 columns.forEach(col => {
-                    tr.innerHTML += `<td class="p-3 font-mono text-sm">${row.data[col.name] ?? ''}</td>`;
+                    tr.innerHTML += `<td class="p-3 font-mono text-sm editable-cell" data-column-name="${col.name}" ${!col.is_primary_key ? 'contenteditable="true"' : ''}>${row.data[col.name] ?? ''}</td>`;
                 });
                 tbody.appendChild(tr);
             });
@@ -533,6 +533,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function handleUpdateRow(cellElement) {
+        const tr = cellElement.closest('tr');
+        const rowId = tr.dataset.rowId;
+        if (!rowId) return;
+
+        const rowData = {};
+        tr.querySelectorAll('td[data-column-name]').forEach(cell => {
+            const colName = cell.dataset.columnName;
+            rowData[colName] = cell.innerText;
+        });
+
+        const payload = { data: rowData };
+
+        try {
+            const response = await fetch(`/api/v1/rows/${rowId}`, {
+                method: 'PUT',
+                headers: { 'Authorization': getAuthToken(), 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || 'Failed to update row');
+            }
+            // Visual feedback for success
+            cellElement.style.transition = 'background-color 0.5s';
+            cellElement.style.backgroundColor = '#dcfce7'; // Tailwind green-100
+            setTimeout(() => {
+                cellElement.style.backgroundColor = '';
+            }, 1500);
+        } catch (error) {
+            alert(`Error saving data: ${error.message}`);
+            fetchAndRenderData(state.selectedTable.id); // Revert UI on failure
+        }
+    }
+
     async function saveTableStructure() {
         if (!state.selectedTable) return false;
 
@@ -634,6 +669,12 @@ document.addEventListener('DOMContentLoaded', () => {
             handleDeleteRow(rowId);
         }
     });
+    dataTbody.addEventListener('blur', (e) => {
+        // The 'blur' event fires when a user clicks away from an editable cell.
+        if (e.target.classList.contains('editable-cell') && e.target.hasAttribute('contenteditable')) {
+            handleUpdateRow(e.target);
+        }
+    }, true); // Use capture phase to handle event delegation properly
 
     addRowBtn.addEventListener('click', handleAddRow);
     addColumnToModalBtn.addEventListener('click', () => {
