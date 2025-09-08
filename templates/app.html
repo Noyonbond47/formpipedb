@@ -42,6 +42,16 @@
             </form>
         </section>
 
+        <div class="text-center my-6">
+            <span class="text-gray-500">OR</span>
+        </div>
+        <section class="mb-12 bg-white p-6 rounded-lg shadow-sm border">
+            <h2 class="text-xl font-semibold mb-4">Import Database from SQL</h2>
+            <div class="flex justify-center">
+                <button id="import-sql-btn" class="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">Import from SQL Script...</button>
+            </div>
+        </section>
+
         <!-- Manage Existing Databases -->
         <section>
             <h2 class="text-xl font-semibold mb-4">Manage Existing Databases</h2>
@@ -65,6 +75,40 @@
         </div>
     </div>
 
+    <!-- Import SQL Modal -->
+    <div id="import-sql-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+        <form id="import-sql-form" class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div class="p-6 border-b">
+                <h3 class="text-xl font-semibold">Import Database from SQL</h3>
+            </div>
+            <div class="p-6 space-y-4 overflow-y-auto">
+                <div>
+                    <label for="import-db-name" class="block text-sm font-medium text-gray-700">New Database Name</label>
+                    <input id="import-db-name" type="text" placeholder="imported_database" required class="mt-1 w-full p-2 border rounded-md">
+                </div>
+                <div>
+                    <label for="import-db-desc" class="block text-sm font-medium text-gray-700">Description (optional)</label>
+                    <input id="import-db-desc" type="text" class="mt-1 w-full p-2 border rounded-md">
+                </div>
+                <div>
+                    <label for="import-sql-script" class="block text-sm font-medium text-gray-700">SQL Script</label>
+                    <p class="text-xs text-gray-500 mb-2">Paste your SQL script below or upload a .sql/.txt file. The parser supports simple CREATE TABLE and INSERT INTO statements.</p>
+                    <div class="bg-gray-900 text-white p-2 rounded-md font-mono text-sm">
+                        <textarea id="import-sql-script" required class="w-full h-64 bg-transparent text-white outline-none resize-vertical" placeholder="CREATE TABLE users (...);"></textarea>
+                    </div>
+                </div>
+                <div>
+                    <label for="sql-file-input" class="block text-sm font-medium text-gray-700">Or Upload File</label>
+                    <input id="sql-file-input" type="file" accept=".sql,.txt" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                </div>
+            </div>
+            <div class="p-6 mt-auto border-t bg-gray-50 flex justify-end gap-4">
+                <button id="cancel-import-sql-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+                <button id="submit-import-sql-btn" type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Import Database</button>
+            </div>
+        </form>
+    </div>
+
     <script>
         const supabaseUrl = '{{ supabase_url }}';
         const supabaseAnonKey = '{{ supabase_anon_key }}';
@@ -82,6 +126,13 @@
             const newDbNameInput = document.getElementById('new-db-name');
             const newDbDescInput = document.getElementById('new-db-desc');
             const signOutBtn = document.getElementById('sign-out-btn');
+            const importSqlBtn = document.getElementById('import-sql-btn');
+            const importSqlModal = document.getElementById('import-sql-modal');
+            const importSqlForm = document.getElementById('import-sql-form');
+            const cancelImportSqlBtn = document.getElementById('cancel-import-sql-btn');
+            const submitImportSqlBtn = document.getElementById('submit-import-sql-btn');
+            const sqlFileInput = document.getElementById('sql-file-input');
+            const sqlScriptTextarea = document.getElementById('import-sql-script');
 
             // Modal elements
             const deleteModal = document.getElementById('delete-modal');
@@ -89,6 +140,16 @@
             const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
             const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
             let dbToDeleteId = null;
+
+            function openModal(modal) {
+                modal.classList.remove('hidden');
+                setTimeout(() => modal.classList.remove('opacity-0'), 10);
+            }
+
+            const closeModal = (modal) => {
+                modal.classList.add('opacity-0');
+                setTimeout(() => modal.classList.add('hidden'), 250);
+            };
 
             function getAuthToken() {
                 return localStorage.getItem('supabase_token');
@@ -194,6 +255,40 @@
                 }
             }
 
+            async function handleImportSql(e) {
+                e.preventDefault();
+                const name = document.getElementById('import-db-name').value.trim();
+                const description = document.getElementById('import-db-desc').value.trim();
+                const script = sqlScriptTextarea.value.trim();
+
+                if (!name || !script) {
+                    alert('Database name and SQL script are required.');
+                    return;
+                }
+
+                submitImportSqlBtn.disabled = true;
+                submitImportSqlBtn.textContent = 'Importing...';
+
+                try {
+                    const response = await fetch('/api/v1/databases/import-sql', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${getAuthToken()}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, description, script })
+                    });
+                    if (!response.ok) {
+                        const err = await response.json();
+                        throw new Error(err.detail || 'Failed to import database');
+                    }
+                    closeModal(importSqlModal);
+                    fetchDatabases(); // Re-fetch the list
+                } catch (error) {
+                    alert(`Error: ${error.message}`);
+                } finally {
+                    submitImportSqlBtn.disabled = false;
+                    submitImportSqlBtn.textContent = 'Import Database';
+                }
+            }
+
             dbList.addEventListener('click', (e) => {
                 if (e.target.classList.contains('delete-btn')) {
                     const dbItem = e.target.closest('[data-id]');
@@ -211,14 +306,26 @@
                 }
             });
 
-            const closeModal = () => {
-                deleteModal.classList.add('opacity-0');
-                setTimeout(() => deleteModal.classList.add('hidden'), 250);
-            };
-
             createDbForm.addEventListener('submit', handleCreateDatabase);
-            cancelDeleteBtn.addEventListener('click', closeModal);
+            cancelDeleteBtn.addEventListener('click', () => closeModal(deleteModal));
             confirmDeleteBtn.addEventListener('click', handleDeleteDatabase);
+
+            importSqlBtn.addEventListener('click', () => {
+                importSqlForm.reset();
+                openModal(importSqlModal);
+            });
+            cancelImportSqlBtn.addEventListener('click', () => closeModal(importSqlModal));
+            importSqlForm.addEventListener('submit', handleImportSql);
+
+            sqlFileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => { sqlScriptTextarea.value = event.target.result; };
+                    reader.readAsText(file);
+                }
+            });
+
             signOutBtn.addEventListener('click', async () => {
                 await supabase.auth.signOut();
                 localStorage.removeItem('supabase_token');

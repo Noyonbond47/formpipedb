@@ -4,6 +4,7 @@
 import os
 from pathlib import Path
 import io, csv
+import re
 from fastapi import FastAPI, Request, Header, HTTPException, status, Depends, Query
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
@@ -81,6 +82,11 @@ class PaginatedRowResponse(BaseModel):
 
 class QueryRequest(BaseModel):
     query: str
+
+class SqlImportRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    script: str
 
 
 # --- Reusable Dependencies ---
@@ -424,6 +430,82 @@ async def export_database_as_sql(database_id: int, auth_details: dict = Depends(
             sql_script += "\n"
 
     return PlainTextResponse(content=sql_script)
+
+@app.post("/api/v1/databases/import-sql", response_model=DatabaseResponse, status_code=status.HTTP_201_CREATED)
+async def import_database_from_sql(import_data: SqlImportRequest, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Creates a new database and attempts to populate it from a user-provided SQL script.
+    This has a very limited, best-effort SQL parser and is not guaranteed to work with all SQL dialects.
+    """
+    supabase = auth_details["client"]
+    user = auth_details["user"]
+
+    # 1. Create the parent database container
+    try:
+        db_response = await create_user_database(
+            db_data=DatabaseCreate(name=import_data.name, description=import_data.description),
+            auth_details=auth_details
+        )
+        new_db_id = db_response.id
+    except HTTPException as e:
+        # Re-raise exceptions from create_user_database (e.g., duplicate name)
+        raise e
+
+    # 2. Best-effort parsing and execution of the SQL script
+    statements = [s.strip() for s in import_data.script.split(';') if s.strip()]
+    created_tables_map = {} # Maps table name to table ID
+
+    try:
+        # First pass: Create all tables
+        for statement in statements:
+            if statement.upper().startswith("CREATE TABLE"):
+                create_match = re.search(r'CREATE TABLE\s+[`"]?(\w+)[`"]?\s*\((.+)\)', statement, re.DOTALL | re.IGNORECASE)
+                if not create_match: continue
+                
+                table_name, columns_str = create_match.groups()
+                columns_defs = []
+                for col_line in columns_str.split(','):
+                    col_line = col_line.strip()
+                    if not col_line or col_line.upper().startswith("PRIMARY KEY"): continue
+                    
+                    parts = col_line.split()
+                    col_name = parts[0].strip('`"')
+                    col_type = parts[1].lower()
+
+                    columns_defs.append(ColumnDefinition(
+                        name=col_name, type=col_type,
+                        is_primary_key="PRIMARY KEY" in col_line.upper(),
+                        is_unique="UNIQUE" in col_line.upper(),
+                        is_not_null="NOT NULL" in col_line.upper()
+                    ))
+                
+                if not columns_defs: continue
+                table_create_payload = TableCreate(name=table_name, columns=columns_defs)
+                created_table = await create_database_table(new_db_id, table_create_payload, auth_details)
+                created_tables_map[table_name] = created_table.id
+
+        # Second pass: Insert all data
+        for statement in statements:
+            if statement.upper().startswith("INSERT INTO"):
+                insert_match = re.search(r'INSERT INTO\s+[`"]?(\w+)[`"]?\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)', statement, re.IGNORECASE)
+                if not insert_match: continue
+                
+                table_name, columns_str, values_str = insert_match.groups()
+                if table_name not in created_tables_map: continue
+                
+                table_id = created_tables_map[table_name]
+                columns = [c.strip().strip('`"') for c in columns_str.split(',')]
+                # WARNING: This naive parser will fail if string values contain commas.
+                values = [v.strip().strip("'").strip('"') for v in values_str.split(',')]
+                
+                if len(columns) == len(values):
+                    await supabase.table("table_rows").insert({"user_id": user.id, "table_id": table_id, "data": dict(zip(columns, values))}).execute()
+
+    except Exception as e:
+        await delete_user_database(new_db_id, auth_details)
+        raise HTTPException(status_code=400, detail=f"Failed to import SQL script: {str(e)}. The new database has been rolled back.")
+
+    return db_response
 
 @app.post("/api/v1/databases/{database_id}/execute-query")
 async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_details: dict = Depends(get_current_user_details)):
