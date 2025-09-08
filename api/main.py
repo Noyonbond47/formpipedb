@@ -158,35 +158,6 @@ async def create_user_database(db_data: DatabaseCreate, auth_details: dict = Dep
              raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A database with the name '{db_data.name}' already exists.")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create database: {str(e)}")
 
-@app.post("/api/v1/databases/{database_id}/create-table-from-sql", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
-async def create_table_from_sql(database_id: int, query_data: QueryRequest, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Parses a CREATE TABLE SQL statement and creates the table.
-    """
-    statement = query_data.query
-    if not statement.upper().strip().startswith("CREATE TABLE"):
-        raise HTTPException(status_code=400, detail="Only CREATE TABLE statements are allowed.")
-
-    try:
-        create_match = re.search(r'CREATE TABLE\s+[`"]?(\w+)[`"]?\s*\((.+)\)', statement, re.DOTALL | re.IGNORECASE)
-        if not create_match: raise ValueError("Invalid CREATE TABLE syntax.")
-        
-        table_name, columns_str = create_match.groups()
-        columns_defs = []
-        for col_line in columns_str.split(','):
-            col_line = col_line.strip()
-            if not col_line or col_line.upper().startswith(("PRIMARY KEY", "FOREIGN KEY", "UNIQUE", "CONSTRAINT")): continue
-            parts = col_line.split()
-            if not parts: continue
-            col_name = parts[0].strip('`"')
-            type_and_constraints = " ".join(parts[1:])
-            type_match = re.match(r'[\w\(\s,\)]+', type_and_constraints)
-            col_type = type_match.group(0).strip() if type_match else parts[1]
-            columns_defs.append(ColumnDefinition(name=col_name, type=col_type.lower(), is_primary_key="PRIMARY KEY" in type_and_constraints.upper(), is_unique="UNIQUE" in type_and_constraints.upper(), is_not_null="NOT NULL" in type_and_constraints.upper()))
-        return await create_database_table(database_id, TableCreate(name=table_name, columns=columns_defs), auth_details)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse SQL: {str(e)}")
-
 @app.get("/api/v1/databases/{database_id}", response_model=DatabaseResponse)
 async def get_single_database(database_id: int, auth_details: dict = Depends(get_current_user_details)):
     """
