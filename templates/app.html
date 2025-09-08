@@ -199,10 +199,13 @@
 
             // Initial Load
             supabase.auth.onAuthStateChange((event, session) => {
-                if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+                if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
                     if (session) {
                         localStorage.setItem('supabase_token', session.access_token);
-                        fetchDatabases();
+                        // Only fetch databases on initial load or sign in, not on every token refresh
+                        if (event !== 'TOKEN_REFRESHED') {
+                            fetchDatabases();
+                        }
                     } else {
                         window.location.href = '/login';
                     }

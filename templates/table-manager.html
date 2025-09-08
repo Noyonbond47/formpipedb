@@ -590,7 +590,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!rowId) return;
 
         const rowData = {};
-        tr.querySelectorAll('td[data-column-name]').forEach(cell => {
+        // IMPORTANT: Only gather data from cells that are actually editable.
+        // This correctly excludes the primary key from the data payload.
+        tr.querySelectorAll('td.editable-cell[contenteditable="true"]').forEach(cell => {
             const colName = cell.dataset.columnName;
             rowData[colName] = cell.innerText;
         });
@@ -809,10 +811,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial Load
     supabase.auth.onAuthStateChange((event, session) => {
-        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
             if (session) {
                 localStorage.setItem('supabase_token', session.access_token);
-                fetchDbIdAndTables();
+                // Only fetch initial data on sign in, not on every token refresh
+                if (event !== 'TOKEN_REFRESHED') {
+                    fetchDbIdAndTables();
+                }
             } else {
                 window.location.href = '/login';
             }
