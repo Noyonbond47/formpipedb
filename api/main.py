@@ -494,8 +494,10 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
         # Re-raise exceptions from create_user_database (e.g., duplicate name)
         raise e
 
-    # 2. Best-effort parsing and execution of the SQL script
-    statements = [s.strip() for s in import_data.script.split(';') if s.strip()]
+    # 2. Robust parsing and execution of the SQL script
+    # First, remove all comments from the script
+    script_no_comments = re.sub(r'--.*', '', import_data.script)
+    statements = [s.strip() for s in script_no_comments.split(';') if s.strip()]
     created_tables_map = {} # Maps table name to table ID
 
     try:
@@ -509,17 +511,25 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
                 columns_defs = []
                 for col_line in columns_str.split(','):
                     col_line = col_line.strip()
-                    if not col_line or col_line.upper().startswith("PRIMARY KEY"): continue
+                    # Skip constraint-only lines like PRIMARY KEY(col) or FOREIGN KEY(...)
+                    if not col_line or col_line.upper().startswith(("PRIMARY KEY", "FOREIGN KEY", "UNIQUE", "CONSTRAINT")):
+                        continue
                     
                     parts = col_line.split()
+                    if not parts: continue
+
                     col_name = parts[0].strip('`"')
-                    col_type = parts[1].lower()
+                    
+                    # More robustly get the type, which can contain spaces like 'DECIMAL(10, 2)'
+                    type_and_constraints = " ".join(parts[1:])
+                    type_match = re.match(r'[\w\(\s,\)]+', type_and_constraints)
+                    col_type = type_match.group(0).strip() if type_match else parts[1]
 
                     columns_defs.append(ColumnDefinition(
-                        name=col_name, type=col_type,
-                        is_primary_key="PRIMARY KEY" in col_line.upper(),
-                        is_unique="UNIQUE" in col_line.upper(),
-                        is_not_null="NOT NULL" in col_line.upper()
+                        name=col_name, type=col_type.lower(),
+                        is_primary_key="PRIMARY KEY" in type_and_constraints.upper(),
+                        is_unique="UNIQUE" in type_and_constraints.upper(),
+                        is_not_null="NOT NULL" in type_and_constraints.upper()
                     ))
                 
                 if not columns_defs: continue
@@ -530,21 +540,27 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
         # Second pass: Insert all data
         for statement in statements:
             if statement.upper().startswith("INSERT INTO"):
-                insert_match = re.search(r'INSERT INTO\s+[`"]?(\w+)[`"]?\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)', statement, re.IGNORECASE)
-                if not insert_match: continue
+                # Handle multi-value INSERT statements
+                header_match = re.search(r'INSERT INTO\s+[`"]?(\w+)[`"]?\s*\(([^)]+)\)\s*VALUES', statement, re.IGNORECASE)
+                if not header_match: continue
                 
-                table_name, columns_str, values_str = insert_match.groups()
+                table_name, columns_str = header_match.groups()
                 if table_name not in created_tables_map: continue
                 
                 table_id = created_tables_map[table_name]
                 columns = [c.strip().strip('`"') for c in columns_str.split(',')]
                 
-                # Use the csv module to handle commas and quotes within values, a much more robust method.
-                values_reader = csv.reader([values_str], skipinitialspace=True, quotechar="'")
-                values = next(values_reader)
-                
-                if len(columns) == len(values):
-                    await supabase.table("table_rows").insert({"user_id": user.id, "table_id": table_id, "data": dict(zip(columns, values))}).execute()
+                # Find all value tuples like (...), (...), (...)
+                values_part = statement[header_match.end():].strip()
+                value_tuples_str = re.findall(r'\(([^)]+)\)', values_part)
+
+                for values_str in value_tuples_str:
+                    # Use the csv module to handle commas and quotes within values
+                    values_reader = csv.reader([values_str], skipinitialspace=True)
+                    values = next(values_reader)
+                    
+                    if len(columns) == len(values):
+                        await supabase.table("table_rows").insert({"user_id": user.id, "table_id": table_id, "data": dict(zip(columns, values))}).execute()
 
     except Exception as e:
         await delete_user_database(new_db_id, auth_details)
