@@ -36,7 +36,7 @@
         <section class="mb-12 bg-white p-6 rounded-lg shadow-sm border">
             <h2 class="text-xl font-semibold mb-4">Create New Database</h2>
             <form id="create-db-form" class="flex items-center gap-4">
-                <input id="new-db-name" type="text" placeholder="Database Name (e.g., project_alpha)" required class="w-1/3 p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
+                <input id="new-db-name" type="text" placeholder="project_alpha" required pattern="^[a-z0-9_]+$" title="Use only lowercase letters, numbers, and underscores." class="w-1/3 p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
                 <input id="new-db-desc" type="text" placeholder="Description (optional)" class="flex-grow p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
                 <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">Create</button>
             </form>
@@ -290,19 +290,27 @@
             }
 
             dbList.addEventListener('click', (e) => {
-                if (e.target.classList.contains('delete-btn')) {
-                    const dbItem = e.target.closest('[data-id]');
+                const deleteBtn = e.target.closest('.delete-btn');
+                if (deleteBtn) {
+                    const dbItem = deleteBtn.closest('[data-id]');
                     dbToDeleteId = dbItem.dataset.id;
                     const dbName = dbItem.querySelector('span.font-medium').textContent;
                     modalDbName.textContent = dbName;
                     deleteModal.classList.remove('hidden');
                     setTimeout(() => deleteModal.classList.remove('opacity-0'), 10);
+                    return; // Stop further processing
                 }
-                if (e.target.classList.contains('export-sql-btn')) {
-                    const dbId = e.target.dataset.dbId;
-                    const dbName = e.target.dataset.dbName;
-                    e.target.textContent = 'Exporting...';
-                    handleExportSql(dbId, dbName).finally(() => e.target.textContent = 'Export SQL');
+
+                const exportBtn = e.target.closest('.export-sql-btn');
+                if (exportBtn) {
+                    const dbId = exportBtn.dataset.dbId;
+                    const dbName = exportBtn.dataset.dbName;
+                    exportBtn.textContent = 'Exporting...';
+                    exportBtn.disabled = true;
+                    handleExportSql(dbId, dbName).finally(() => {
+                        exportBtn.textContent = 'Export SQL';
+                        exportBtn.disabled = false;
+                    });
                 }
             });
 

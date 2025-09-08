@@ -40,15 +40,16 @@
 
     <!-- Main Content -->
     <main id="main-content" class="flex-1 p-8 overflow-auto hidden">
-        <div id="main-tabs" class="border-b mb-6">
+        <div id="table-tabs-container" class="border-b mb-6">
             <nav class="flex space-x-6">
-                <button data-tab="data" class="main-tab-btn py-2 px-1 font-medium border-b-2 border-blue-500 text-blue-600">Data Browser</button>
-                <button data-tab="sql" class="main-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">SQL Runner</button>
+                <button data-tab="data" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-blue-500 text-blue-600">Data</button>
+                <button data-tab="structure" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Structure</button>
+                <button data-tab="sql" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">SQL Runner</button>
             </nav>
         </div>
 
         <!-- Structure Tab Content -->
-        <div id="structure-tab-content" class="tab-content hidden">
+        <div id="structure-tab-content" class="table-tab-content hidden">
             <div class="bg-white rounded-lg shadow-sm border overflow-hidden">
                 <table class="min-w-full text-sm">
                     <thead class="bg-gray-50">
@@ -70,7 +71,7 @@
         </div>
 
         <!-- Data Tab Content -->
-        <div id="data-tab-content" class="main-tab-content">
+        <div id="data-tab-content" class="table-tab-content">
             <div class="flex justify-between items-center mb-4 gap-2">
                 <div class="w-1/3">
                     <input type="search" id="row-search-input" placeholder="Search rows..." class="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none">
@@ -96,7 +97,7 @@
         </div>
 
         <!-- SQL Runner Tab Content -->
-        <div id="sql-tab-content" class="main-tab-content hidden">
+        <div id="sql-tab-content" class="table-tab-content hidden">
             <div class="space-y-6">
                 <div class="bg-white rounded-lg shadow-sm border">
                     <div class="p-4 border-b">
@@ -220,8 +221,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const mainContent = document.getElementById('main-content');
     const placeholderContent = document.getElementById('placeholder-content');
     const deleteTableBtn = document.getElementById('delete-table-btn');
-    const mainTabButtons = document.querySelectorAll('.main-tab-btn');
-    const tabContents = document.querySelectorAll('.tab-content');
+    const tableTabButtons = document.querySelectorAll('.table-tab-btn');
+    const tableTabContainer = document.getElementById('table-tabs-container');
     const createTableBtn = document.getElementById('create-table-btn');
     const createTableModal = document.getElementById('create-table-modal');
     const createTableForm = document.getElementById('create-table-form');
@@ -329,6 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
             mainContent.classList.remove('hidden');
             placeholderContent.classList.add('hidden');
             deleteTableBtn.disabled = false;
+            tableTabContainer.classList.remove('hidden');
 
             // Reset to page 1 whenever a new table is selected
             renderStructure(state.selectedTable.columns);
@@ -435,18 +437,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    mainTabButtons.forEach(button => {
+    tableTabButtons.forEach(button => {
         button.addEventListener('click', () => {
             const tab = button.dataset.tab;
 
-            mainTabButtons.forEach(btn => {
+            tableTabButtons.forEach(btn => {
                 btn.classList.remove('border-blue-500', 'text-blue-600');
                 btn.classList.add('border-transparent', 'text-gray-500');
             });
             button.classList.add('border-blue-500', 'text-blue-600');
             button.classList.remove('border-transparent', 'text-gray-500');
 
-            document.querySelectorAll('.main-tab-content').forEach(content => {
+            document.querySelectorAll('.table-tab-content').forEach(content => {
                 // Hide all main tab contents
                 content.classList.add('hidden');
             });
@@ -587,6 +589,7 @@ document.addEventListener('DOMContentLoaded', () => {
             closeModal(deleteTableModal);
             mainContent.classList.add('hidden');
             placeholderContent.classList.remove('hidden');
+            tableTabContainer.classList.add('hidden');
             deleteTableBtn.disabled = true;
             state.selectedTable = null;
             await fetchDbIdAndTables(); // Refresh list
@@ -843,24 +846,6 @@ document.addEventListener('DOMContentLoaded', () => {
         runQueryBtn.textContent = 'Running...';
         queryResultsContainer.innerHTML = `<div class="p-4 text-gray-500 flex items-center gap-2"><svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Executing query...</div>`;
 
-        // --- MOCK IMPLEMENTATION ---
-        // This section simulates an API call. Replace this with the real fetchWithAuth call
-        // once the backend endpoint is ready.
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate network delay
-        if (query.toLowerCase().includes('error')) {
-            renderQueryResults({ error: 'SYNTAX ERROR at or near "error"\nLINE 1: ...' });
-        } else if (query.toLowerCase().startsWith('select')) {
-            renderQueryResults({ data: [
-                { id: 1, name: 'John Doe', email: 'john.doe@example.com' },
-                { id: 2, name: 'Jane Smith', email: 'jane.smith@example.com' }
-            ]});
-        } else {
-            renderQueryResults({ data: [] }); // For INSERT, UPDATE, etc.
-        }
-        // --- END MOCK IMPLEMENTATION ---
-
-        /*
-        // --- REAL IMPLEMENTATION (when backend is ready) ---
         try {
             const response = await fetchWithAuth(`/api/v1/databases/${state.dbId}/execute-query`, {
                 method: 'POST',
@@ -876,7 +861,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             renderQueryResults({ error: error.message });
         }
-        */
 
         runQueryBtn.disabled = false;
         runQueryBtn.textContent = 'Run Query';

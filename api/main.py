@@ -448,10 +448,15 @@ async def export_database_as_sql(database_id: int, auth_details: dict = Depends(
                 if not row.data:
                     continue
 
-                # We only insert data from the 'data' blob, not the primary key 'id'
-                columns_to_insert = [f'"{k}"' for k in row.data.keys()]
+                # We only insert data from the 'data' blob. The user-visible PK is in here.
+                # We need to find the actual PK column name to exclude it if it's auto-incrementing.
+                pk_col_name = next((col.name for col in table.columns if col.is_primary_key), None)
+                
+                columns_to_insert = [f'"{k}"' for k in row.data.keys() if k != pk_col_name]
                 values_to_insert = []
-                for v in row.data.values():
+                for k, v in row.data.items():
+                    if k == pk_col_name:
+                        continue
                     if isinstance(v, str):
                         # Refactored for clarity: correctly escape single quotes for SQL
                         escaped_v = str(v).replace("'", "''")
@@ -462,6 +467,7 @@ async def export_database_as_sql(database_id: int, auth_details: dict = Depends(
                         values_to_insert.append("TRUE" if v else "FALSE")
                     else:
                         values_to_insert.append(str(v))
+
                 if columns_to_insert:
                     sql_script += f"INSERT INTO \"{table.name}\" ({', '.join(columns_to_insert)}) VALUES ({', '.join(values_to_insert)});\n"
             sql_script += "\n"
@@ -532,8 +538,10 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
                 
                 table_id = created_tables_map[table_name]
                 columns = [c.strip().strip('`"') for c in columns_str.split(',')]
-                # WARNING: This naive parser will fail if string values contain commas.
-                values = [v.strip().strip("'").strip('"') for v in values_str.split(',')]
+                
+                # Use the csv module to handle commas and quotes within values, a much more robust method.
+                values_reader = csv.reader([values_str], skipinitialspace=True, quotechar="'")
+                values = next(values_reader)
                 
                 if len(columns) == len(values):
                     await supabase.table("table_rows").insert({"user_id": user.id, "table_id": table_id, "data": dict(zip(columns, values))}).execute()
@@ -546,7 +554,49 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
 
 @app.post("/api/v1/databases/{database_id}/execute-query")
 async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_details: dict = Depends(get_current_user_details)):
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Custom query execution is a planned feature and not yet available. It requires significant architectural work to securely parse and translate user SQL against the underlying data store.")
+    """
+    Safely parses and executes a read-only (SELECT) SQL query from the user.
+    This is NOT raw SQL execution. It translates the query into a safe API call.
+    """
+    supabase = auth_details["client"]
+    query = query_data.query.strip()
+
+    if not query.upper().startswith("SELECT"):
+        raise HTTPException(status_code=400, detail="Only SELECT queries are allowed.")
+
+    # --- Safe SQL Parser using Regex ---
+    # This parser extracts clauses and translates them into safe Supabase queries.
+    try:
+        # 1. Extract columns and table name
+        select_from_match = re.search(r'SELECT\s+(.+?)\s+FROM\s+[`"]?(\w+)[`"]?', query, re.IGNORECASE)
+        if not select_from_match:
+            raise ValueError("Invalid SELECT...FROM... syntax.")
+        
+        columns_str, table_name = select_from_match.groups()
+        
+        # 2. Find the actual table ID from the user-provided table name
+        tables = await get_database_tables(database_id, auth_details)
+        target_table = next((t for t in tables if t.name.lower() == table_name.lower()), None)
+        if not target_table:
+            raise ValueError(f"Table '{table_name}' not found in this database.")
+
+        # 3. Build the Supabase query
+        # We always query the master `table_rows` table, filtering by the found table_id
+        sb_query = supabase.table("table_rows").select(f"id, data->{columns_str}").eq("table_id", target_table.id)
+
+        # 4. (Optional) Add WHERE, ORDER BY, LIMIT clauses by extending the parser here
+        # Example for LIMIT:
+        limit_match = re.search(r'LIMIT\s+(\d+)', query, re.IGNORECASE)
+        if limit_match:
+            limit = int(limit_match.group(1))
+            sb_query = sb_query.limit(limit)
+
+        response = sb_query.execute()
+        
+        # Flatten the result from {"data": {"col": "val"}} to {"col": "val"}
+        return [row['data'] for row in response.data if row.get('data')]
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Query failed: {str(e)}")
 
 # --- HTML Serving Endpoints ---
 
