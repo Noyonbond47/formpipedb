@@ -213,6 +213,35 @@ async def create_database_table(database_id: int, table_data: TableCreate, auth_
              raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A table with the name '{table_data.name}' already exists in this database.")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create table: {str(e)}")
 
+@app.post("/api/v1/databases/{database_id}/create-table-from-sql", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
+async def create_table_from_sql(database_id: int, query_data: QueryRequest, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Parses a CREATE TABLE SQL statement and creates the table.
+    """
+    statement = query_data.query
+    if not statement.upper().strip().startswith("CREATE TABLE"):
+        raise HTTPException(status_code=400, detail="Only CREATE TABLE statements are allowed.")
+
+    try:
+        create_match = re.search(r'CREATE TABLE\s+[`"]?(\w+)[`"]?\s*\((.+)\)', statement, re.DOTALL | re.IGNORECASE)
+        if not create_match: raise ValueError("Invalid CREATE TABLE syntax.")
+        
+        table_name, columns_str = create_match.groups()
+        columns_defs = []
+        for col_line in columns_str.split(','):
+            col_line = col_line.strip()
+            if not col_line or col_line.upper().startswith(("PRIMARY KEY", "FOREIGN KEY", "UNIQUE", "CONSTRAINT")): continue
+            parts = col_line.split()
+            if not parts: continue
+            col_name = parts[0].strip('`"')
+            type_and_constraints = " ".join(parts[1:])
+            type_match = re.match(r'[\w\(\s,\)]+', type_and_constraints)
+            col_type = type_match.group(0).strip() if type_match else parts[1]
+            columns_defs.append(ColumnDefinition(name=col_name, type=col_type.lower(), is_primary_key="PRIMARY KEY" in type_and_constraints.upper(), is_unique="UNIQUE" in type_and_constraints.upper(), is_not_null="NOT NULL" in type_and_constraints.upper()))
+        return await create_database_table(database_id, TableCreate(name=table_name, columns=columns_defs), auth_details)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse SQL: {str(e)}")
+
 @app.put("/api/v1/tables/{table_id}", response_model=TableResponse)
 async def update_database_table(table_id: int, table_data: TableUpdate, auth_details: dict = Depends(get_current_user_details)):
     """
@@ -580,35 +609,49 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
     if not query.upper().startswith("SELECT"):
         raise HTTPException(status_code=400, detail="Only SELECT queries are allowed.")
 
-    # --- Safe SQL Parser using Regex ---
-    # This parser extracts clauses and translates them into safe Supabase queries.
     try:
-        # 1. Extract columns and table name
-        select_from_match = re.search(r'SELECT\s+(.+?)\s+FROM\s+[`"]?(\w+)[`"]?', query, re.IGNORECASE)
+        # --- Advanced Safe SQL Parser ---
+        # 1. Extract columns and table name(s)
+        select_from_match = re.search(r'SELECT\s+(.+?)\s+FROM\s+([`"]?\w+[`"]?(?:\s*,\s*[`"]?\w+[`"]?)*)', query, re.IGNORECASE | re.DOTALL)
         if not select_from_match:
             raise ValueError("Invalid SELECT...FROM... syntax.")
         
-        columns_str, table_name = select_from_match.groups()
+        columns_str, tables_str = select_from_match.groups()
+        
+        # For simplicity in this safe runner, we'll focus on the first table for filtering.
+        # A full SQL engine would build a more complex join plan.
+        first_table_name = tables_str.split(',')[0].strip().strip('`"')
         
         # 2. Find the actual table ID from the user-provided table name
         tables = await get_database_tables(database_id, auth_details)
-        target_table = next((t for t in tables if t.name.lower() == table_name.lower()), None)
+        target_table = next((t for t in tables if t.name.lower() == first_table_name.lower()), None)
         if not target_table:
-            raise ValueError(f"Table '{table_name}' not found in this database.")
+            raise ValueError(f"Table '{first_table_name}' not found in this database.")
 
         # 3. Build the Supabase query
         # We always query the master `table_rows` table, filtering by the found table_id
-        sb_query = supabase.table("table_rows").select(f"id, data->{columns_str}").eq("table_id", target_table.id)
+        # The select string is passed directly to PostgREST, which can handle aliasing, etc.
+        sb_query = supabase.table("table_rows").select(f"id, data->{columns_str}").eq("database_id", database_id) # Security: scope to DB
 
-        # 4. (Optional) Add WHERE, ORDER BY, LIMIT clauses by extending the parser here
-        # Example for LIMIT:
+        # 4. Add support for WHERE, ORDER BY, and LIMIT clauses
+        where_match = re.search(r'WHERE\s+(.+?)(?:\s+ORDER BY|\s+LIMIT|$)', query, re.IGNORECASE | re.DOTALL)
+        if where_match:
+            # WARNING: This is a simplified filter parser. A production system would need a full SQL parsing library.
+            # It supports simple "col = 'value'" or "col > value"
+            condition = where_match.group(1).strip()
+            cond_parts = re.match(r'[`"]?(\w+)[`"]?\s*([<>=!]+)\s*([\'"]?[\w\s\.]+[\'"]?)', condition)
+            if cond_parts:
+                col, op, val = cond_parts.groups()
+                # Translate SQL operators to PostgREST operators
+                op_map = {'=': 'eq', '>': 'gt', '<': 'lt', '>=': 'gte', '<=': 'lte', '!=': 'neq'}
+                sb_query = sb_query.filter(f"data->>{col}", op_map.get(op, 'eq'), val.strip("'\""))
+
         limit_match = re.search(r'LIMIT\s+(\d+)', query, re.IGNORECASE)
         if limit_match:
             limit = int(limit_match.group(1))
             sb_query = sb_query.limit(limit)
 
         response = sb_query.execute()
-        
         # Flatten the result from {"data": {"col": "val"}} to {"col": "val"}
         return [row['data'] for row in response.data if row.get('data')]
     except Exception as e:

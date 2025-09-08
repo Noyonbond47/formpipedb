@@ -34,6 +34,7 @@
         </nav>
         <div class="p-4 border-t space-y-2">
             <button id="create-table-btn" class="w-full text-center p-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-semibold">Create Table</button>
+            <button id="view-db-sql-btn" class="w-full text-center p-2 rounded-md bg-gray-200 text-gray-800 hover:bg-gray-300 font-semibold text-sm">View Database SQL</button>
             <button id="delete-table-btn" class="w-full text-center p-2 rounded-md bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed" disabled>Delete Table</button>
         </div>
     </aside>
@@ -67,6 +68,14 @@
                         <!-- Structure rows will be injected here -->
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- Table SQL Tab Content -->
+        <div id="table-sql-tab-content" class="table-tab-content hidden">
+            <div class="bg-gray-900 text-white p-4 rounded-md font-mono text-sm ring-1 ring-gray-200 relative">
+                <button id="copy-table-sql-btn" class="absolute top-2 right-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs font-semibold py-1 px-2 rounded">Copy</button>
+                <pre><code id="table-sql-code"></code></pre>
             </div>
         </div>
 
@@ -129,19 +138,42 @@
 <!-- Create Table Modal -->
 <div id="create-table-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
     <form id="create-table-form" class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
-        <div class="p-6 border-b">
+        <div class="p-4 border-b">
             <h3 class="text-xl font-semibold">Create New Table</h3>
         </div>
-        <div class="p-6 space-y-4 overflow-y-auto">
-            <input id="new-table-name" type="text" placeholder="Table Name" required class="w-full p-2 border rounded-md">
-            <div id="new-columns-list" class="space-y-2"></div>
-            <button id="add-column-to-modal-btn" type="button" class="text-sm text-blue-600 hover:underline">+ Add Column</button>
+        <div class="border-b">
+            <nav class="flex space-x-1 p-2 bg-gray-100">
+                <button type="button" data-tab="gui" class="create-table-tab-btn flex-1 p-2 text-sm font-medium rounded-md bg-white shadow">GUI Builder</button>
+                <button type="button" data-tab="sql" class="create-table-tab-btn flex-1 p-2 text-sm font-medium rounded-md">From SQL</button>
+            </nav>
+        </div>
+        <div id="gui-create-tab" class="create-table-tab-content p-6 space-y-4 overflow-y-auto">
+            <input id="new-table-name" type="text" placeholder="Table Name (e.g., users)" required class="w-full p-2 border rounded-md">
+            <div id="new-columns-list" class="space-y-2 pt-2"></div>
+            <button id="add-column-to-modal-btn" type="button" class="text-sm text-blue-600 hover:underline mt-2">+ Add Column</button>
+        </div>
+        <div id="sql-create-tab" class="create-table-tab-content hidden p-6 space-y-4 overflow-y-auto">
+            <p class="text-sm text-gray-600">Paste a single `CREATE TABLE` statement below.</p>
+            <textarea id="create-table-sql-input" class="w-full h-64 bg-gray-900 text-white p-4 rounded-md font-mono text-sm outline-none resize-vertical" placeholder="CREATE TABLE products (...);"></textarea>
         </div>
         <div class="p-6 mt-auto border-t bg-gray-50 flex justify-end gap-4">
             <button id="cancel-create-table-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
             <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Create Table</button>
         </div>
     </form>
+</div>
+
+<!-- View Database SQL Modal -->
+<div id="view-db-sql-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        <div class="p-4 border-b flex justify-between items-center">
+            <h3 class="text-xl font-semibold">Database SQL Schema</h3>
+            <button id="close-db-sql-modal-btn" class="text-gray-500 hover:text-gray-800">&times;</button>
+        </div>
+        <div class="p-4 overflow-y-auto bg-gray-900 text-white font-mono text-sm">
+            <pre><code id="db-sql-code-content"></code></pre>
+        </div>
+    </div>
 </div>
 
 <!-- Edit Column Modal -->
@@ -236,6 +268,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const editColumnForm = document.getElementById('edit-column-form');
     const cancelEditColumnBtn = document.getElementById('cancel-edit-column-btn');
     const structureTbody = document.getElementById('structure-tbody');
+    const viewDbSqlBtn = document.getElementById('view-db-sql-btn');
+    const viewDbSqlModal = document.getElementById('view-db-sql-modal');
+    const closeDbSqlModalBtn = document.getElementById('close-db-sql-modal-btn');
     const addRowBtn = document.getElementById('add-row-btn');
     const dataTbody = document.getElementById('data-tbody');
     const exportCsvBtn = document.getElementById('export-csv-btn');
@@ -335,6 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Reset to page 1 whenever a new table is selected
             renderStructure(state.selectedTable.columns);
             fetchAndRenderData(state.selectedTable.id, 1);
+            renderTableSql(state.selectedTable);
         }
     }
 
@@ -435,6 +471,25 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error(error);
             tbody.innerHTML = `<tr><td colspan="99" class="p-4 text-center text-red-500">Error loading data.</td></tr>`;
         }
+    }
+
+    function renderTableSql(table) {
+        const codeElement = document.getElementById('table-sql-code');
+        if (!table || !table.name) {
+            codeElement.textContent = '-- No table selected --';
+            return;
+        }
+        let createStatement = `CREATE TABLE "${table.name}" (\n`;
+        const columnDefs = table.columns.map(col => {
+            let colDef = `  "${col.name}" ${col.type.toUpperCase()}`;
+            if (col.is_primary_key) colDef += " PRIMARY KEY";
+            if (col.is_not_null) colDef += " NOT NULL";
+            if (col.is_unique) colDef += " UNIQUE";
+            return colDef;
+        });
+        createStatement += columnDefs.join(',\n');
+        createStatement += "\n);";
+        codeElement.textContent = createStatement;
     }
 
     tableTabButtons.forEach(button => {
@@ -783,6 +838,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function handleViewDbSql() {
+        const codeElement = document.getElementById('db-sql-code-content');
+        codeElement.textContent = 'Generating SQL...';
+        openModal(viewDbSqlModal);
+        try {
+            const response = await fetchWithAuth(`/api/v1/databases/${state.dbId}/export-sql`);
+            if (!response.ok) throw new Error('Failed to fetch database SQL.');
+            const sqlText = await response.text();
+            codeElement.textContent = sqlText;
+        } catch (error) {
+            codeElement.textContent = `Error: ${error.message}`;
+        }
+    }
+
     function populateAndOpenEditModal(column, index) {
         document.getElementById('edit-column-index').value = index;
         document.getElementById('edit-column-name').value = column.name;
@@ -875,6 +944,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     cancelCreateTableBtn.addEventListener('click', () => closeModal(createTableModal));
     createTableForm.addEventListener('submit', handleCreateTableSubmit);
+
+    viewDbSqlBtn.addEventListener('click', handleViewDbSql);
+    closeDbSqlModalBtn.addEventListener('click', () => closeModal(viewDbSqlModal));
     
     deleteTableBtn.addEventListener('click', () => {
         if (!state.selectedTable) return;
@@ -911,6 +983,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const rowId = deleteBtn.dataset.rowId;
             handleDeleteRow(rowId);
         }
+    });
+
+    document.getElementById('copy-table-sql-btn').addEventListener('click', (e) => {
+        const code = document.getElementById('table-sql-code').textContent;
+        navigator.clipboard.writeText(code).then(() => {
+            e.target.textContent = 'Copied!';
+            setTimeout(() => e.target.textContent = 'Copy', 2000);
+        });
     });
     runQueryBtn.addEventListener('click', handleRunQuery);
     exportCsvBtn.addEventListener('click', handleExportCsv);
