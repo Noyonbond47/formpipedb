@@ -401,19 +401,24 @@ async def export_database_as_sql(database_id: int, auth_details: dict = Depends(
         if rows:
             sql_script += f"-- Data for table: {table.name}\n"
             for row in rows:
+                # Skip rows that might not have any data in the JSONB field
+                if not row.data:
+                    continue
+
                 # We only insert data from the 'data' blob, not the primary key 'id'
                 columns_to_insert = [f'"{k}"' for k in row.data.keys()]
                 values_to_insert = []
                 for v in row.data.values():
                     if isinstance(v, str):
-                        values_to_insert.append(f"'{str(v).replace(\"'\", \"''\")}'") # Basic escaping for strings
+                        # Refactored for clarity: correctly escape single quotes for SQL
+                        escaped_v = str(v).replace("'", "''")
+                        values_to_insert.append(f"'{escaped_v}'")
                     elif v is None:
                         values_to_insert.append("NULL")
                     elif isinstance(v, bool):
                         values_to_insert.append("TRUE" if v else "FALSE")
                     else:
                         values_to_insert.append(str(v))
-                
                 if columns_to_insert:
                     sql_script += f"INSERT INTO \"{table.name}\" ({', '.join(columns_to_insert)}) VALUES ({', '.join(values_to_insert)});\n"
             sql_script += "\n"
