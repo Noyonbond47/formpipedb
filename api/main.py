@@ -1,5 +1,5 @@
-# Forcing a new Vercel build on [current date]
-# Forcing a Vercel resync on [current date and time]
+# Forcing a new Vercel build on 2025-09-08
+# Forcing a Vercel resync on 2025-09-08 at 11:03 PM
 
 import os
 from pathlib import Path
@@ -569,27 +569,7 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
         # Second pass: Insert all data
         for statement in statements:
             if statement.upper().startswith("INSERT INTO"):
-                # Handle multi-value INSERT statements
-                header_match = re.search(r'INSERT INTO\s+[`"]?(\w+)[`"]?\s*\(([^)]+)\)\s*VALUES', statement, re.IGNORECASE)
-                if not header_match: continue
-                
-                table_name, columns_str = header_match.groups()
-                if table_name not in created_tables_map: continue
-                
-                table_id = created_tables_map[table_name]
-                columns = [c.strip().strip('`"') for c in columns_str.split(',')]
-                
-                # Find all value tuples like (...), (...), (...)
-                values_part = statement[header_match.end():].strip()
-                value_tuples_str = re.findall(r'\(([^)]+)\)', values_part)
-
-                for values_str in value_tuples_str:
-                    # Use the csv module to handle commas and quotes within values
-                    values_reader = csv.reader([values_str], skipinitialspace=True)
-                    values = next(values_reader)
-                    
-                    if len(columns) == len(values):
-                        await supabase.table("table_rows").insert({"user_id": user.id, "table_id": table_id, "data": dict(zip(columns, values))}).execute()
+                await _parse_and_execute_insert(statement, created_tables_map, new_db_id, supabase, user)
 
     except Exception as e:
         await delete_user_database(new_db_id, auth_details)
