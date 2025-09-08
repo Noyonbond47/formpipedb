@@ -45,7 +45,7 @@
             <nav class="flex space-x-6">
                 <button data-tab="data" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-blue-500 text-blue-600">Data</button>
                 <button data-tab="structure" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Structure</button>
-                <button data-tab="sql" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">SQL Runner</button>
+                <button data-tab="table-sql" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">SQL</button>
             </nav>
         </div>
 
@@ -68,6 +68,14 @@
                         <!-- Structure rows will be injected here -->
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- Table SQL Tab Content -->
+        <div id="table-sql-tab-content" class="table-tab-content hidden">
+            <div class="bg-gray-900 text-white p-4 rounded-md font-mono text-sm ring-1 ring-gray-200 relative">
+                <button id="copy-table-sql-btn" class="absolute top-2 right-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs font-semibold py-1 px-2 rounded">Copy</button>
+                <pre><code id="table-sql-code"></code></pre>
             </div>
         </div>
 
@@ -458,7 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 columns.forEach(col => {
                     // The backend now injects the user-visible PK into the data blob.
                     const cellValue = row.data ? (row.data[col.name] ?? '') : '';
-                    const contentEditable = !isPk ? 'contenteditable="true"' : '';
+                    const contentEditable = !col.is_primary_key ? 'contenteditable="true"' : '';
 
                     tr.innerHTML += `
                         <td class="p-3 font-mono text-sm editable-cell" data-column-name="${col.name}" ${contentEditable}>${cellValue}</td>
@@ -835,6 +843,20 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(`Error: ${error.message}`);
             await fetchDbIdAndTables(); // Re-fetch to revert optimistic changes
             return false; // Failure
+        }
+    }
+
+    async function handleViewDbSql() {
+        const codeElement = document.getElementById('db-sql-code-content');
+        codeElement.textContent = 'Generating SQL...';
+        openModal(viewDbSqlModal);
+        try {
+            const response = await fetchWithAuth(`/api/v1/databases/${state.dbId}/export-sql`);
+            if (!response.ok) throw new Error('Failed to fetch database SQL.');
+            const sqlText = await response.text();
+            codeElement.textContent = sqlText;
+        } catch (error) {
+            codeElement.textContent = `Error: ${error.message}`;
         }
     }
 

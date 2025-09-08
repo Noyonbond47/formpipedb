@@ -141,6 +141,28 @@
             const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
             let dbToDeleteId = null;
 
+            /**
+             * A wrapper for the native fetch function that automatically includes
+             * the Supabase authentication token.
+             */
+            async function fetchWithAuth(url, options = {}) {
+                const token = await getAuthToken();
+                if (!token) return; // getAuthToken handles redirection
+
+                const headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
+                return fetch(url, { ...options, headers });
+            }
+
+            async function getAuthToken() {
+                const { data: { session }, error } = await supabase.auth.getSession();
+                if (error || !session) {
+                    console.error("Authentication error, redirecting to login.", error);
+                    window.location.href = '/login';
+                    return null;
+                }
+                return session.access_token;
+            }
+
             function openModal(modal) {
                 modal.classList.remove('hidden');
                 setTimeout(() => modal.classList.remove('opacity-0'), 10);
@@ -151,15 +173,9 @@
                 setTimeout(() => modal.classList.add('hidden'), 250);
             };
 
-            function getAuthToken() {
-                return localStorage.getItem('supabase_token');
-            }
-
             async function fetchDatabases() {
                 try {
-                    const response = await fetch('/api/v1/databases', {
-                        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
-                    });
+                    const response = await fetchWithAuth('/api/v1/databases');
                     if (!response.ok) throw new Error('Failed to fetch databases');
                     const databases = await response.json();
                     renderDatabases(databases);
@@ -201,10 +217,10 @@
                 if (!name) return;
 
                 try {
-                    const response = await fetch('/api/v1/databases', {
+                    const response = await fetchWithAuth('/api/v1/databases', {
                         method: 'POST',
-                        headers: { 'Authorization': `Bearer ${getAuthToken()}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name, description })
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, description }),
                     });
                     if (!response.ok) {
                         const err = await response.json();
@@ -221,13 +237,17 @@
             async function handleDeleteDatabase() {
                 if (!dbToDeleteId) return;
                 try {
-                    const response = await fetch(`/api/v1/databases/${dbToDeleteId}`, {
-                        method: 'DELETE',
-                        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
-                    });
-                    if (!response.ok) throw new Error('Failed to delete database');
+                    const response = await fetchWithAuth(`/api/v1/databases/${dbToDeleteId}`, { method: 'DELETE' });
+                    if (!response.ok) {
+                        let errorDetail = 'Failed to delete database.';
+                        try {
+                            const err = await response.json();
+                            errorDetail = err.detail || errorDetail;
+                        } catch (e) { /* ignore if response is not json */ }
+                        throw new Error(errorDetail);
+                    }
                     fetchDatabases(); // Re-fetch the list
-                    closeModal();
+                    closeModal(deleteModal);
                 } catch (error) {
                     alert(`Error: ${error.message}`);
                 }
@@ -235,9 +255,7 @@
 
             async function handleExportSql(dbId, dbName) {
                 try {
-                    const response = await fetch(`/api/v1/databases/${dbId}/export-sql`, {
-                        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
-                    });
+                    const response = await fetchWithAuth(`/api/v1/databases/${dbId}/export-sql`);
                     if (!response.ok) throw new Error('Failed to export SQL');
                     
                     const sqlText = await response.text();
@@ -270,10 +288,10 @@
                 submitImportSqlBtn.textContent = 'Importing...';
 
                 try {
-                    const response = await fetch('/api/v1/databases/import-sql', {
+                    const response = await fetchWithAuth('/api/v1/databases/import-sql', {
                         method: 'POST',
-                        headers: { 'Authorization': `Bearer ${getAuthToken()}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name, description, script })
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, description, script }),
                     });
                     if (!response.ok) {
                         const err = await response.json();
