@@ -242,35 +242,6 @@ async def create_database_table(database_id: int, table_data: TableCreate, auth_
              raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A table with the name '{table_data.name}' already exists in this database.")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create table: {str(e)}")
 
-@app.post("/api/v1/databases/{database_id}/create-table-from-sql", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
-async def create_table_from_sql(database_id: int, query_data: QueryRequest, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Parses a CREATE TABLE SQL statement and creates the table.
-    """
-    statement = query_data.query
-    if not statement.upper().strip().startswith("CREATE TABLE"):
-        raise HTTPException(status_code=400, detail="Only CREATE TABLE statements are allowed.")
-
-    try:
-        create_match = re.search(r'CREATE TABLE\s+[`"]?(\w+)[`"]?\s*\((.+)\)', statement, re.DOTALL | re.IGNORECASE)
-        if not create_match: raise ValueError("Invalid CREATE TABLE syntax.")
-        
-        table_name, columns_str = create_match.groups()
-        columns_defs = []
-        for col_line in columns_str.split(','):
-            col_line = col_line.strip()
-            if not col_line or col_line.upper().startswith(("PRIMARY KEY", "FOREIGN KEY", "UNIQUE", "CONSTRAINT")): continue
-            parts = col_line.split()
-            if not parts: continue
-            col_name = parts[0].strip('`"')
-            type_and_constraints = " ".join(parts[1:])
-            type_match = re.match(r'[\w\(\s,\)]+', type_and_constraints)
-            col_type = type_match.group(0).strip() if type_match else parts[1]
-            columns_defs.append(ColumnDefinition(name=col_name, type=col_type.lower(), is_primary_key="PRIMARY KEY" in type_and_constraints.upper(), is_unique="UNIQUE" in type_and_constraints.upper(), is_not_null="NOT NULL" in type_and_constraints.upper()))
-        return await create_database_table(database_id, TableCreate(name=table_name, columns=columns_defs), auth_details)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse SQL: {str(e)}")
-
 @app.put("/api/v1/tables/{table_id}", response_model=TableResponse)
 async def update_database_table(table_id: int, table_data: TableUpdate, auth_details: dict = Depends(get_current_user_details)):
     """
@@ -650,7 +621,7 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
         # For simplicity in this safe runner, we'll focus on the first table for filtering.
         # A full SQL engine would build a more complex join plan.
         first_table_name = tables_str.split(',')[0].strip().strip('`"')
-
+        
         # 2. Find the actual table ID from the user-provided table name
         tables = await get_database_tables(database_id, auth_details)
         target_table = next((t for t in tables if t.name.lower() == first_table_name.lower()), None)
@@ -686,51 +657,6 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Query failed: {str(e)}")
 
-@app.post("/api/v1/databases/import-sql", response_model=DatabaseResponse, status_code=status.HTTP_201_CREATED)
-async def import_database_from_sql(import_data: SqlImportRequest, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Creates a new database and attempts to populate it from a user-provided SQL script.
-    This has a very limited, best-effort SQL parser and is not guaranteed to work with all SQL dialects.
-    """
-    supabase = auth_details["client"]
-    user = auth_details["user"]
-
-    # 1. Create the parent database container
-    try:
-        db_response = await create_user_database(
-            db_data=DatabaseCreate(name=import_data.name, description=import_data.description),
-            auth_details=auth_details
-        )
-        new_db_id = db_response.id
-    except HTTPException as e:
-        # Re-raise exceptions from create_user_database (e.g., duplicate name)
-        raise e
-
-    # 2. Robust parsing and execution of the SQL script
-    # First, remove all comments from the script
-    script_no_comments = re.sub(r'--.*', '', import_data.script)
-    statements = [s.strip() for s in script_no_comments.split(';') if s.strip()]
-    created_tables_map = {} # Maps table name to table ID
-
-    try:
-        # First pass: Create all tables (already implemented and seems correct)
-        for statement in statements:
-            if statement.upper().startswith("CREATE TABLE"):
-                # ... (existing CREATE TABLE parsing logic is okay) ...
-                created_table = await create_table_from_sql(new_db_id, QueryRequest(query=statement), auth_details)
-                created_tables_map[created_table.name] = created_table.id
-
-        # Second pass: Insert all data
-        for statement in statements:
-            if statement.upper().startswith("INSERT INTO"):
-                await _parse_and_execute_insert(statement, created_tables_map, new_db_id, supabase, user)
-
-    except Exception as e:
-        await delete_user_database(new_db_id, auth_details)
-        raise HTTPException(status_code=400, detail=f"Failed to import SQL script: {str(e)}. The new database has been rolled back.")
-
-    return db_response
-
 async def _parse_and_execute_insert(statement: str, created_tables_map: dict, db_id: int, supabase: Client, user: Any):
     # Handle multi-value INSERT statements
     header_match = re.search(r'INSERT INTO\s+[`"]?(\w+)[`"]?\s*\(([^)]+)\)\s*VALUES', statement, re.IGNORECASE)
@@ -746,13 +672,28 @@ async def _parse_and_execute_insert(statement: str, created_tables_map: dict, db
     values_part = statement[header_match.end():].strip()
     value_tuples_str = re.findall(r'\((.*?)\)', values_part)
 
+    rows_to_insert = []
     for values_str in value_tuples_str:
         # Use the csv module to handle commas and quotes within values
         values_reader = csv.reader([values_str], skipinitialspace=True)
         values = next(values_reader)
         
         if len(columns) == len(values):
-            await supabase.table("table_rows").insert({"user_id": user.id, "table_id": table_id, "data": dict(zip(columns, values))}).execute()
+            # Attempt to convert numeric strings to actual numbers
+            typed_values = []
+            for v in values:
+                try:
+                    typed_values.append(int(v))
+                except ValueError:
+                    try:
+                        typed_values.append(float(v))
+                    except ValueError:
+                        typed_values.append(v)
+            
+            rows_to_insert.append({"user_id": user.id, "table_id": table_id, "data": dict(zip(columns, typed_values))})
+
+    if rows_to_insert:
+        await supabase.table("table_rows").insert(rows_to_insert).execute()
 
 # --- HTML Serving Endpoints ---
 
