@@ -1,4 +1,5 @@
 # Forcing a new Vercel build on [current date]
+# Forcing a Vercel resync on [current date and time]
 
 import os
 from pathlib import Path
