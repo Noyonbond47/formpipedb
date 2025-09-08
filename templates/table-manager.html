@@ -369,7 +369,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                 `;
                 columns.forEach(col => {
-                    tr.innerHTML += `<td class="p-3 font-mono text-sm editable-cell" data-column-name="${col.name}" ${!col.is_primary_key ? 'contenteditable="true"' : ''}>${row.data[col.name] ?? ''}</td>`;
+                    // The primary key's value comes from row.id, not the data blob.
+                    // Other data comes from the row.data JSONB object.
+                    const isPk = col.is_primary_key;
+                    const cellValue = isPk ? row.id : (row.data ? (row.data[col.name] ?? '') : '');
+                    const contentEditable = !isPk ? 'contenteditable="true"' : '';
+
+                    tr.innerHTML += `
+                        <td class="p-3 font-mono text-sm editable-cell" data-column-name="${col.name}" ${contentEditable}>${cellValue}</td>
+                    `;
                 });
                 tbody.appendChild(tr);
             });
@@ -592,7 +600,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(`/api/v1/rows/${rowId}`, {
                 method: 'PUT',
-                headers: { 'Authorization': getAuthToken(), 'Content-Type': 'application/json' },
+                headers: { 'Authorization': `Bearer ${getAuthToken()}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
             if (!response.ok) {
