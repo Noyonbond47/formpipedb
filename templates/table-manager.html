@@ -40,11 +40,10 @@
 
     <!-- Main Content -->
     <main id="main-content" class="flex-1 p-8 overflow-auto hidden">
-        <div class="border-b mb-6">
+        <div id="main-tabs" class="border-b mb-6">
             <nav class="flex space-x-6">
-                <button data-tab="data" class="tab-btn py-2 px-1 font-medium border-b-2 border-blue-500 text-blue-600">Data</button>
-                <button data-tab="structure" class="tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Structure</button>
-                <button data-tab="sql" class="tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">SQL Runner</button>
+                <button data-tab="data" class="main-tab-btn py-2 px-1 font-medium border-b-2 border-blue-500 text-blue-600">Data Browser</button>
+                <button data-tab="sql" class="main-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">SQL Runner</button>
             </nav>
         </div>
 
@@ -71,7 +70,7 @@
         </div>
 
         <!-- Data Tab Content -->
-        <div id="data-tab-content" class="tab-content">
+        <div id="data-tab-content" class="main-tab-content">
             <div class="flex justify-between items-center mb-4 gap-2">
                 <div class="w-1/3">
                     <input type="search" id="row-search-input" placeholder="Search rows..." class="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none">
@@ -97,7 +96,7 @@
         </div>
 
         <!-- SQL Runner Tab Content -->
-        <div id="sql-tab-content" class="tab-content hidden">
+        <div id="sql-tab-content" class="main-tab-content hidden">
             <div class="space-y-6">
                 <div class="bg-white rounded-lg shadow-sm border">
                     <div class="p-4 border-b">
@@ -221,7 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const mainContent = document.getElementById('main-content');
     const placeholderContent = document.getElementById('placeholder-content');
     const deleteTableBtn = document.getElementById('delete-table-btn');
-    const tabButtons = document.querySelectorAll('.tab-btn');
+    const mainTabButtons = document.querySelectorAll('.main-tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
     const createTableBtn = document.getElementById('create-table-btn');
     const createTableModal = document.getElementById('create-table-modal');
@@ -419,10 +418,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                 `;
                 columns.forEach(col => {
-                    // The primary key's value comes from row.id, not the data blob.
-                    // Other data comes from the row.data JSONB object.
-                    const isPk = col.is_primary_key;
-                    const cellValue = isPk ? row.id : (row.data ? (row.data[col.name] ?? '') : '');
+                    // The backend now injects the user-visible PK into the data blob.
+                    const cellValue = row.data ? (row.data[col.name] ?? '') : '';
                     const contentEditable = !isPk ? 'contenteditable="true"' : '';
 
                     tr.innerHTML += `
@@ -438,24 +435,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    tabButtons.forEach(button => {
+    mainTabButtons.forEach(button => {
         button.addEventListener('click', () => {
             const tab = button.dataset.tab;
 
-            tabButtons.forEach(btn => {
+            mainTabButtons.forEach(btn => {
                 btn.classList.remove('border-blue-500', 'text-blue-600');
                 btn.classList.add('border-transparent', 'text-gray-500');
             });
             button.classList.add('border-blue-500', 'text-blue-600');
             button.classList.remove('border-transparent', 'text-gray-500');
 
-            tabContents.forEach(content => {
-                if (content.id === `${tab}-tab-content`) {
-                    content.classList.remove('hidden');
-                } else {
-                    content.classList.add('hidden');
-                }
+            document.querySelectorAll('.main-tab-content').forEach(content => {
+                // Hide all main tab contents
+                content.classList.add('hidden');
             });
+
+            // Show the selected one
+            const activeContent = document.getElementById(`${tab}-tab-content`);
+            if (activeContent) {
+                activeContent.classList.remove('hidden');
+            }
         });
     });
 
@@ -679,12 +679,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const rowId = tr.dataset.rowId;
         if (!rowId) return;
 
+        const pkColName = state.selectedTable.columns.find(c => c.is_primary_key)?.name;
         const rowData = {};
         // IMPORTANT: Only gather data from cells that are actually editable.
         // This correctly excludes the primary key from the data payload.
         tr.querySelectorAll('td.editable-cell[contenteditable="true"]').forEach(cell => {
             const colName = cell.dataset.columnName;
-            rowData[colName] = cell.innerText;
+            // Exclude the user-visible PK from the update payload
+            if (colName !== pkColName) {
+                rowData[colName] = cell.innerText;
+            }
         });
 
         const payload = { data: rowData };

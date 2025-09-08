@@ -290,24 +290,43 @@ async def get_table_rows(
     """
     Fetches data rows for a specific table with pagination and search.
     """
+    supabase = auth_details["client"]
     try:
-        supabase = auth_details["client"]
-        
+        # 1. Get the table schema to find the user-defined primary key column name
+        table_schema = await get_single_table(table_id, auth_details)
+        pk_col_name = next((col.name for col in table_schema.columns if col.is_primary_key), None)
+
+        # 2. Build the query
         query = supabase.table("table_rows").select("*", count='exact').eq("table_id", table_id)
 
         if search:
-            # To perform a search, we need the column names of the table.
-            table_info_res = supabase.table("user_tables").select("columns").eq("id", table_id).single().execute()
-            if table_info_res.data and table_info_res.data.get("columns"):
-                # Search across all columns by casting their JSONB value to text
-                all_columns = [col["name"] for col in table_info_res.data["columns"]]
-                if all_columns:
-                    or_filter = ",".join([f"data->>{col}.ilike.%{search}%" for col in all_columns])
-                    query = query.or_(or_filter)
+            # Search across all non-pk columns by casting their JSONB value to text
+            searchable_columns = [col.name for col in table_schema.columns if not col.is_primary_key]
+            if searchable_columns:
+                or_filter = ",".join([f"data->>{col}.ilike.%{search}%" for col in searchable_columns])
+                query = query.or_(or_filter)
 
         # RLS on table_rows ensures user can only access rows they own.
         response = query.order("id").range(offset, offset + limit - 1).execute()
-        return {"total": response.count, "data": response.data}
+
+        # 3. Process results to inject the user-visible PK
+        processed_rows = []
+        if pk_col_name:
+            for i, row in enumerate(response.data):
+                # Calculate the user-visible ID based on pagination
+                user_visible_id = offset + i + 1
+                
+                # Inject it into the data blob
+                if row.get("data") is not None:
+                    row["data"][pk_col_name] = user_visible_id
+                else:
+                    row["data"] = {pk_col_name: user_visible_id}
+                processed_rows.append(row)
+        else:
+            # Fallback if no PK is defined (shouldn't happen with current UI)
+            processed_rows = response.data
+
+        return {"total": response.count, "data": processed_rows}
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
@@ -319,9 +338,27 @@ async def get_all_table_rows(table_id: int, auth_details: dict = Depends(get_cur
     """
     try:
         supabase = auth_details["client"]
+        # 1. Get the table schema to find the user-defined primary key column name
+        table_schema = await get_single_table(table_id, auth_details)
+        pk_col_name = next((col.name for col in table_schema.columns if col.is_primary_key), None)
+
         # RLS on table_rows ensures user can only access rows they own.
         response = supabase.table("table_rows").select("*").eq("table_id", table_id).order("id").execute()
-        return response.data
+
+        # 2. Process results to inject the user-visible PK
+        processed_rows = []
+        if pk_col_name:
+            for i, row in enumerate(response.data):
+                user_visible_id = i + 1
+                if row.get("data") is not None:
+                    row["data"][pk_col_name] = user_visible_id
+                else:
+                    row["data"] = {pk_col_name: user_visible_id}
+                processed_rows.append(row)
+        else:
+            processed_rows = response.data
+
+        return processed_rows
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
