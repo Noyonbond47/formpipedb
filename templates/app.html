@@ -186,8 +186,8 @@
                     window.location.href = '/login';
                     return null;
                 }
-                // Return the whole session object so we can access user details
-                return session;
+                // Return just the access token string for authentication headers.
+                return session.access_token;
             }
 
             function getInitials(fullName) {
