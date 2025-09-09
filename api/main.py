@@ -774,6 +774,11 @@ async def update_password_page(request: Request):
         "update-password.html", {"request": request, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY}
     )
 
+@app.get("/email-verified", response_class=HTMLResponse)
+async def email_verified_page(request: Request):
+    # This page is shown after a user clicks the verification link in their email.
+    return templates.TemplateResponse("email-verified.html", {"request": request})
+
 @app.get("/app", response_class=HTMLResponse)
 async def app_page(request: Request):
     return templates.TemplateResponse(

@@ -22,8 +22,20 @@
             <div class="text-xl font-bold text-gray-800">
                 FormPipeDB
             </div>
-            <div>
-                <button id="sign-out-btn" class="text-gray-600 hover:text-blue-600">Sign Out</button>
+            <div class="relative">
+                <button id="profile-btn" class="w-10 h-10 bg-blue-600 text-white flex items-center justify-center rounded-full font-bold text-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    <!-- Initials will be inserted here by JS -->
+                </button>
+                <div id="profile-dropdown" class="hidden absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg ring-1 ring-black ring-opacity-5 py-1 z-10">
+                    <div class="px-4 py-2 border-b">
+                        <p id="profile-name" class="text-sm font-medium text-gray-900 truncate">Loading...</p>
+                        <p id="profile-email" class="text-sm text-gray-500 truncate">...</p>
+                    </div>
+                    <div class="py-1">
+                        <a href="#" id="sign-out-btn" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Sign Out</a>
+                        <a href="#" id="delete-account-btn" class="block px-4 py-2 text-sm text-red-700 hover:bg-red-50">Delete Account</a>
+                    </div>
+                </div>
             </div>
         </nav>
     </header>
@@ -65,6 +77,18 @@
             <div class="mt-6 flex justify-end gap-4">
                 <button id="cancel-delete-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
                 <button id="confirm-delete-btn" class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Account Confirmation Modal -->
+    <div id="delete-account-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h3 class="text-lg font-bold text-red-700 mb-4">Delete Your Account?</h3>
+            <p class="text-sm">This is a permanent action. All of your databases, tables, and data will be immediately and irreversibly deleted. Are you absolutely sure you want to proceed?</p>
+            <div class="mt-6 flex justify-end gap-4">
+                <button id="cancel-delete-account-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+                <button id="confirm-delete-account-btn" class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 font-semibold">Yes, Delete My Account</button>
             </div>
         </div>
     </div>
@@ -119,7 +143,12 @@
             const createDbForm = document.getElementById('create-db-form');
             const newDbNameInput = document.getElementById('new-db-name');
             const newDbDescInput = document.getElementById('new-db-desc');
+            const profileBtn = document.getElementById('profile-btn');
+            const profileDropdown = document.getElementById('profile-dropdown');
             const signOutBtn = document.getElementById('sign-out-btn');
+            const deleteAccountBtn = document.getElementById('delete-account-btn');
+            const deleteAccountModal = document.getElementById('delete-account-modal');
+
             const importSqlBtn = document.getElementById('import-sql-btn');
             const importSqlModal = document.getElementById('import-sql-modal');
             const importSqlForm = document.getElementById('import-sql-form');
@@ -133,6 +162,8 @@
             const modalDbName = document.getElementById('modal-db-name');
             const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
             const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+            const cancelDeleteAccountBtn = document.getElementById('cancel-delete-account-btn');
+            const confirmDeleteAccountBtn = document.getElementById('confirm-delete-account-btn');
             let dbToDeleteId = null;
 
             /**
@@ -149,13 +180,24 @@
 
             async function getAuthToken() {
                 const { data: { session }, error } = await supabase.auth.getSession();
-                if (error || !session) {
+                if (error || !session || !session.user) {
                     console.error("Authentication error, redirecting to login.", error);
+                    localStorage.removeItem('supabase_token');
                     window.location.href = '/login';
                     return null;
                 }
-                return session.access_token;
+                // Return the whole session object so we can access user details
+                return session;
             }
+
+            function getInitials(fullName) {
+                if (!fullName) return '?';
+                const names = fullName.split(' ');
+                const firstInitial = names[0] ? names[0][0] : '';
+                const lastInitial = names.length > 1 ? names[names.length - 1][0] : '';
+                return `${firstInitial}${lastInitial}`.toUpperCase();
+            }
+
 
             function openModal(modal) {
                 modal.classList.remove('hidden');
@@ -247,6 +289,28 @@
                 }
             }
 
+            async function handleDeleteAccount() {
+                confirmDeleteAccountBtn.disabled = true;
+                confirmDeleteAccountBtn.textContent = 'Deleting...';
+                try {
+                    const response = await fetchWithAuth(`/api/v1/users/me`, { method: 'DELETE' });
+                    if (response.status !== 204) {
+                        let errorDetail = 'Failed to delete account.';
+                        try {
+                            const err = await response.json();
+                            errorDetail = err.detail || errorDetail;
+                        } catch (e) { /* ignore */ }
+                        throw new Error(errorDetail);
+                    }
+                    // On success, sign out and redirect
+                    await supabase.auth.signOut();
+                    localStorage.removeItem('supabase_token');
+                    window.location.href = '/login';
+                } catch (error) {
+                    alert(`Error: ${error.message}`);
+                }
+            }
+
             async function handleExportSql(dbId, dbName) {
                 try {
                     const response = await fetchWithAuth(`/api/v1/databases/${dbId}/export-sql`);
@@ -330,10 +394,15 @@
             cancelDeleteBtn.addEventListener('click', () => closeModal(deleteModal));
             confirmDeleteBtn.addEventListener('click', handleDeleteDatabase);
 
+            deleteAccountBtn.addEventListener('click', (e) => { e.preventDefault(); openModal(deleteAccountModal); });
+            cancelDeleteAccountBtn.addEventListener('click', () => closeModal(deleteAccountModal));
+            confirmDeleteAccountBtn.addEventListener('click', handleDeleteAccount);
+
             importSqlBtn.addEventListener('click', () => {
                 importSqlForm.reset();
                 openModal(importSqlModal);
             });
+
             cancelImportSqlBtn.addEventListener('click', () => closeModal(importSqlModal));
             importSqlForm.addEventListener('submit', handleImportSql);
 
@@ -346,6 +415,11 @@
                 }
             });
 
+            profileBtn.addEventListener('click', () => {
+                profileDropdown.classList.toggle('hidden');
+            });
+
+
             signOutBtn.addEventListener('click', async () => {
                 await supabase.auth.signOut();
                 localStorage.removeItem('supabase_token');
@@ -357,6 +431,14 @@
                 if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
                     if (session) {
                         localStorage.setItem('supabase_token', session.access_token);
+                        const user = session.user;
+                        const fullName = user.user_metadata?.full_name;
+                        
+                        // Populate profile dropdown
+                        document.getElementById('profile-btn').textContent = getInitials(fullName);
+                        document.getElementById('profile-name').textContent = fullName || 'User';
+                        document.getElementById('profile-email').textContent = user.email;
+
                         // Only fetch databases on initial load or sign in, not on every token refresh
                         if (event !== 'TOKEN_REFRESHED') {
                             fetchDatabases();
