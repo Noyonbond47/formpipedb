@@ -860,7 +860,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const data = result.data;
-        if (!data || data.length === 0) {
+
+        // Handle success message from INSERT/UPDATE/DELETE
+        if (data && data.status === 'success') {
+            queryResultsContainer.innerHTML = `
+                <div class="p-4 border-b bg-green-50 text-green-700 font-semibold">Success</div>
+                <div class="p-4 text-gray-600">${data.message}</div>
+            `;
+            return;
+        }
+
+        // Handle empty result set from SELECT
+        if (!Array.isArray(data) || data.length === 0) {
             queryResultsContainer.innerHTML = `
                 <div class="p-4 border-b font-semibold">Success</div>
                 <div class="p-4 text-gray-500">Query executed successfully, but returned no rows.</div>

@@ -651,23 +651,26 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
 @app.post("/api/v1/databases/{database_id}/execute-query")
 async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_details: dict = Depends(get_current_user_details)):
     """
-    Executes a read-only (SELECT) SQL query from the user by calling a secure RPC function
-    in the database. This supports complex queries like JOINs and aggregations, provided
-    that VIEWS have been created for the logical tables.
+    Executes a read-only (SELECT) or data-modifying (INSERT, UPDATE, DELETE) SQL query
+    from the user by calling a secure RPC function in the database. This supports
+    complex queries like JOINs, provided that VIEWS have been created for the tables.
     """
     supabase = auth_details["client"]
     query = query_data.query.strip()
+    query_type = query.split()[0].upper()
 
     # The RPC function itself also validates this, but a check here is good practice.
-    if not query.upper().startswith("SELECT"):
-        raise HTTPException(status_code=400, detail="Only SELECT queries are allowed.")
+    allowed_types = ["SELECT", "INSERT", "UPDATE", "DELETE"]
+    if query_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Only SELECT, INSERT, UPDATE, and DELETE queries are allowed.")
 
     try:
-        # Call the 'execute_select_query' RPC function you created in the Supabase SQL Editor.
+        # Call the 'execute_query' RPC function you created in the Supabase SQL Editor.
         # The function handles the secure execution of the query.
-        response = supabase.rpc('execute_select_query', {'query_text': query}).execute()
+        response = supabase.rpc('execute_query', {'query_text': query}).execute()
         
-        # The RPC function returns a single JSON array of result objects.
+        # The RPC function returns a single JSON object, which could be an array of
+        # results for SELECT, or a status object for DML.
         return response.data
     except Exception as e:
         # The error from the DB will be nested. We can try to extract a cleaner message.
