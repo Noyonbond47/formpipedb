@@ -519,7 +519,7 @@ async def _parse_and_execute_insert(statement: str, created_tables_map: dict, db
             rows_to_insert.append({"user_id": user.id, "table_id": table_id, "data": dict(zip(columns, typed_values))})
 
     if rows_to_insert:
-        await supabase.table("table_rows").insert(rows_to_insert).execute()
+        supabase.table("table_rows").insert(rows_to_insert).execute()
 
 # This is the import endpoint from your initial snippet, fully implemented.
 @app.post("/api/v1/databases/import-sql", response_model=DatabaseResponse, status_code=status.HTTP_201_CREATED)
