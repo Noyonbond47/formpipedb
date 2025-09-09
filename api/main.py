@@ -668,7 +668,7 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
         # Call the 'execute_query' RPC function you created in the Supabase SQL Editor.
         # The function handles the secure execution of the query.
         response = supabase.rpc('execute_query', {'query_text': query}).execute()
-        
+         # The RPC function returns a single JSON object, which could be an array of
         # The RPC function returns a single JSON object, which could be an array of
         # results for SELECT, or a status object for DML.
         return response.data
