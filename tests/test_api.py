@@ -108,3 +108,4 @@ def test_create_user_database_conflict():
     # Assert
     assert response.status_code == 409
     assert "already exists" in response.json()["detail"]
+
