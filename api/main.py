@@ -530,7 +530,7 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
             db_data=DatabaseCreate(name=import_data.name, description=import_data.description),
             auth_details=auth_details
         )
-        new_db_id = db_response.id
+        new_db_id = db_response['id']
 
         # 2. Robust parsing and execution of the SQL script
         # First, remove all comments from the script
@@ -573,7 +573,7 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
                 if not columns_defs: continue
                 table_create_payload = TableCreate(name=table_name, columns=columns_defs)
                 created_table = await create_database_table(new_db_id, table_create_payload, auth_details)
-                created_tables_map[table_name] = created_table.id
+                created_tables_map[table_name] = created_table['id']
 
         # Second pass: Insert all data
         for statement in statements:
