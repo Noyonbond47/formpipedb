@@ -657,7 +657,11 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
     """
     supabase = auth_details["client"]
     query = query_data.query.strip()
-    query_type = query.split()[0].upper()
+
+    # Normalize the query by replacing newlines and multiple spaces with a single space.
+    # This helps the simple parser in the PostgreSQL function which struggles with multi-line queries.
+    normalized_query = ' '.join(query.split())
+    query_type = normalized_query.split()[0].upper() if normalized_query else ""
 
     # The RPC function itself also validates this, but a check here is good practice.
     allowed_types = ["SELECT", "INSERT", "UPDATE", "DELETE"]
@@ -667,7 +671,7 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
     try:
         # Call the 'execute_query' RPC function you created in the Supabase SQL Editor.
         # The function handles the secure execution of the query.
-        response = supabase.rpc('execute_query', {'query_text': query}).execute()
+        response = supabase.rpc('execute_query', {'query_text': normalized_query}).execute()
          # The RPC function returns a single JSON object, which could be an array of
         # The RPC function returns a single JSON object, which could be an array of
         # results for SELECT, or a status object for DML.
