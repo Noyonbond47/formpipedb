@@ -293,15 +293,18 @@ async def get_table_rows(
     supabase = auth_details["client"]
     try:
         # 1. Get the table schema to find the user-defined primary key column name
-        table_schema = await get_single_table(table_id, auth_details)
-        pk_col_name = next((col.name for col in table_schema.columns if col.is_primary_key), None)
+        table_schema_dict = await get_single_table(table_id, auth_details)
+        # When calling an endpoint function directly, it returns a dict, not a Pydantic model.
+        # We must convert it to a model to use attribute access.
+        table_schema_obj = TableResponse(**table_schema_dict)
+        pk_col_name = next((col.name for col in table_schema_obj.columns if col.is_primary_key), None)
 
         # 2. Build the query
         query = supabase.table("table_rows").select("*", count='exact').eq("table_id", table_id)
 
         if search:
             # Search across all non-pk columns by casting their JSONB value to text
-            searchable_columns = [col.name for col in table_schema.columns if not col.is_primary_key]
+            searchable_columns = [col.name for col in table_schema_obj.columns if not col.is_primary_key]
             if searchable_columns:
                 or_filter = ",".join([f"data->>{col}.ilike.%{search}%" for col in searchable_columns])
                 query = query.or_(or_filter)
@@ -339,8 +342,11 @@ async def get_all_table_rows(table_id: int, auth_details: dict = Depends(get_cur
     try:
         supabase = auth_details["client"]
         # 1. Get the table schema to find the user-defined primary key column name
-        table_schema = await get_single_table(table_id, auth_details)
-        pk_col_name = next((col.name for col in table_schema.columns if col.is_primary_key), None)
+        table_schema_dict = await get_single_table(table_id, auth_details)
+        # When calling an endpoint function directly, it returns a dict, not a Pydantic model.
+        # We must convert it to a model to use attribute access.
+        table_schema_obj = TableResponse(**table_schema_dict)
+        pk_col_name = next((col.name for col in table_schema_obj.columns if col.is_primary_key), None)
 
         # RLS on table_rows ensures user can only access rows they own.
         response = supabase.table("table_rows").select("*").eq("table_id", table_id).order("id").execute()
@@ -415,11 +421,13 @@ async def export_database_as_sql(database_id: int, auth_details: dict = Depends(
     supabase = auth_details["client"]
     
     # Fetch database name
-    db_res = await get_single_database(database_id, auth_details)
-    db_name = db_res.name
+    db_res_dict = await get_single_database(database_id, auth_details)
+    db_name = db_res_dict['name']
 
     # Fetch all tables for the database
-    tables = await get_database_tables(database_id, auth_details)
+    tables_dicts = await get_database_tables(database_id, auth_details)
+    # Convert dicts to Pydantic models to safely use attribute access
+    tables = [TableResponse(**t) for t in tables_dicts]
     
     sql_script = f"-- SQL Dump for database: {db_name}\n\n"
 
@@ -440,21 +448,21 @@ async def export_database_as_sql(database_id: int, auth_details: dict = Depends(
         sql_script += create_statement
 
         # Generate INSERT statements
-        rows = await get_all_table_rows(table.id, auth_details)
-        if rows:
+        rows_dicts = await get_all_table_rows(table.id, auth_details)
+        if rows_dicts:
             sql_script += f"-- Data for table: {table.name}\n"
-            for row in rows:
+            for row_dict in rows_dicts:
                 # Skip rows that might not have any data in the JSONB field
-                if not row.data:
+                if not row_dict.get('data'):
                     continue
 
                 # We only insert data from the 'data' blob. The user-visible PK is in here.
                 # We need to find the actual PK column name to exclude it if it's auto-incrementing.
                 pk_col_name = next((col.name for col in table.columns if col.is_primary_key), None)
                 
-                columns_to_insert = [f'"{k}"' for k in row.data.keys() if k != pk_col_name]
+                columns_to_insert = [f'"{k}"' for k in row_dict['data'].keys() if k != pk_col_name]
                 values_to_insert = []
-                for k, v in row.data.items():
+                for k, v in row_dict['data'].items():
                     if k == pk_col_name:
                         continue
                     if isinstance(v, str):
@@ -614,15 +622,15 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
         first_table_name = tables_str.split(',')[0].strip().strip('`"')
         
         # 2. Find the actual table ID from the user-provided table name
-        tables = await get_database_tables(database_id, auth_details)
-        target_table = next((t for t in tables if t.name.lower() == first_table_name.lower()), None)
+        tables_dicts = await get_database_tables(database_id, auth_details)
+        target_table = next((t for t in tables_dicts if t['name'].lower() == first_table_name.lower()), None)
         if not target_table:
             raise ValueError(f"Table '{first_table_name}' not found in this database.")
 
         # 3. Build the Supabase query
         # We always query the master `table_rows` table, filtering by the correct table_id
         # The select string is passed directly to PostgREST, which can handle aliasing, etc.
-        sb_query = supabase.table("table_rows").select(f"id, data->{columns_str}").eq("table_id", target_table.id)
+        sb_query = supabase.table("table_rows").select(f"id, data->{columns_str}").eq("table_id", target_table['id'])
 
         # 4. Add support for WHERE, ORDER BY, and LIMIT clauses
         where_match = re.search(r'WHERE\s+(.+?)(?:\s+ORDER BY|\s+LIMIT|$)', query, re.IGNORECASE | re.DOTALL)
