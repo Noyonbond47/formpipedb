@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from typing import List, Optional, Any
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
+from postgrest import APIError
 
 # It's a good practice to load environment variables at the start
 # In a real app, you'd use a library like python-dotenv for local development
@@ -152,11 +153,13 @@ async def create_user_database(db_data: DatabaseCreate, auth_details: dict = Dep
         response = supabase.table("user_databases").insert(new_db_data, returning="representation").execute()
         # The data is returned as a list, so we take the first element.
         return response.data[0]
+    except APIError as e:
+        # Check for PostgreSQL's unique violation error code
+        if e.code == "23505":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A database with the name '{db_data.name}' already exists.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create database: {e.message}")
     except Exception as e:
-        # Catch the specific error for duplicate names
-        if "user_databases_user_id_name_key" in str(e):
-                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A database with the name '{db_data.name}' already exists.")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create database: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"An unexpected error occurred: {str(e)}")
 
 @app.get("/api/v1/databases/{database_id}", response_model=DatabaseResponse)
 async def get_single_database(database_id: int, auth_details: dict = Depends(get_current_user_details)):
@@ -204,10 +207,24 @@ async def create_database_table(database_id: int, table_data: TableCreate, auth_
             "name": table_data.name,
             "columns": [col.dict() for col in table_data.columns]
         }
-        response = supabase.table("user_tables").insert(new_table_data, returning="representation").execute()
+        insert_response = supabase.table("user_tables").insert(new_table_data, returning="representation").execute()
         # The data is returned as a list, so we take the first element.
-        return response.data[0]
-    except Exception as e:
+        created_table = insert_response.data[0]
+
+        # --- Automatically create a VIEW for this table ---
+        # This makes the table immediately queryable in the SQL Runner.
+        try:
+            supabase.rpc('create_or_replace_view_for_table', {
+                'p_table_id': created_table['id'],
+                'p_table_name': created_table['name'],
+                'p_columns': created_table['columns']
+            }).execute()
+        except Exception as view_error:
+            # If view creation fails, we don't fail the whole request, but we should log it.
+            print(f"Warning: Could not create view for table {created_table['id']}: {view_error}")
+
+        return created_table
+    except APIError as e:
         # Check for a unique constraint violation on the table name for that database
         if "user_tables_database_id_name_key" in str(e):
                  raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A table with the name '{table_data.name}' already exists in this database.")

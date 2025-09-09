@@ -8,9 +8,20 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Fira+Code&display=swap" rel="stylesheet">
+    
+    <!-- CodeMirror for SQL editor -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/theme/material-darker.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/sql/sql.min.js"></script>
+
+    <!-- Highlight.js for static code views -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
     <style> 
-        body { font-family: 'Inter', sans-serif; }
+        body { font-family: 'Inter', sans-serif; } .CodeMirror { font-family: 'Fira Code', monospace; border-radius: 0.375rem; height: 10rem; }
         .modal { transition: opacity 0.25s ease; }
     </style>
 </head>
@@ -69,7 +80,7 @@
         </div>
 
         <div id="table-sql-tab-content" class="table-tab-content hidden">
-            <div class="bg-gray-900 text-white p-4 rounded-md font-mono text-sm ring-1 ring-gray-200 relative">
+            <div class="p-4 rounded-md font-mono text-sm ring-1 ring-gray-200 relative bg-[#282c34]">
                 <button id="copy-table-sql-btn" class="absolute top-2 right-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs font-semibold py-1 px-2 rounded">Copy</button>
                 <pre><code id="table-sql-code"></code></pre>
             </div>
@@ -106,9 +117,7 @@
                     <p class="text-sm text-gray-500 mt-1">Execute custom SQL queries against your database.</p>
                 </div>
                 <div class="p-4">
-                    <div class="bg-gray-900 text-white p-4 rounded-md font-mono text-sm ring-1 ring-gray-200">
-                        <textarea id="sql-query-input" class="w-full h-40 bg-transparent text-white outline-none resize-none" placeholder="-- Example: SELECT * FROM users WHERE id > 10;"></textarea>
-                    </div>
+                    <textarea id="sql-query-input" class="w-full h-40" placeholder="-- Example: SELECT * FROM users WHERE id > 10;"></textarea>
                     <div class="mt-4 flex justify-end">
                         <button id="run-query-btn" class="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 font-semibold">Run Query</button>
                     </div>
@@ -122,6 +131,12 @@
     <div id="placeholder-content" class="flex-1 flex items-center justify-center text-gray-500">
         Select a table to view its structure and data.
     </div>
+</div>
+
+<div id="error-banner" class="hidden fixed top-5 right-5 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg shadow-lg z-50" role="alert">
+    <strong class="font-bold">Error: </strong>
+    <span id="error-banner-message" class="block sm:inline"></span>
+    <button onclick="this.parentElement.classList.add('hidden')" class="absolute top-0 bottom-0 right-0 px-4 py-3">&times;</button>
 </div>
 
 <div id="create-table-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
@@ -142,7 +157,7 @@
         </div>
         <div id="sql-create-tab" class="create-table-tab-content hidden p-6 space-y-4 overflow-y-auto">
             <p class="text-sm text-gray-600">Paste a single `CREATE TABLE` statement below.</p>
-            <textarea id="create-table-sql-input" class="w-full h-64 bg-gray-900 text-white p-4 rounded-md font-mono text-sm outline-none resize-vertical" placeholder="CREATE TABLE products (...);"></textarea>
+            <textarea id="create-table-sql-input" class="w-full h-64" placeholder="CREATE TABLE products (...);"></textarea>
         </div>
         <div class="p-6 mt-auto border-t bg-gray-50 flex justify-end gap-4">
             <button id="cancel-create-table-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
@@ -157,7 +172,7 @@
             <h3 class="text-xl font-semibold">Database SQL Schema</h3>
             <button id="close-db-sql-modal-btn" class="text-gray-500 hover:text-gray-800">&times;</button>
         </div>
-        <div class="p-4 overflow-y-auto bg-gray-900 text-white font-mono text-sm">
+        <div class="p-4 overflow-y-auto bg-[#282c34] text-white font-mono text-sm">
             <pre><code id="db-sql-code-content"></code></pre>
         </div>
     </div>
@@ -266,7 +281,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const sqlRunnerBtn = document.getElementById('sql-runner-btn');
     const sqlRunnerView = document.getElementById('sql-runner-view');
     const queryResultsContainer = document.getElementById('query-results-container');
+    
+    // CodeMirror instances
+    let sqlRunnerEditor;
+    let createTableSqlEditor;
 
+    function showError(message) {
+        const banner = document.getElementById('error-banner');
+        const bannerMessage = document.getElementById('error-banner-message');
+        bannerMessage.textContent = message;
+        banner.classList.remove('hidden');
+    }
 
     /**
      * A wrapper for the native fetch function that automatically includes
@@ -479,6 +504,7 @@ document.addEventListener('DOMContentLoaded', () => {
         createStatement += columnDefs.join(',\n');
         createStatement += "\n);";
         codeElement.textContent = createStatement;
+        hljs.highlightElement(codeElement);
     }
 
     tableTabButtons.forEach(button => {
@@ -617,7 +643,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 newTableLink.click();
             }
         } catch (error) {
-            alert(`Error: ${error.message}`);
+            showError(error.message);
         }
     }
 
@@ -894,7 +920,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function handleRunQuery() {
-        const query = sqlQueryInput.value.trim();
+        const query = sqlRunnerEditor.getValue().trim();
         if (!query) return;
 
         runQueryBtn.disabled = true;
@@ -933,6 +959,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const sqlText = await response.text();
             dbSqlCodeContent.textContent = sqlText;
+            hljs.highlightElement(dbSqlCodeContent);
         } catch (error) {
             dbSqlCodeContent.textContent = `-- Error fetching SQL: ${error.message}`;
         }
@@ -1077,6 +1104,27 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target.classList.contains('remove-column-btn')) {
             e.target.closest('.column-row').remove();
         }
+    });
+
+    // Initialize CodeMirror editors
+    sqlRunnerEditor = CodeMirror.fromTextArea(document.getElementById('sql-query-input'), {
+        mode: 'text/x-sql',
+        theme: 'material-darker',
+        lineNumbers: true,
+        lineWrapping: true,
+    });
+
+    createTableSqlEditor = CodeMirror.fromTextArea(document.getElementById('create-table-sql-input'), {
+        mode: 'text/x-sql',
+        theme: 'material-darker',
+        lineNumbers: true,
+        lineWrapping: true,
+    });
+
+    // We need to refresh the editor when its container becomes visible
+    createTableBtn.addEventListener('click', () => {
+        // A short delay ensures the modal is visible before refreshing
+        setTimeout(() => createTableSqlEditor.refresh(), 10);
     });
 
     // Initial Load
