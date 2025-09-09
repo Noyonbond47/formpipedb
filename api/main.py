@@ -657,22 +657,24 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
     """
     supabase = auth_details["client"]
     query = query_data.query.strip()
+    
+    # 1. Clean the query by removing a single trailing semicolon.
+    # A trailing semicolon is valid SQL syntax but causes an error when the query
+    # is executed as a subquery inside the RPC function.
+    if query.endswith(';'):
+        query = query[:-1].strip()
 
-    # Normalize the query by replacing newlines and multiple spaces with a single space.
-    # This helps the simple parser in the PostgreSQL function which struggles with multi-line queries.
-    normalized_query = ' '.join(query.split())
-    query_type = normalized_query.split()[0].upper() if normalized_query else ""
-
-    # The RPC function itself also validates this, but a check here is good practice.
-    allowed_types = ["SELECT", "INSERT", "UPDATE", "DELETE"]
-    if query_type not in allowed_types:
-        raise HTTPException(status_code=400, detail="Only SELECT, INSERT, UPDATE, and DELETE queries are allowed.")
+    # 2. To make the query compatible with the simple parser in the `execute_query`
+    # database function, we need to ensure there is no newline between the first
+    # command (e.g., "SELECT") and the rest of the query.
+    # This regex replaces the first block of whitespace with a single space, which is
+    # safer than normalizing the whole string as it won't corrupt string literals.
+    processed_query = re.sub(r'\s+', ' ', query, 1)
 
     try:
         # Call the 'execute_query' RPC function you created in the Supabase SQL Editor.
         # The function handles the secure execution of the query.
-        response = supabase.rpc('execute_query', {'query_text': normalized_query}).execute()
-         # The RPC function returns a single JSON object, which could be an array of
+        response = supabase.rpc('execute_query', {'query_text': processed_query}).execute()
         # The RPC function returns a single JSON object, which could be an array of
         # results for SELECT, or a status object for DML.
         return response.data
