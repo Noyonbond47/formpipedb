@@ -155,7 +155,7 @@ async def create_user_database(db_data: DatabaseCreate, auth_details: dict = Dep
     except Exception as e:
         # Catch the specific error for duplicate names
         if "user_databases_user_id_name_key" in str(e):
-             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A database with the name '{db_data.name}' already exists.")
+                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A database with the name '{db_data.name}' already exists.")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create database: {str(e)}")
 
 @app.get("/api/v1/databases/{database_id}", response_model=DatabaseResponse)
@@ -210,7 +210,7 @@ async def create_database_table(database_id: int, table_data: TableCreate, auth_
     except Exception as e:
         # Check for a unique constraint violation on the table name for that database
         if "user_tables_database_id_name_key" in str(e):
-             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A table with the name '{table_data.name}' already exists in this database.")
+                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A table with the name '{table_data.name}' already exists in this database.")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create table: {str(e)}")
 
 @app.put("/api/v1/tables/{table_id}", response_model=TableResponse)
@@ -231,7 +231,7 @@ async def update_database_table(table_id: int, table_data: TableUpdate, auth_det
     except Exception as e:
         # Handle case where the new table name conflicts with an existing one in the same database.
         if "user_tables_database_id_name_key" in str(e):
-             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A table with the name '{table_data.name}' already exists in this database.")
+                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A table with the name '{table_data.name}' already exists in this database.")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update table: {str(e)}")
 
 @app.delete("/api/v1/databases/{database_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -247,7 +247,7 @@ async def delete_user_database(database_id: int, auth_details: dict = Depends(ge
         response = supabase.table("user_databases").delete(returning="representation").eq("id", database_id).execute()
         
         if not response.data:
-             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Database not found or you do not have permission to delete it.")
+                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Database not found or you do not have permission to delete it.")
 
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete database: {str(e)}")
@@ -474,6 +474,46 @@ async def export_database_as_sql(database_id: int, auth_details: dict = Depends(
 
     return PlainTextResponse(content=sql_script)
 
+# This is the helper function from your initial snippet, fully implemented.
+async def _parse_and_execute_insert(statement: str, created_tables_map: dict, db_id: int, supabase: Client, user: Any):
+    # Handle multi-value INSERT statements
+    header_match = re.search(r'INSERT INTO\s+[`"]?(\w+)[`"]?\s*\(([^)]+)\)\s*VALUES', statement, re.IGNORECASE)
+    if not header_match: return
+    
+    table_name, columns_str = header_match.groups()
+    if table_name not in created_tables_map: return
+    
+    table_id = created_tables_map[table_name]
+    columns = [c.strip().strip('`"') for c in columns_str.split(',')]
+    
+    # Find all value tuples like (...), (...), (...) using a more robust, non-greedy regex
+    values_part = statement[header_match.end():].strip()
+    value_tuples_str = re.findall(r'\((.*?)\)', values_part)
+
+    rows_to_insert = []
+    for values_str in value_tuples_str:
+        # Use the csv module to handle commas and quotes within values
+        values_reader = csv.reader([values_str], skipinitialspace=True)
+        values = next(values_reader)
+        
+        if len(columns) == len(values):
+            # Attempt to convert numeric strings to actual numbers
+            typed_values = []
+            for v in values:
+                try:
+                    typed_values.append(int(v))
+                except ValueError:
+                    try:
+                        typed_values.append(float(v))
+                    except ValueError:
+                        typed_values.append(v)
+            
+            rows_to_insert.append({"user_id": user.id, "table_id": table_id, "data": dict(zip(columns, typed_values))})
+
+    if rows_to_insert:
+        await supabase.table("table_rows").insert(rows_to_insert).execute()
+
+# This is the import endpoint from your initial snippet, fully implemented.
 @app.post("/api/v1/databases/import-sql", response_model=DatabaseResponse, status_code=status.HTTP_201_CREATED)
 async def import_database_from_sql(import_data: SqlImportRequest, auth_details: dict = Depends(get_current_user_details)):
     """
@@ -548,6 +588,7 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
 
     return db_response
 
+# This is the query execution logic from your initial snippet, fully implemented.
 @app.post("/api/v1/databases/{database_id}/execute-query")
 async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_details: dict = Depends(get_current_user_details)):
     """
@@ -608,43 +649,6 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Query failed: {str(e)}")
 
-async def _parse_and_execute_insert(statement: str, created_tables_map: dict, db_id: int, supabase: Client, user: Any):
-    # Handle multi-value INSERT statements
-    header_match = re.search(r'INSERT INTO\s+[`"]?(\w+)[`"]?\s*\(([^)]+)\)\s*VALUES', statement, re.IGNORECASE)
-    if not header_match: return
-    
-    table_name, columns_str = header_match.groups()
-    if table_name not in created_tables_map: return
-    
-    table_id = created_tables_map[table_name]
-    columns = [c.strip().strip('`"') for c in columns_str.split(',')]
-    
-    # Find all value tuples like (...), (...), (...) using a more robust, non-greedy regex
-    values_part = statement[header_match.end():].strip()
-    value_tuples_str = re.findall(r'\((.*?)\)', values_part)
-
-    rows_to_insert = []
-    for values_str in value_tuples_str:
-        # Use the csv module to handle commas and quotes within values
-        values_reader = csv.reader([values_str], skipinitialspace=True)
-        values = next(values_reader)
-        
-        if len(columns) == len(values):
-            # Attempt to convert numeric strings to actual numbers
-            typed_values = []
-            for v in values:
-                try:
-                    typed_values.append(int(v))
-                except ValueError:
-                    try:
-                        typed_values.append(float(v))
-                    except ValueError:
-                        typed_values.append(v)
-            
-            rows_to_insert.append({"user_id": user.id, "table_id": table_id, "data": dict(zip(columns, typed_values))})
-
-    if rows_to_insert:
-        await supabase.table("table_rows").insert(rows_to_insert).execute()
 
 # --- HTML Serving Endpoints ---
 
