@@ -134,7 +134,7 @@ async def get_user_databases(auth_details: dict = Depends(get_current_user_detai
         supabase = auth_details["client"]
         response = supabase.table("user_databases").select("id, created_at, name, description").order("created_at", desc=True).execute()
         return response.data
-    except Exception as e:
+    except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @app.post("/api/v1/databases", response_model=DatabaseResponse, status_code=status.HTTP_201_CREATED)
@@ -172,7 +172,7 @@ async def get_single_database(database_id: int, auth_details: dict = Depends(get
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Database not found")
         return response.data
-    except Exception as e:
+    except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @app.get("/api/v1/databases/{database_id}/tables", response_model=List[TableResponse])
@@ -184,7 +184,7 @@ async def get_database_tables(database_id: int, auth_details: dict = Depends(get
         supabase = auth_details["client"]
         response = supabase.table("user_tables").select("id, name, columns").eq("database_id", database_id).order("name").execute()
         return response.data
-    except Exception as e:
+    except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @app.post("/api/v1/databases/{database_id}/tables", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
@@ -245,7 +245,7 @@ async def update_database_table(table_id: int, table_data: TableUpdate, auth_det
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found or access denied.")
         return response.data[0]
-    except Exception as e:
+    except APIError as e:
         # Handle case where the new table name conflicts with an existing one in the same database.
         if "user_tables_database_id_name_key" in str(e):
                  raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A table with the name '{table_data.name}' already exists in this database.")
@@ -266,7 +266,7 @@ async def delete_user_database(database_id: int, auth_details: dict = Depends(ge
         if not response.data:
                  raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Database not found or you do not have permission to delete it.")
 
-    except Exception as e:
+    except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete database: {str(e)}")
 
 @app.delete("/api/v1/tables/{table_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -279,7 +279,7 @@ async def delete_database_table(table_id: int, auth_details: dict = Depends(get_
         response = supabase.table("user_tables").delete(returning="representation").eq("id", table_id).execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found or you do not have permission to delete it.")
-    except Exception as e:
+    except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete table: {str(e)}")
 
 @app.get("/api/v1/tables/{table_id}", response_model=TableResponse)
@@ -293,7 +293,7 @@ async def get_single_table(table_id: int, auth_details: dict = Depends(get_curre
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
         return response.data
-    except Exception as e:
+    except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @app.get("/api/v1/tables/{table_id}/rows", response_model=PaginatedRowResponse)
@@ -347,7 +347,7 @@ async def get_table_rows(
             processed_rows = response.data
 
         return {"total": response.count, "data": processed_rows}
-    except Exception as e:
+    except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @app.get("/api/v1/tables/{table_id}/all-rows", response_model=List[RowResponse])
@@ -382,7 +382,7 @@ async def get_all_table_rows(table_id: int, auth_details: dict = Depends(get_cur
             processed_rows = response.data
 
         return processed_rows
-    except Exception as e:
+    except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @app.post("/api/v1/tables/{table_id}/rows", response_model=RowResponse, status_code=status.HTTP_201_CREATED)
@@ -400,7 +400,7 @@ async def create_table_row(table_id: int, auth_details: dict = Depends(get_curre
         }
         response = supabase.table("table_rows").insert(new_row_data, returning="representation").execute()
         return response.data[0]
-    except Exception as e:
+    except APIError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create row: {str(e)}")
 
 @app.put("/api/v1/rows/{row_id}", response_model=RowResponse)
@@ -414,7 +414,7 @@ async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict 
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Row not found or access denied.")
         return response.data[0]
-    except Exception as e:
+    except APIError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update row: {str(e)}")
 
 @app.delete("/api/v1/rows/{row_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -427,7 +427,7 @@ async def delete_table_row(row_id: int, auth_details: dict = Depends(get_current
         response = supabase.table("table_rows").delete(returning="representation").eq("id", row_id).execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Row not found or you do not have permission to delete it.")
-    except Exception as e:
+    except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete row: {str(e)}")
 
 @app.get("/api/v1/databases/{database_id}/export-sql", response_class=PlainTextResponse)

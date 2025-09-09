@@ -67,6 +67,40 @@ def test_get_user_databases_success():
     # Verify that the mock was called correctly
     mock_supabase_client.table.return_value.select.assert_called_with("id, created_at, name, description")
 
+def test_get_single_database_success():
+    """
+    Tests the successful retrieval of a single, authorized database.
+    """
+    # Arrange
+    mock_db = {"id": 1, "created_at": "2023-01-01T00:00:00Z", "name": "test_db_1", "description": "First test db"}
+    mock_supabase_client.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = mock_db
+
+    # Act
+    response = client.get("/api/v1/databases/1")
+
+    # Assert
+    assert response.status_code == 200
+    assert response.json()["name"] == "test_db_1"
+    mock_supabase_client.table.return_value.select.return_value.eq.assert_called_with("id", 1)
+
+def test_get_single_database_not_found_or_unauthorized():
+    """
+    Tests that fetching a non-existent or unauthorized database returns 404.
+    This simulates the behavior of RLS, where a query for another user's data
+    returns an empty result, triggering the API's 404 handling.
+    """
+    # Arrange: Configure the mock to return None, as if RLS filtered the result.
+    mock_supabase_client.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = None
+
+    # Act
+    response = client.get("/api/v1/databases/999") # 999 is an ID that doesn't exist or isn't owned by the user
+
+    # Assert
+    assert response.status_code == 404
+    assert "Database not found" in response.json()["detail"]
+    # Verify that the mock was called with the correct database ID
+    mock_supabase_client.table.return_value.select.return_value.eq.assert_called_with("id", 999)
+
 def test_create_user_database_success():
     """
     Tests the successful creation of a new database.
@@ -97,7 +131,9 @@ def test_create_user_database_conflict():
     """
     # Arrange: Configure the mock to raise a specific APIError.
     # We use `side_effect` to make the mock raise an exception when called.
-    mock_api_error = APIError(message="duplicate key value violates unique constraint", code="23505")
+    mock_api_error = APIError({
+        "message": "duplicate key value violates unique constraint", "code": "23505"
+    })
     mock_supabase_client.table.return_value.insert.return_value.execute.side_effect = mock_api_error
 
     db_payload = {"name": "existing_db", "description": "This one exists"}
@@ -108,4 +144,3 @@ def test_create_user_database_conflict():
     # Assert
     assert response.status_code == 409
     assert "already exists" in response.json()["detail"]
-
