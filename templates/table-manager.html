@@ -33,6 +33,7 @@
         </nav>
         <div class="p-4 border-t space-y-2">
             <button id="create-table-btn" class="w-full text-center p-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-semibold">Create Table</button>
+            <button id="sql-runner-btn" class="w-full text-center p-2 rounded-md bg-green-600 text-white hover:bg-green-700 font-semibold">SQL Runner</button>
             <button id="view-db-sql-btn" class="w-full text-center p-2 rounded-md bg-gray-200 text-gray-800 hover:bg-gray-300 font-semibold text-sm">View Database SQL</button>
             <button id="delete-table-btn" class="w-full text-center p-2 rounded-md bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed" disabled>Delete Table</button>
         </div>
@@ -95,28 +96,28 @@
             <div id="pagination-controls" class="mt-4 flex justify-between items-center text-sm text-gray-600">
             </div>
         </div>
+    </main>
 
-        <div id="sql-tab-content" class="table-tab-content hidden">
-            <div class="space-y-6">
-                <div class="bg-white rounded-lg shadow-sm border">
-                    <div class="p-4 border-b">
-                        <h3 class="text-lg font-semibold">SQL Runner</h3>
-                        <p class="text-sm text-gray-500 mt-1">Execute custom SQL queries against your database.</p>
-                    </div>
-                    <div class="p-4">
-                        <div class="bg-gray-900 text-white p-4 rounded-md font-mono text-sm ring-1 ring-gray-200">
-                            <textarea id="sql-query-input" class="w-full h-40 bg-transparent text-white outline-none resize-none" placeholder="-- Example: SELECT * FROM users WHERE id > 10;"></textarea>
-                        </div>
-                        <div class="mt-4 flex justify-end">
-                            <button id="run-query-btn" class="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 font-semibold">Run Query</button>
-                        </div>
-                    </div>
+    <div id="sql-runner-view" class="flex-1 p-8 overflow-auto hidden">
+        <div class="space-y-6">
+            <div class="bg-white rounded-lg shadow-sm border">
+                <div class="p-4 border-b">
+                    <h3 class="text-lg font-semibold">SQL Runner</h3>
+                    <p class="text-sm text-gray-500 mt-1">Execute custom SQL queries against your database.</p>
                 </div>
-                <div id="query-results-container" class="bg-white rounded-lg shadow-sm border min-h-[10rem]">
+                <div class="p-4">
+                    <div class="bg-gray-900 text-white p-4 rounded-md font-mono text-sm ring-1 ring-gray-200">
+                        <textarea id="sql-query-input" class="w-full h-40 bg-transparent text-white outline-none resize-none" placeholder="-- Example: SELECT * FROM users WHERE id > 10;"></textarea>
+                    </div>
+                    <div class="mt-4 flex justify-end">
+                        <button id="run-query-btn" class="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 font-semibold">Run Query</button>
+                    </div>
                 </div>
             </div>
+            <div id="query-results-container" class="bg-white rounded-lg shadow-sm border min-h-[10rem]">
+            </div>
         </div>
-    </main>
+    </div>
 
     <div id="placeholder-content" class="flex-1 flex items-center justify-center text-gray-500">
         Select a table to view its structure and data.
@@ -261,6 +262,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('row-search-input');
     const runQueryBtn = document.getElementById('run-query-btn');
     const sqlQueryInput = document.getElementById('sql-query-input');
+    const sqlRunnerBtn = document.getElementById('sql-runner-btn');
+    const sqlRunnerView = document.getElementById('sql-runner-view');
     const queryResultsContainer = document.getElementById('query-results-container');
 
 
@@ -348,6 +351,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             mainContent.classList.remove('hidden');
             placeholderContent.classList.add('hidden');
+            sqlRunnerView.classList.add('hidden');
             deleteTableBtn.disabled = false;
             tableTabContainer.classList.remove('hidden');
 
@@ -961,6 +965,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     runQueryBtn.addEventListener('click', handleRunQuery);
     exportCsvBtn.addEventListener('click', handleExportCsv);
+
+    sqlRunnerBtn.addEventListener('click', () => {
+        // Hide other main views
+        mainContent.classList.add('hidden');
+        placeholderContent.classList.add('hidden');
+        // Show the SQL runner
+        sqlRunnerView.classList.remove('hidden');
+        // Visually deselect any selected table
+        tableList.querySelectorAll('a').forEach(a => a.classList.remove('bg-blue-100', 'text-blue-700', 'font-semibold'));
+        state.selectedTable = null;
+        deleteTableBtn.disabled = true;
+    });
     dataTbody.addEventListener('blur', (e) => {
         // The 'blur' event fires when a user clicks away from an editable cell.
         if (e.target.classList.contains('editable-cell') && e.target.hasAttribute('contenteditable')) {
