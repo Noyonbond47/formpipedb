@@ -87,12 +87,17 @@
 
             if (error) {
                 errorMessage.textContent = error.message;
-            } else {
-                // Store the token for other pages to use
+            } else if (data.user && data.session) {
+                // User is signed in, likely because email confirmation is disabled.
                 localStorage.setItem('supabase_token', data.session.access_token);
-                // If email confirmation is turned on, you might want to show a message here.
-                // For now, we redirect directly to the app.
                 window.location.href = '/app';
+            } else if (data.user && !data.session) {
+                // User signed up but needs to confirm their email.
+                signupForm.style.display = 'none';
+                document.querySelector('.text-center h1').textContent = 'Check your email!';
+                document.querySelector('.text-center p').innerHTML = `We've sent a confirmation link to <strong>${email}</strong>. Please click the link to complete your registration.`;
+            } else {
+                errorMessage.textContent = "An unexpected issue occurred. Please try again.";
             }
         });
     </script>

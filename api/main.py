@@ -19,6 +19,7 @@ from postgrest import APIError
 # Vercel will inject these from your project settings
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
 # Get the root directory of the project
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -430,6 +431,34 @@ async def delete_table_row(row_id: int, auth_details: dict = Depends(get_current
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete row: {str(e)}")
 
+@app.delete("/api/v1/users/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_current_user(auth_details: dict = Depends(get_current_user_details)):
+    """
+    Deletes the currently authenticated user's account from auth.users.
+    This is an irreversible action. Requires the service_role key.
+    Assumes that user data in public tables is set to cascade delete.
+    """
+    if not SUPABASE_SERVICE_ROLE_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Server is not configured for user deletion."
+        )
+
+    user_id = auth_details["user"].id
+    
+    try:
+        # An admin client is required to delete users.
+        supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        supabase_admin.auth.admin.delete_user(user_id)
+        
+    except Exception as e:
+        # This could be an APIError or another exception.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete user account: {str(e)}"
+        )
+
+
 @app.get("/api/v1/databases/{database_id}/export-sql", response_class=PlainTextResponse)
 async def export_database_as_sql(database_id: int, auth_details: dict = Depends(get_current_user_details)):
     """
@@ -730,6 +759,19 @@ async def login_page(request: Request):
     return templates.TemplateResponse(
         "login.html", 
         {"request": request, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY}
+    )
+
+@app.get("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_page(request: Request):
+    return templates.TemplateResponse(
+        "forgot-password.html", 
+        {"request": request, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY}
+    )
+
+@app.get("/update-password", response_class=HTMLResponse)
+async def update_password_page(request: Request):
+    return templates.TemplateResponse(
+        "update-password.html", {"request": request, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY}
     )
 
 @app.get("/app", response_class=HTMLResponse)
