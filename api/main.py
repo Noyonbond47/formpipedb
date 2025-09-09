@@ -428,6 +428,8 @@ async def export_database_as_sql(database_id: int, auth_details: dict = Depends(
     tables_dicts = await get_database_tables(database_id, auth_details)
     # Convert dicts to Pydantic models to safely use attribute access
     tables = [TableResponse(**t) for t in tables_dicts]
+    # Create a map for efficient lookup of table names by ID
+    table_id_to_name_map = {t.id: t.name for t in tables}
     
     sql_script = f"-- SQL Dump for database: {db_name}\n\n"
 
@@ -441,7 +443,10 @@ async def export_database_as_sql(database_id: int, auth_details: dict = Depends(
             if col.is_primary_key: col_def += " PRIMARY KEY"
             if col.is_not_null: col_def += " NOT NULL"
             if col.is_unique: col_def += " UNIQUE"
-            # Note: Foreign key constraints are complex to script dynamically and are omitted for simplicity.
+            if col.foreign_key:
+                referenced_table_name = table_id_to_name_map.get(col.foreign_key.table_id)
+                if referenced_table_name:
+                    col_def += f' REFERENCES "{referenced_table_name}" ("{col.foreign_key.column_name}")'
             column_defs.append(col_def)
         create_statement += ",\n".join(column_defs)
         create_statement += "\n);\n\n"
@@ -544,46 +549,93 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
         # First, remove all comments from the script
         script_no_comments = re.sub(r'--.*', '', import_data.script)
         statements = [s.strip() for s in script_no_comments.split(';') if s.strip()]
-        created_tables_map = {} # Maps table name to table ID
+        
+        # --- Multi-pass import process ---
 
-        # First pass: Create all tables
+        # Data structures to hold the parsed schema before creation
+        parsed_tables = {} # { table_name: { "columns": [ColumnDefinition], "foreign_keys": [...] } }
+
+        # Pass 1: Parse all CREATE TABLE statements and store their structure
         for statement in statements:
-            if statement.upper().startswith("CREATE TABLE"):
-                create_match = re.search(r'CREATE TABLE\s+[`"]?(\w+)[`"]?\s*\((.+)\)', statement, re.DOTALL | re.IGNORECASE)
-                if not create_match: continue
+            if not statement.upper().startswith("CREATE TABLE"):
+                continue
 
-                table_name, columns_str = create_match.groups()
-                columns_defs = []
-                for col_line in columns_str.split(','):
-                    col_line = col_line.strip()
-                    # Skip constraint-only lines like PRIMARY KEY(col) or FOREIGN KEY(...)
-                    if not col_line or col_line.upper().startswith(("PRIMARY KEY", "FOREIGN KEY", "UNIQUE", "CONSTRAINT")):
-                        continue
+            create_match = re.search(r'CREATE TABLE\s+[`"]?(\w+)[`"]?\s*\((.+)\)', statement, re.DOTALL | re.IGNORECASE)
+            if not create_match: continue
+            
+            table_name, columns_str = create_match.groups()
+            columns_defs = []
+            table_level_fks = []
 
-                    parts = col_line.split()
-                    if not parts: continue
+            for col_line in columns_str.split(','):
+                col_line = col_line.strip()
+                if not col_line: continue
 
-                    col_name = parts[0].strip('`"')
+                # Check for table-level FOREIGN KEY constraint: FOREIGN KEY (col) REFERENCES other_table(other_col)
+                fk_match = re.search(r'FOREIGN KEY\s*\(([`"]?\w+[`"]?)\)\s*REFERENCES\s*[`"]?(\w+)[`"]?\s*\(([`"]?\w+[`"]?)\)', col_line, re.IGNORECASE)
+                if fk_match:
+                    source_col, ref_table, ref_col = fk_match.groups()
+                    table_level_fks.append({
+                        "source_col": source_col.strip('`"'),
+                        "ref_table": ref_table.strip('`"'),
+                        "ref_col": ref_col.strip('`"')
+                    })
+                    continue
 
-                    # More robustly get the type, which can contain spaces like 'DECIMAL(10, 2)'
-                    type_and_constraints = " ".join(parts[1:])
-                    type_match = re.match(r'[\w\(\s,\)]+', type_and_constraints)
-                    col_type = type_match.group(0).strip() if type_match else parts[1]
+                # Skip other table-level constraints for now
+                if col_line.upper().startswith(("PRIMARY KEY", "UNIQUE", "CONSTRAINT")):
+                    continue
 
-                    columns_defs.append(ColumnDefinition(
-                        name=col_name,
-                        type=col_type.lower(),
-                        is_primary_key="PRIMARY KEY" in type_and_constraints.upper(),
-                        is_unique="UNIQUE" in type_and_constraints.upper(),
-                        is_not_null="NOT NULL" in type_and_constraints.upper()
-                    ))
+                # Assume it's a column definition
+                parts = col_line.split()
+                if not parts: continue
 
-                if not columns_defs: continue
-                table_create_payload = TableCreate(name=table_name, columns=columns_defs)
-                created_table = await create_database_table(new_db_id, table_create_payload, auth_details)
-                created_tables_map[table_name] = created_table['id']
+                col_name = parts[0].strip('`"')
+                type_and_constraints = " ".join(parts[1:])
+                type_match = re.match(r'[\w\(\s,\)]+', type_and_constraints)
+                col_type = type_match.group(0).strip() if type_match else parts[1]
 
-        # Second pass: Insert all data
+                columns_defs.append(ColumnDefinition(
+                    name=col_name,
+                    type=col_type.lower(),
+                    is_primary_key="PRIMARY KEY" in type_and_constraints.upper(),
+                    is_unique="UNIQUE" in type_and_constraints.upper(),
+                    is_not_null="NOT NULL" in type_and_constraints.upper()
+                ))
+            
+            if not columns_defs: continue
+            parsed_tables[table_name] = {"columns": columns_defs, "foreign_keys": table_level_fks}
+
+        # Pass 2: Create all tables (without FKs) to establish their IDs
+        created_tables_map = {} # Maps table name to table ID
+        for table_name, schema in parsed_tables.items():
+            table_create_payload = TableCreate(name=table_name, columns=schema["columns"])
+            created_table = await create_database_table(new_db_id, table_create_payload, auth_details)
+            created_tables_map[table_name] = created_table['id']
+
+        # Pass 3: Update tables with foreign key constraints
+        all_created_tables_dicts = await get_database_tables(new_db_id, auth_details)
+        all_created_tables_map = {t['name']: t for t in all_created_tables_dicts}
+
+        for table_name, schema in parsed_tables.items():
+            if not schema["foreign_keys"]: continue
+            table_to_update_dict = all_created_tables_map.get(table_name)
+            if not table_to_update_dict: continue
+            
+            table_to_update = TableResponse(**table_to_update_dict)
+            made_changes = False
+            for fk in schema["foreign_keys"]:
+                target_column = next((c for c in table_to_update.columns if c.name == fk["source_col"]), None)
+                referenced_table_id = created_tables_map.get(fk["ref_table"])
+                if target_column and referenced_table_id:
+                    target_column.foreign_key = ForeignKeyDefinition(table_id=referenced_table_id, column_name=fk["ref_col"])
+                    made_changes = True
+
+            if made_changes:
+                update_payload = TableUpdate(name=table_to_update.name, columns=table_to_update.columns)
+                await update_database_table(table_to_update.id, update_payload, auth_details)
+
+        # Pass 4: Insert all data
         for statement in statements:
             if statement.upper().startswith("INSERT INTO"):
                 await _parse_and_execute_insert(statement, created_tables_map, new_db_id, supabase, user)
@@ -599,117 +651,36 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
 @app.post("/api/v1/databases/{database_id}/execute-query")
 async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_details: dict = Depends(get_current_user_details)):
     """
-    Safely parses and executes a read-only (SELECT) SQL query from the user.
-    This is NOT raw SQL execution. It translates the query into a safe API call.
+    Executes a read-only (SELECT) SQL query from the user by calling a secure RPC function
+    in the database. This supports complex queries like JOINs and aggregations, provided
+    that VIEWS have been created for the logical tables.
     """
     supabase = auth_details["client"]
     query = query_data.query.strip()
 
+    # The RPC function itself also validates this, but a check here is good practice.
     if not query.upper().startswith("SELECT"):
         raise HTTPException(status_code=400, detail="Only SELECT queries are allowed.")
 
     try:
-        # --- Advanced Safe SQL Parser ---
-        # 1. Extract columns and table name(s)
-        select_from_match = re.search(r'SELECT\s+(.+?)\s+FROM\s+([`"]?\w+[`"]?(?:\s*,\s*[`"]?\w+[`"]?)*)', query, re.IGNORECASE | re.DOTALL)
-        if not select_from_match:
-            raise ValueError("Invalid SELECT...FROM... syntax.")
+        # Call the 'execute_select_query' RPC function you created in the Supabase SQL Editor.
+        # The function handles the secure execution of the query.
+        response = supabase.rpc('execute_select_query', {'query_text': query}).execute()
         
-        columns_str, tables_str = select_from_match.groups()
-        
-        # For simplicity in this safe runner, we'll focus on the first table for filtering.
-        # A full SQL engine would build a more complex join plan.
-        first_table_name = tables_str.split(',')[0].strip().strip('`"')
-        
-        # 2. Find the actual table ID from the user-provided table name
-        tables_dicts = await get_database_tables(database_id, auth_details)
-        target_table = next((t for t in tables_dicts if t['name'].lower() == first_table_name.lower()), None)
-        if not target_table:
-            raise ValueError(f"Table '{first_table_name}' not found in this database.")
-
-        # 3. Build the Supabase query
-        # We always query the master `table_rows` table, filtering by the correct table_id
-        # The select string is passed directly to PostgREST, which can handle aliasing, etc.
-        sb_query = supabase.table("table_rows").select(f"id, data->{columns_str}").eq("table_id", target_table['id'])
-
-        # 4. Add support for WHERE, ORDER BY, and LIMIT clauses
-        where_match = re.search(r'WHERE\s+(.+?)(?:\s+ORDER BY|\s+LIMIT|$)', query, re.IGNORECASE | re.DOTALL)
-        if where_match:
-            # WARNING: This is a simplified filter parser. It supports multiple 'AND' conditions
-            # but not 'OR', 'IN', or complex groupings with parentheses.
-            where_clause = where_match.group(1).strip()
-
-            # Regex to find a single condition: column, operator, and value.
-            condition_pattern = re.compile(
-                r"""
-                ([`"]?\w+[`"]?)              # Group 1: Column name (e.g., `my_col` or `"my_col"`)
-                \s*
-                (>=|<=|<>|!=|=|>|<|ILIKE|LIKE) # Group 2: Operator
-                \s*
-                (
-                    '(?:[^']|'')*' |         # Group 3: Value (single-quoted string, handles escaped quotes)
-                    \d+(?:\.\d+)?            # or a number (integer or float)
-                )
-                """,
-                re.IGNORECASE | re.VERBOSE
-            )
-            
-            op_map = {
-                '=': 'eq', '>': 'gt', '<': 'lt', '>=': 'gte', '<=': 'lte', 
-                '!=': 'neq', '<>': 'neq', 'LIKE': 'like', 'ILIKE': 'ilike'
-            }
-
-            matches = list(condition_pattern.finditer(where_clause))
-            
-            # Verify that the text between matches is only 'AND' or whitespace
-            last_end = 0
-            for match in matches:
-                start = match.start()
-                gap = where_clause[last_end:start].strip()
-                # The first condition can't have anything before it.
-                # Subsequent conditions must be preceded by AND.
-                if last_end == 0 and gap:
-                     raise ValueError(f"Could not parse start of WHERE clause: '{gap}'")
-                if last_end > 0 and gap.upper() != 'AND':
-                    raise ValueError(f"Unsupported operator or syntax between conditions: '{gap}'. Only AND is supported.")
-                last_end = match.end()
-            
-            # Check for trailing text that wasn't parsed as a condition
-            trailing = where_clause[last_end:].strip()
-            if trailing:
-                raise ValueError(f"Could not parse end of WHERE clause: '{trailing}'")
-
-            # If the user provided a WHERE clause but we couldn't find any valid conditions
-            if not matches and where_clause:
-                raise ValueError("WHERE clause found but no valid conditions could be parsed.")
-
-            for match in matches:
-                col, op, val = match.groups()
-                
-                col = col.strip('`"')
-                op = op.upper()
-                
-                # Clean up value if it's a string literal
-                if val.startswith("'"):
-                    val = val.strip("'").replace("''", "'")
-                
-                postgrest_op = op_map.get(op)
-                if not postgrest_op:
-                    # This should not happen with the regex, but as a safeguard
-                    raise ValueError(f"Unsupported operator: {op}")
-
-                sb_query = sb_query.filter(f"data->>{col}", postgrest_op, val)
-
-        limit_match = re.search(r'LIMIT\s+(\d+)', query, re.IGNORECASE)
-        if limit_match:
-            limit = int(limit_match.group(1))
-            sb_query = sb_query.limit(limit)
-
-        response = sb_query.execute()
-        # Flatten the result from {"data": {"col": "val"}} to {"col": "val"}
-        return [row['data'] for row in response.data if row.get('data')]
+        # The RPC function returns a single JSON array of result objects.
+        return response.data
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Query failed: {str(e)}")
+        # The error from the DB will be nested. We can try to extract a cleaner message.
+        error_message = str(e)
+        try:
+            # PostgrestErrors have a 'message' attribute in their JSON representation
+            import json
+            error_details = json.loads(str(e))
+            error_message = error_details.get('message', str(e))
+        except:
+            pass # Fallback to the raw error string
+        
+        raise HTTPException(status_code=400, detail=f"Query failed: {error_message}")
 
 
 # --- HTML Serving Endpoints ---

@@ -254,6 +254,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const cancelEditColumnBtn = document.getElementById('cancel-edit-column-btn');
     const structureTbody = document.getElementById('structure-tbody');
     const viewDbSqlBtn = document.getElementById('view-db-sql-btn');
+    const dbSqlCodeContent = document.getElementById('db-sql-code-content');
     const viewDbSqlModal = document.getElementById('view-db-sql-modal');
     const closeDbSqlModalBtn = document.getElementById('close-db-sql-modal-btn');
     const addRowBtn = document.getElementById('add-row-btn');
@@ -909,6 +910,23 @@ document.addEventListener('DOMContentLoaded', () => {
         runQueryBtn.textContent = 'Run Query';
     }
 
+    async function handleViewDbSql() {
+        if (!state.dbId) return;
+        
+        dbSqlCodeContent.textContent = 'Loading SQL...';
+        openModal(viewDbSqlModal);
+
+        try {
+            const response = await fetchWithAuth(`/api/v1/databases/${state.dbId}/export-sql`);
+            if (!response.ok) throw new Error('Failed to fetch database SQL');
+            
+            const sqlText = await response.text();
+            dbSqlCodeContent.textContent = sqlText;
+        } catch (error) {
+            dbSqlCodeContent.textContent = `-- Error fetching SQL: ${error.message}`;
+        }
+    }
+
     // Event Listeners
     tableList.addEventListener('click', handleTableSelect);
     
@@ -965,6 +983,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     runQueryBtn.addEventListener('click', handleRunQuery);
     exportCsvBtn.addEventListener('click', handleExportCsv);
+
+    viewDbSqlBtn.addEventListener('click', handleViewDbSql);
+    closeDbSqlModalBtn.addEventListener('click', () => closeModal(viewDbSqlModal));
 
     sqlRunnerBtn.addEventListener('click', () => {
         // Hide other main views

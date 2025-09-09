@@ -30,25 +30,19 @@
 
     <!-- Main Content -->
     <main class="container mx-auto px-6 py-12">
-        <h1 class="text-3xl font-bold text-gray-800 mb-8">Database Projects</h1>
+        <h1 class="text-3xl font-bold text-gray-800 mb-8">My Databases</h1>
 
         <!-- Create New Database -->
         <section class="mb-12 bg-white p-6 rounded-lg shadow-sm border">
-            <h2 class="text-xl font-semibold mb-4">Create New Database</h2>
-            <form id="create-db-form" class="flex items-center gap-4">
-                <input id="new-db-name" type="text" placeholder="project_alpha" required pattern="^[a-z0-9_]+$" title="Use only lowercase letters, numbers, and underscores." class="w-1/3 p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
-                <input id="new-db-desc" type="text" placeholder="Description (optional)" class="flex-grow p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
-                <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">Create</button>
-            </form>
-        </section>
-
-        <div class="text-center my-6">
-            <span class="text-gray-500">OR</span>
-        </div>
-        <section class="mb-12 bg-white p-6 rounded-lg shadow-sm border">
-            <h2 class="text-xl font-semibold mb-4">Import Database from SQL</h2>
-            <div class="flex justify-center">
-                <button id="import-sql-btn" class="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">Import from SQL Script...</button>
+            <h2 class="text-xl font-semibold mb-4">Create or Import Database</h2>
+            <div class="flex items-center gap-4">
+                <form id="create-db-form" class="flex-grow flex items-center gap-4">
+                    <input id="new-db-name" type="text" placeholder="project_alpha" required pattern="^[a-z0-9_]+$" title="Use only lowercase letters, numbers, and underscores." class="w-1/3 p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <input id="new-db-desc" type="text" placeholder="Description (optional)" class="flex-grow p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">Create</button>
+                </form>
+                <div class="px-2 text-gray-400">or</div>
+                <button id="import-sql-btn" class="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 whitespace-nowrap">Import SQL...</button>
             </div>
         </section>
 
