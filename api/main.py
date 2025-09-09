@@ -522,31 +522,28 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
     """
     supabase = auth_details["client"]
     user = auth_details["user"]
+    new_db_id = None
 
-    # 1. Create the parent database container
     try:
+        # 1. Create the parent database container
         db_response = await create_user_database(
             db_data=DatabaseCreate(name=import_data.name, description=import_data.description),
             auth_details=auth_details
         )
         new_db_id = db_response.id
-    except HTTPException as e:
-        # Re-raise exceptions from create_user_database (e.g., duplicate name)
-        raise e
 
-    # 2. Robust parsing and execution of the SQL script
-    # First, remove all comments from the script
-    script_no_comments = re.sub(r'--.*', '', import_data.script)
-    statements = [s.strip() for s in script_no_comments.split(';') if s.strip()]
-    created_tables_map = {} # Maps table name to table ID
+        # 2. Robust parsing and execution of the SQL script
+        # First, remove all comments from the script
+        script_no_comments = re.sub(r'--.*', '', import_data.script)
+        statements = [s.strip() for s in script_no_comments.split(';') if s.strip()]
+        created_tables_map = {} # Maps table name to table ID
 
-    try:
         # First pass: Create all tables
         for statement in statements:
             if statement.upper().startswith("CREATE TABLE"):
                 create_match = re.search(r'CREATE TABLE\s+[`"]?(\w+)[`"]?\s*\((.+)\)', statement, re.DOTALL | re.IGNORECASE)
                 if not create_match: continue
-                
+
                 table_name, columns_str = create_match.groups()
                 columns_defs = []
                 for col_line in columns_str.split(','):
@@ -554,24 +551,25 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
                     # Skip constraint-only lines like PRIMARY KEY(col) or FOREIGN KEY(...)
                     if not col_line or col_line.upper().startswith(("PRIMARY KEY", "FOREIGN KEY", "UNIQUE", "CONSTRAINT")):
                         continue
-                    
+
                     parts = col_line.split()
                     if not parts: continue
 
                     col_name = parts[0].strip('`"')
-                    
+
                     # More robustly get the type, which can contain spaces like 'DECIMAL(10, 2)'
                     type_and_constraints = " ".join(parts[1:])
                     type_match = re.match(r'[\w\(\s,\)]+', type_and_constraints)
                     col_type = type_match.group(0).strip() if type_match else parts[1]
 
                     columns_defs.append(ColumnDefinition(
-                        name=col_name, type=col_type.lower(),
+                        name=col_name,
+                        type=col_type.lower(),
                         is_primary_key="PRIMARY KEY" in type_and_constraints.upper(),
                         is_unique="UNIQUE" in type_and_constraints.upper(),
                         is_not_null="NOT NULL" in type_and_constraints.upper()
                     ))
-                
+
                 if not columns_defs: continue
                 table_create_payload = TableCreate(name=table_name, columns=columns_defs)
                 created_table = await create_database_table(new_db_id, table_create_payload, auth_details)
@@ -581,12 +579,13 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
         for statement in statements:
             if statement.upper().startswith("INSERT INTO"):
                 await _parse_and_execute_insert(statement, created_tables_map, new_db_id, supabase, user)
-
+        
+        return db_response
     except Exception as e:
-        await delete_user_database(new_db_id, auth_details)
+        # If any part of the process fails, roll back by deleting the created database.
+        if new_db_id:
+            await delete_user_database(new_db_id, auth_details)
         raise HTTPException(status_code=400, detail=f"Failed to import SQL script: {str(e)}. The new database has been rolled back.")
-
-    return db_response
 
 # This is the query execution logic from your initial snippet, fully implemented.
 @app.post("/api/v1/databases/{database_id}/execute-query")
@@ -628,15 +627,70 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
         # 4. Add support for WHERE, ORDER BY, and LIMIT clauses
         where_match = re.search(r'WHERE\s+(.+?)(?:\s+ORDER BY|\s+LIMIT|$)', query, re.IGNORECASE | re.DOTALL)
         if where_match:
-            # WARNING: This is a simplified filter parser. A production system would need a full SQL parsing library.
-            # It supports simple "col = 'value'" or "col > value"
-            condition = where_match.group(1).strip()
-            cond_parts = re.match(r'[`"]?(\w+)[`"]?\s*([<>=!]+)\s*([\'"]?[\w\s.-]+[\'"]?)', condition)
-            if cond_parts:
-                col, op, val = cond_parts.groups()
-                # Translate SQL operators to PostgREST operators
-                op_map = {'=': 'eq', '>': 'gt', '<': 'lt', '>=': 'gte', '<=': 'lte', '!=': 'neq'}
-                sb_query = sb_query.filter(f"data->>{col}", op_map.get(op, 'eq'), val.strip("'\""))
+            # WARNING: This is a simplified filter parser. It supports multiple 'AND' conditions
+            # but not 'OR', 'IN', or complex groupings with parentheses.
+            where_clause = where_match.group(1).strip()
+
+            # Regex to find a single condition: column, operator, and value.
+            condition_pattern = re.compile(
+                r"""
+                ([`"]?\w+[`"]?)              # Group 1: Column name (e.g., `my_col` or `"my_col"`)
+                \s*
+                (>=|<=|<>|!=|=|>|<|ILIKE|LIKE) # Group 2: Operator
+                \s*
+                (
+                    '(?:[^']|'')*' |         # Group 3: Value (single-quoted string, handles escaped quotes)
+                    \d+(?:\.\d+)?            # or a number (integer or float)
+                )
+                """,
+                re.IGNORECASE | re.VERBOSE
+            )
+            
+            op_map = {
+                '=': 'eq', '>': 'gt', '<': 'lt', '>=': 'gte', '<=': 'lte', 
+                '!=': 'neq', '<>': 'neq', 'LIKE': 'like', 'ILIKE': 'ilike'
+            }
+
+            matches = list(condition_pattern.finditer(where_clause))
+            
+            # Verify that the text between matches is only 'AND' or whitespace
+            last_end = 0
+            for match in matches:
+                start = match.start()
+                gap = where_clause[last_end:start].strip()
+                # The first condition can't have anything before it.
+                # Subsequent conditions must be preceded by AND.
+                if last_end == 0 and gap:
+                     raise ValueError(f"Could not parse start of WHERE clause: '{gap}'")
+                if last_end > 0 and gap.upper() != 'AND':
+                    raise ValueError(f"Unsupported operator or syntax between conditions: '{gap}'. Only AND is supported.")
+                last_end = match.end()
+            
+            # Check for trailing text that wasn't parsed as a condition
+            trailing = where_clause[last_end:].strip()
+            if trailing:
+                raise ValueError(f"Could not parse end of WHERE clause: '{trailing}'")
+
+            # If the user provided a WHERE clause but we couldn't find any valid conditions
+            if not matches and where_clause:
+                raise ValueError("WHERE clause found but no valid conditions could be parsed.")
+
+            for match in matches:
+                col, op, val = match.groups()
+                
+                col = col.strip('`"')
+                op = op.upper()
+                
+                # Clean up value if it's a string literal
+                if val.startswith("'"):
+                    val = val.strip("'").replace("''", "'")
+                
+                postgrest_op = op_map.get(op)
+                if not postgrest_op:
+                    # This should not happen with the regex, but as a safeguard
+                    raise ValueError(f"Unsupported operator: {op}")
+
+                sb_query = sb_query.filter(f"data->>{col}", postgrest_op, val)
 
         limit_match = re.search(r'LIMIT\s+(\d+)', query, re.IGNORECASE)
         if limit_match:
