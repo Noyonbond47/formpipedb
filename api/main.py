@@ -3,6 +3,9 @@
 
 import os
 from pathlib import Path
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 import io, csv
 import re
 from fastapi import FastAPI, Request, Header, HTTPException, status, Depends, Query
@@ -20,6 +23,12 @@ from postgrest import APIError
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+
+SMTP_HOST = os.environ.get("SMTP_HOST")
+SMTP_PORT = os.environ.get("SMTP_PORT")
+SMTP_USER = os.environ.get("SMTP_USER")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")
+CONTACT_FORM_RECIPIENT = os.environ.get("CONTACT_FORM_RECIPIENT")
 
 # Get the root directory of the project
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -89,6 +98,11 @@ class SqlImportRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
     script: str
+
+class ContactForm(BaseModel):
+    sender_name: str = Field(..., min_length=1)
+    sender_email: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1)
 
 
 # --- Reusable Dependencies ---
@@ -740,6 +754,46 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
         
         raise HTTPException(status_code=400, detail=f"Query failed: {error_message}")
 
+
+@app.post("/api/v1/contact")
+async def handle_contact_form(form_data: ContactForm):
+    """
+    Handles submissions from the public contact form and sends an email.
+    """
+    # Check if the server is configured to send emails
+    if not all([SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, CONTACT_FORM_RECIPIENT]):
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Contact form is not configured on the server."
+        )
+
+    # Create the email message
+    msg = MIMEMultipart()
+    msg['From'] = SMTP_USER
+    msg['To'] = CONTACT_FORM_RECIPIENT
+    msg['Subject'] = f"New Contact Form Submission from {form_data.sender_name}"
+
+    body = f"""
+You have received a new message from your website's contact form:
+
+Name: {form_data.sender_name}
+Email: {form_data.sender_email}
+
+Message:
+{form_data.message}
+    """
+    msg.attach(MIMEText(body, 'plain'))
+
+    # Send the email using smtplib
+    try:
+        server = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT))
+        server.starttls()  # Secure the connection
+        server.login(SMTP_USER, SMTP_PASSWORD)
+        server.sendmail(SMTP_USER, CONTACT_FORM_RECIPIENT, msg.as_string())
+        server.quit()
+        return {"message": "Message sent successfully!"}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send message.")
 
 # --- HTML Serving Endpoints ---
 

@@ -52,10 +52,44 @@
     </footer>
 
     <script>
-        // This is a placeholder script. The form doesn't send an email yet.
-        document.getElementById('contact-form').addEventListener('submit', function(e) {
+        const contactForm = document.getElementById('contact-form');
+        const formStatus = document.getElementById('form-status');
+
+        contactForm.addEventListener('submit', async function(e) {
             e.preventDefault();
-            document.getElementById('form-status').textContent = 'This form is a template. Email sending will be configured later.';
+            formStatus.textContent = 'Sending...';
+            formStatus.className = 'text-center mt-4 text-gray-600';
+
+            const senderName = document.getElementById('sender_name').value;
+            const senderEmail = document.getElementById('sender_email').value;
+            const message = document.getElementById('message').value;
+
+            try {
+                const response = await fetch('/api/v1/contact', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        sender_name: senderName,
+                        sender_email: senderEmail,
+                        message: message,
+                    }),
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    formStatus.textContent = 'Thank you! Your message has been sent.';
+                    formStatus.className = 'text-center mt-4 text-green-600';
+                    contactForm.reset();
+                } else {
+                    throw new Error(result.detail || 'An error occurred.');
+                }
+            } catch (error) {
+                formStatus.textContent = `Error: ${error.message}`;
+                formStatus.className = 'text-center mt-4 text-red-600';
+            }
         });
     </script>
 </body>
