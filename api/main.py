@@ -9,7 +9,7 @@ from email.mime.text import MIMEText
 import io, csv
 import re
 from fastapi import FastAPI, Request, Header, HTTPException, status, Depends, Query
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from typing import List, Optional, Any
@@ -794,6 +794,17 @@ Message:
         return {"message": "Message sent successfully!"}
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send message.")
+
+# --- SEO / Static File Routes ---
+@app.get("/robots.txt", response_class=FileResponse)
+async def robots_txt():
+    """Serves the robots.txt file from the public directory."""
+    return FileResponse(path=BASE_DIR / "public" / "robots.txt", media_type="text/plain")
+
+@app.get("/sitemap.xml", response_class=FileResponse)
+async def sitemap_xml():
+    """Serves the sitemap.xml file from the public directory."""
+    return FileResponse(path=BASE_DIR / "public" / "sitemap.xml", media_type="application/xml")
 
 # --- HTML Serving Endpoints ---
 
