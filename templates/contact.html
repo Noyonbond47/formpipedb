@@ -7,46 +7,95 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
-    <style> body { font-family: 'Inter', sans-serif; } </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <style> 
+        body { font-family: 'Inter', sans-serif; } 
+        .gradient-bg {
+            background: linear-gradient(120deg, #fdfbfb 0%, #ebedee 100%);
+        }
+    </style>
 </head>
-<body class="bg-white text-black flex flex-col min-h-screen">
+<body class="bg-white text-gray-800 flex flex-col min-h-screen">
 
-    <!-- Header Section -->
-    <header class="border-b-2 border-black">
+    <header class="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-gray-200">
         <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
-            <div><a href="/" class="text-xl font-bold hover:text-gray-700">FormPipeDB</a></div>
-            <div class="space-x-6">
-                <a href="/signup" class="text-lg font-medium hover:text-gray-700">Sign Up</a>
-                <a href="/login" class="text-lg font-medium hover:text-gray-700">Login</a>
+            <div>
+                <a href="/" class="text-2xl font-bold text-gray-900 hover:text-blue-600 transition-colors">FormPipeDB</a>
+            </div>
+            <div class="hidden md:flex items-center space-x-8">
+                <a href="/about" class="text-lg font-medium text-gray-600 hover:text-blue-600 transition-colors">About Us</a>
+                <a href="/contact" class="text-lg font-medium text-blue-600">Contact</a>
+            </div>
+            <div class="space-x-4">
+                <a href="/login" class="text-lg font-medium text-gray-600 hover:text-blue-600 transition-colors">Login</a>
+                <a href="/signup" class="bg-blue-600 text-white px-5 py-2 rounded-lg text-lg font-medium hover:bg-blue-700 transition-all">Sign Up</a>
             </div>
         </nav>
     </header>
 
-    <!-- Main Content Section -->
-    <main class="flex-grow flex items-center justify-center py-12">
-        <div class="container mx-auto px-6 w-full max-w-lg">
-            <div class="bg-gray-100 p-8 rounded-lg shadow-md">
-                <h1 class="text-3xl font-bold mb-6 text-center">Contact Us</h1>
-                <p class="text-center text-gray-600 mb-6">Have a question? We'd love to hear from you. Send us a message and we'll respond as soon as possible.</p>
-                <form id="contact-form">
-                    <input type="text" id="sender_name" placeholder="Your Name" required class="w-full p-3 mb-4 border rounded">
-                    <input type="email" id="sender_email" placeholder="Your Email" required class="w-full p-3 mb-4 border rounded">
-                    <textarea id="message" placeholder="Your Message" required rows="5" class="w-full p-3 mb-4 border rounded"></textarea>
-                    <button type="submit" class="w-full bg-blue-600 text-white p-3 rounded hover:bg-blue-700 font-medium">Send Message</button>
-                </form>
-                <p id="form-status" class="text-center mt-4"></p>
+    <main class="flex-grow gradient-bg py-20">
+        <div class="container mx-auto px-6">
+            <div class="bg-white p-8 md:p-12 rounded-xl shadow-lg max-w-5xl mx-auto">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+                    
+                    <div>
+                        <h1 class="text-4xl font-extrabold text-gray-900 mb-4">Get in Touch</h1>
+                        <p class="text-lg text-gray-600 mb-8">
+                            Have a question or feedback? We'd love to hear from you. Send us a message and we'll respond as soon as possible.
+                        </p>
+                        <div class="space-y-4">
+                            <div class="flex items-center">
+                                <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                                <span class="ml-3 text-lg text-gray-700">admin.desql@formpipedb.com</span>
+                            </div>
+                            <div class="flex items-center">
+                                <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                <span class="ml-3 text-lg text-gray-700">London, United Kingdom</span>
+                            </div>
+                            <div class="flex items-center">
+                                <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                <span class="ml-3 text-lg text-gray-700">Mon - Fri, 9:00 AM - 5:00 PM (BST)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <form id="contact-form" class="space-y-5">
+                            <div>
+                                <label for="sender_name" class="font-medium text-gray-700">Your Name</label>
+                                <input type="text" id="sender_name" required class="w-full mt-2 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                            </div>
+                             <div>
+                                <label for="sender_email" class="font-medium text-gray-700">Your Email</label>
+                                <input type="email" id="sender_email" required class="w-full mt-2 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                            </div>
+                            <div>
+                                <label for="message" class="font-medium text-gray-700">Message</label>
+                                <textarea id="message" required rows="5" class="w-full mt-2 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"></textarea>
+                            </div>
+                            <button type="submit" class="w-full bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700 font-semibold text-lg transition-all">Send Message</button>
+                        </form>
+                        <p id="form-status" class="text-center mt-4 text-lg"></p>
+                    </div>
+
+                </div>
             </div>
         </div>
     </main>
 
-    <!-- Footer Section -->
-    <footer class="container mx-auto px-6 py-4 border-t-2 border-black">
-        <div class="flex flex-col md:flex-row justify-between items-center">
-            <div class="mb-4 md:mb-0"><a href="/contact" class="text-md hover:text-gray-700">Contact and Support</a></div>
-            <div class="text-right space-y-2">
-                <div><a href="/terms" class="text-md hover:text-gray-700">Terms and Condition</a></div>
-                <div><a href="/privacy" class="text-md hover:text-gray-700">Privacy Policy</a></div>
+    <footer class="bg-gray-900 text-white">
+        <div class="container mx-auto px-6 py-8">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="mb-6 md:mb-0">
+                    <a href="/" class="text-2xl font-bold hover:text-gray-300">FormPipeDB</a>
+                    <p class="text-gray-400 mt-2">© 2025 FormPipeDB. All rights reserved.</p>
+                </div>
+                <div class="flex space-x-8">
+                    <a href="/about" class="text-md hover:text-gray-300">About</a>
+                    <a href="/contact" class="text-md hover:text-gray-300">Contact</a>
+                    <a href="/terms" class="text-md hover:text-gray-300">Terms</a>
+                    <a href="/privacy" class="text-md hover:text-gray-300">Privacy</a>
+                </div>
             </div>
         </div>
     </footer>
@@ -58,7 +107,7 @@
         contactForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             formStatus.textContent = 'Sending...';
-            formStatus.className = 'text-center mt-4 text-gray-600';
+            formStatus.className = 'text-center mt-4 text-lg text-gray-600';
 
             const senderName = document.getElementById('sender_name').value;
             const senderEmail = document.getElementById('sender_email').value;
@@ -81,14 +130,14 @@
 
                 if (response.ok) {
                     formStatus.textContent = 'Thank you! Your message has been sent.';
-                    formStatus.className = 'text-center mt-4 text-green-600';
+                    formStatus.className = 'text-center mt-4 text-lg text-green-600';
                     contactForm.reset();
                 } else {
                     throw new Error(result.detail || 'An error occurred.');
                 }
             } catch (error) {
                 formStatus.textContent = `Error: ${error.message}`;
-                formStatus.className = 'text-center mt-4 text-red-600';
+                formStatus.className = 'text-center mt-4 text-lg text-red-600';
             }
         });
     </script>

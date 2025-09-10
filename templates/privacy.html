@@ -7,47 +7,147 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
-    <style> body { font-family: 'Inter', sans-serif; } </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <style> 
+        body { 
+            font-family: 'Inter', sans-serif; 
+        } 
+        .gradient-bg {
+            background: linear-gradient(120deg, #fdfbfb 0%, #ebedee 100%);
+        }
+        /* Custom styles for better readability */
+        .privacy-content h2 {
+            font-size: 1.5rem; /* 24px */
+            font-weight: 700;
+            margin-top: 2.5rem; /* 40px */
+            margin-bottom: 1rem; /* 16px */
+        }
+        .privacy-content p, .privacy-content li {
+            font-size: 1.125rem; /* 18px */
+            line-height: 1.75;
+            color: #374151; /* text-gray-700 */
+        }
+        .privacy-content ul {
+            list-style-position: inside;
+            padding-left: 1rem;
+        }
+        .privacy-content ul ul {
+            padding-left: 1.5rem;
+        }
+    </style>
 </head>
-<body class="bg-white text-black flex flex-col min-h-screen">
+<body class="bg-white text-gray-800 flex flex-col min-h-screen">
 
-    <!-- Header Section -->
-    <header class="border-b-2 border-black">
+    <header class="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-gray-200">
         <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
-            <div><a href="/" class="text-xl font-bold hover:text-gray-700">FormPipeDB</a></div>
-            <div class="space-x-6">
-                <a href="/signup" class="text-lg font-medium hover:text-gray-700">Sign Up</a>
-                <a href="/login" class="text-lg font-medium hover:text-gray-700">Login</a>
+            <div>
+                <a href="/" class="text-2xl font-bold text-gray-900 hover:text-blue-600 transition-colors">FormPipeDB</a>
+            </div>
+            <div class="hidden md:flex items-center space-x-8">
+                <a href="/about" class="text-lg font-medium text-gray-600 hover:text-blue-600 transition-colors">About Us</a>
+                <a href="/contact" class="text-lg font-medium text-gray-600 hover:text-blue-600 transition-colors">Contact</a>
+            </div>
+            <div class="space-x-4">
+                <a href="/login" class="text-lg font-medium text-gray-600 hover:text-blue-600 transition-colors">Login</a>
+                <a href="/signup" class="bg-blue-600 text-white px-5 py-2 rounded-lg text-lg font-medium hover:bg-blue-700 transition-all">Sign Up</a>
             </div>
         </nav>
     </header>
 
-    <!-- Main Content Section -->
-    <main class="flex-grow container mx-auto px-6 py-12">
-        <div class="max-w-3xl mx-auto">
-            <h1 class="text-4xl font-bold mb-6">Privacy Policy</h1>
-            <p class="text-lg text-gray-700 leading-relaxed">
-                This is a placeholder for your Privacy Policy. Please replace this text with your actual policy. Your privacy is important to us.
-            </p>
-            <h2 class="text-2xl font-bold mt-8 mb-4">1. Information We Collect</h2>
-            <p class="text-lg text-gray-700 leading-relaxed">
-                We collect information you provide directly to us, such as when you create an account (email, name).
-            </p>
-            <h2 class="text-2xl font-bold mt-8 mb-4">2. How We Use Information</h2>
-            <p class="text-lg text-gray-700 leading-relaxed">
-                We use the information we collect to provide, maintain, and improve our services.
-            </p>
-        </div>
+    <main class="flex-grow">
+        <section class="gradient-bg py-20">
+            <div class="container mx-auto px-6 text-center">
+                <h1 class="text-4xl md:text-5xl font-extrabold text-gray-900">Privacy Policy</h1>
+                <p class="text-xl text-gray-600 mt-4">Last Updated: September 10, 2025</p>
+            </div>
+        </section>
+
+        <section class="py-16">
+            <div class="container mx-auto px-6 max-w-4xl privacy-content">
+                <p>Your privacy is critically important to us. At FormPipeDB, we have a few fundamental principles:</p>
+                <ul class="list-disc mt-4 space-y-2">
+                    <li>We are thoughtful about the personal information we ask you to provide and the personal information that we collect about you through the operation of our services.</li>
+                    <li>We store personal information for only as long as we have a reason to keep it.</li>
+                    <li>We aim for full transparency on how we gather, use, and share your personal information.</li>
+                </ul>
+                <p class="mt-4">This Privacy Policy applies to information that we collect about you when you use our website and services (collectively, the "Service").</p>
+
+                <h2>1. Information We Collect</h2>
+                <p>We only collect information about you if we have a reason to do so—for example, to provide our Service, to communicate with you, or to make our Service better.</p>
+                <ul class="list-none mt-4 space-y-4">
+                    <li><strong>Information You Provide to Us:</strong> We collect information that you provide directly to us. This includes:
+                        <ul class="list-disc mt-2 space-y-2">
+                            <li><strong>Account Information:</strong> When you sign up for an account, we collect your full name, email address, and password.</li>
+                            <li><strong>User Content:</strong> We collect and store the data you create within the Service, including your databases, tables, schemas, and the data rows you input or import ("User Content"). As stated in our Terms, you own your User Content.</li>
+                            <li><strong>Communications with Us:</strong> If you use our contact form, we collect your name, email address, and the message you send to us.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Information We Collect Automatically:</strong>
+                        <ul class="list-disc mt-2 space-y-2">
+                            <li><strong>Log Information:</strong> Like most online service providers, we collect information that web browsers and servers typically make available, such as the browser type, IP address, unique device identifiers, language preference, referring site, the date and time of access, and operating system. This is handled by our hosting provider, Vercel.</li>
+                            <li><strong>Session Information:</strong> We use cookies and local storage to keep you logged in and to maintain your session state. This is essential for the Service to function.</li>
+                        </ul>
+                    </li>
+                </ul>
+
+                <h2>2. How and Why We Use Information</h2>
+                <p>We use information about you for the purposes listed below:</p>
+                <ul class="list-disc mt-4 space-y-2">
+                    <li><strong>To Provide Our Service:</strong> To set up and maintain your account, host your databases and User Content, and enable you to use the features of our Service.</li>
+                    <li><strong>To Communicate with You:</strong> To email you for account verification, password resets, and to respond to your inquiries through our contact form.</li>
+                    <li><strong>To Monitor and Protect Our Service:</strong> To detect and prevent fraudulent activity and other illegal activities, and to protect the rights and property of FormPipeDB and others.</li>
+                </ul>
+
+                <h2>3. Sharing Information</h2>
+                <p>We do not sell our users' private personal information.</p>
+                <p class="mt-4">We share information about you in the limited circumstances spelled out below:</p>
+                <ul class="list-disc mt-4 space-y-2">
+                    <li><strong>Third-Party Vendors:</strong> We may share information with third-party vendors who need the information to provide their services to us. This includes:
+                        <ul class="list-disc mt-2 space-y-1">
+                            <li><strong>Supabase:</strong> Provides our database hosting, authentication, and backend infrastructure.</li>
+                            <li><strong>Vercel:</strong> Hosts our web application.</li>
+                            <li><strong>Email Providers:</strong> To send transactional emails like password resets and contact form submissions.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Legal Requests:</strong> We may disclose information about you in response to a subpoena, court order, or other governmental request.</li>
+                    <li><strong>Business Transfers:</strong> In connection with any merger, sale of company assets, or acquisition of all or a portion of our business by another company, user information would likely be one of the assets that is transferred or acquired by a third party. If any of these events were to happen, this Privacy Policy would continue to apply to your information and the party receiving your information may continue to use your information, but only consistent with this policy.</li>
+                </ul>
+
+                <h2>4. Data Security</h2>
+                <p>While no online service is 100% secure, we work very hard to protect information about you against unauthorized access, use, alteration, or destruction, and take reasonable measures to do so. We use reputable third-party services like Supabase and Vercel and enforce HTTPS on our Service.</p>
+
+                <h2>5. Your Rights and Choices</h2>
+                <p>You have several choices available when it comes to your information:</p>
+                <ul class="list-disc mt-4 space-y-2">
+                    <li><strong>Access and Correct Your Information:</strong> You can access and review your account information (email and name) through your user profile in the application dashboard.</li>
+                    <li><strong>Delete Your Account:</strong> You can delete your account at any time using the "Delete Account" feature in the application dashboard. Please note that this action is irreversible and will permanently delete all of your account information and User Content from our Service.</li>
+                </ul>
+
+                <h2>6. Data Retention</h2>
+                <p>We retain your account information and User Content for as long as your account is active. If you choose to delete your account, we will initiate the permanent deletion of all your data from our active systems immediately.</p>
+
+                <h2>7. Changes to This Privacy Policy</h2>
+                <p>We may update this Privacy Policy from time to time. If we make material changes, we will notify you by posting the new policy on this page and updating the "Last Updated" date. We encourage you to review this Privacy Policy periodically for any changes.</p>
+
+                <h2>8. Contact Us</h2>
+                <p>If you have any questions about this Privacy Policy, please contact us at admin.desql@formpipedb.com.</p>
+            </div>
+        </section>
     </main>
 
-    <!-- Footer Section -->
-    <footer class="container mx-auto px-6 py-4 border-t-2 border-black">
-        <div class="flex flex-col md:flex-row justify-between items-center">
-            <div class="mb-4 md:mb-0"><a href="/contact" class="text-md hover:text-gray-700">Contact and Support</a></div>
-            <div class="text-right space-y-2">
-                <div><a href="/terms" class="text-md hover:text-gray-700">Terms and Condition</a></div>
-                <div><a href="/privacy" class="text-md hover:text-gray-700">Privacy Policy</a></div>
+    <footer class="bg-gray-900 text-white">
+        <div class="container mx-auto px-6 py-8">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="mb-6 md:mb-0">
+                    <a href="/" class="text-2xl font-bold hover:text-gray-300">FormPipeDB</a>
+                    <p class="text-gray-400 mt-2">© 2025 FormPipeDB. All rights reserved.</p>
+                </div>
+                <div class="flex space-x-8">
+                    <a href="/about" class="text-md hover:text-gray-300">About</a>
+                    <a href="/contact" class="text-md hover:text-gray-300">Contact</a>
+                    <a href="/terms" class="text-md hover:text-gray-300">Terms</a>
+                    <a href="/privacy" class="text-md hover:text-gray-300">Privacy</a>
+                </div>
             </div>
         </div>
     </footer>
