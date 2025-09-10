@@ -44,6 +44,7 @@
         </nav>
         <div class="p-4 border-t space-y-2">
             <button id="create-table-btn" class="w-full text-center p-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-semibold">Create Table</button>
+            <button id="import-csv-btn" class="w-full text-center p-2 rounded-md bg-purple-600 text-white hover:bg-purple-700 font-semibold">Import CSV</button>
             <button id="sql-runner-btn" class="w-full text-center p-2 rounded-md bg-green-600 text-white hover:bg-green-700 font-semibold">SQL Runner</button>
             <button id="view-db-sql-btn" class="w-full text-center p-2 rounded-md bg-gray-200 text-gray-800 hover:bg-gray-300 font-semibold text-sm">View Database SQL</button>
             <button id="delete-table-btn" class="w-full text-center p-2 rounded-md bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed" disabled>Delete Table</button>
@@ -93,6 +94,7 @@
                 </div>
                 <div class="flex gap-2">
                     <button id="add-row-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Add Row</button>
+                    <button id="import-rows-btn" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">Import Rows</button>
                     <button id="export-csv-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 ml-2">Export to CSV</button>
                 </div>
             </div>
@@ -224,6 +226,76 @@
     </div>
 </div>
 
+<div id="import-csv-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+    <form id="import-csv-form" class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        <div class="p-4 border-b">
+            <h3 class="text-xl font-semibold">Import Table from CSV</h3>
+        </div>
+        
+        <!-- Step 1: File Upload -->
+        <div id="import-step-1" class="p-6 space-y-4">
+            <div>
+                <label for="import-table-name" class="block text-sm font-medium text-gray-700">New Table Name</label>
+                <input id="import-table-name" type="text" placeholder="e.g., customers" required class="mt-1 w-full p-2 border rounded-md">
+            </div>
+            <div>
+                <label for="import-csv-file" class="block text-sm font-medium text-gray-700">CSV File (with headers)</label>
+                <input id="import-csv-file" type="file" accept=".csv" required class="mt-1 w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+            </div>
+        </div>
+
+        <!-- Step 2: Review Columns -->
+        <div id="import-step-2" class="p-6 space-y-4 overflow-y-auto hidden">
+            <p class="text-sm text-gray-600">Review the detected columns and their inferred data types. You can make changes before importing.</p>
+            <div class="border rounded-lg overflow-hidden">
+                <table class="min-w-full text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="p-2 text-left font-semibold">Original Header</th>
+                            <th class="p-2 text-left font-semibold">New Column Name (Sanitized)</th>
+                            <th class="p-2 text-left font-semibold">Data Type</th>
+                            <th class="p-2 text-center font-semibold">PK</th>
+                        </tr>
+                    </thead>
+                    <tbody id="csv-review-tbody" class="divide-y">
+                        <!-- Rows will be injected by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="p-4 mt-auto border-t bg-gray-50 flex justify-end gap-4">
+            <button id="cancel-import-csv-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+            <button id="import-csv-next-btn" type="button" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-semibold">Review Columns</button>
+            <button id="import-csv-submit-btn" type="submit" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 font-semibold hidden">Create Table & Import</button>
+        </div>
+    </form>
+</div>
+
+<div id="import-rows-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+    <form id="import-rows-form" class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        <div class="p-4 border-b">
+            <h3 class="text-xl font-semibold">Import Rows into '<span id="import-rows-table-name"></span>'</h3>
+        </div>
+        <div class="p-6 space-y-4 overflow-y-auto">
+            <div>
+                <label for="import-rows-csv-file" class="block text-sm font-medium text-gray-700">CSV File</label>
+                <input id="import-rows-csv-file" type="file" accept=".csv" required class="mt-1 w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+            </div>
+            <div id="import-rows-mapping-container" class="hidden space-y-3 pt-4">
+                <p class="text-sm font-medium text-gray-800">Map CSV columns to table columns:</p>
+                <div id="import-rows-mapping-fields" class="space-y-2 border-t pt-3">
+                    <!-- Mapping fields will be injected by JS -->
+                </div>
+            </div>
+        </div>
+        <div class="p-4 mt-auto border-t bg-gray-50 flex justify-end gap-4">
+            <button id="cancel-import-rows-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-semibold" disabled>Import Rows</button>
+        </div>
+    </form>
+</div>
+
 <script>
 const supabaseUrl = '{{ supabase_url }}';
 const supabaseAnonKey = '{{ supabase_anon_key }}';
@@ -272,6 +344,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const dbSqlCodeContent = document.getElementById('db-sql-code-content');
     const viewDbSqlModal = document.getElementById('view-db-sql-modal');
     const closeDbSqlModalBtn = document.getElementById('close-db-sql-modal-btn');
+    const importRowsBtn = document.getElementById('import-rows-btn');
     const addRowBtn = document.getElementById('add-row-btn');
     const dataTbody = document.getElementById('data-tbody');
     const exportCsvBtn = document.getElementById('export-csv-btn');
@@ -281,6 +354,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const sqlRunnerBtn = document.getElementById('sql-runner-btn');
     const sqlRunnerView = document.getElementById('sql-runner-view');
     const queryResultsContainer = document.getElementById('query-results-container');
+    const importCsvBtn = document.getElementById('import-csv-btn');
+    const importCsvModal = document.getElementById('import-csv-modal');
+    const importCsvForm = document.getElementById('import-csv-form');
+    const cancelImportCsvBtn = document.getElementById('cancel-import-csv-btn');
+    const importCsvNextBtn = document.getElementById('import-csv-next-btn');
+    const importCsvSubmitBtn = document.getElementById('import-csv-submit-btn');
+    const importCsvFile = document.getElementById('import-csv-file');
+    const importStep1 = document.getElementById('import-step-1');
+    const importStep2 = document.getElementById('import-step-2');
+    const csvReviewTbody = document.getElementById('csv-review-tbody');
+    const importTableName = document.getElementById('import-table-name');
+    const importRowsModal = document.getElementById('import-rows-modal');
+    const importRowsForm = document.getElementById('import-rows-form');
+    const cancelImportRowsBtn = document.getElementById('cancel-import-rows-btn');
+    const importRowsCsvFile = document.getElementById('import-rows-csv-file');
     
     // CodeMirror instances
     let sqlRunnerEditor;
@@ -967,6 +1055,250 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Event Listeners
     tableList.addEventListener('click', handleTableSelect);
+    addRowBtn.addEventListener('click', handleAddRow);
+    importRowsBtn.addEventListener('click', () => {
+        if (!state.selectedTable) return;
+        document.getElementById('import-rows-table-name').textContent = state.selectedTable.name;
+        importRowsForm.reset();
+        document.getElementById('import-rows-mapping-container').classList.add('hidden');
+        importRowsForm.querySelector('button[type="submit"]').disabled = true;
+        openModal(importRowsModal);
+    });
+    cancelImportRowsBtn.addEventListener('click', () => closeModal(importRowsModal));
+
+    importCsvBtn.addEventListener('click', () => {
+        importCsvForm.reset();
+        importStep1.classList.remove('hidden');
+        importStep2.classList.add('hidden');
+        importCsvNextBtn.classList.remove('hidden');
+        importCsvSubmitBtn.classList.add('hidden');
+        importCsvNextBtn.disabled = true;
+        openModal(importCsvModal);
+    });
+    cancelImportCsvBtn.addEventListener('click', () => closeModal(importCsvModal));
+
+    importCsvFile.addEventListener('change', () => {
+        const file = importCsvFile.files[0];
+        importCsvNextBtn.disabled = !file;
+        if (file) {
+            importTableName.value = file.name.replace(/\.csv$/i, '').replace(/[^a-z0-9_]+/gi, '_').toLowerCase();
+        }
+    });
+
+    importCsvNextBtn.addEventListener('click', async () => {
+        const file = importCsvFile.files[0];
+        const tableName = importTableName.value.trim();
+        if (!file || !tableName) {
+            showError('Table name and CSV file are required.');
+            return;
+        }
+
+        importCsvNextBtn.disabled = true;
+        importCsvNextBtn.textContent = 'Processing...';
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const csvContent = e.target.result;
+            try {
+                const response = await fetchWithAuth('/api/v1/import-csv/preview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ csv_content: csvContent })
+                });
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || 'Failed to preview CSV.');
+                }
+                const previewData = await response.json();
+                
+                // Populate review table
+                csvReviewTbody.innerHTML = '';
+                let pk_found = false;
+                previewData.sanitized_headers.forEach((header, i) => {
+                    const is_pk = header === 'id' && !pk_found;
+                    if (is_pk) pk_found = true;
+
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="p-2 font-mono text-gray-600">${previewData.original_headers[i]}</td>
+                        <td class="p-2 font-mono">${header}</td>
+                        <td class="p-2">
+                            <select data-col-name="${header}" class="csv-col-type-select w-full p-1 border rounded-md bg-white">
+                                <option value="text">TEXT</option>
+                                <option value="integer">INTEGER</option>
+                                <option value="real">REAL</option>
+                                <option value="boolean">BOOLEAN</option>
+                                <option value="timestamp">TIMESTAMP</option>
+                            </select>
+                        </td>
+                        <td class="p-2 text-center">
+                            <input type="checkbox" data-col-name="${header}" class="csv-col-pk-checkbox h-4 w-4 rounded" ${is_pk ? 'checked' : ''}>
+                        </td>
+                    `;
+                    csvReviewTbody.appendChild(tr);
+                    tr.querySelector('.csv-col-type-select').value = previewData.inferred_types[i];
+                });
+
+                // Switch to step 2
+                importStep1.classList.add('hidden');
+                importStep2.classList.remove('hidden');
+                importCsvNextBtn.classList.add('hidden');
+                importCsvSubmitBtn.classList.remove('hidden');
+
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                importCsvNextBtn.disabled = false;
+                importCsvNextBtn.textContent = 'Review Columns';
+            }
+        };
+        reader.readAsText(file);
+    });
+
+    importCsvForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const tableName = importTableName.value.trim();
+
+        // Gather column definitions from the review step
+        const columns = [];
+        csvReviewTbody.querySelectorAll('tr').forEach(tr => {
+            const name = tr.children[1].textContent;
+            const type = tr.querySelector('.csv-col-type-select').value;
+            const is_pk = tr.querySelector('.csv-col-pk-checkbox').checked;
+            columns.push({
+                name: name,
+                type: type,
+                is_primary_key: is_pk,
+                is_not_null: is_pk, // Default not null for PK
+                is_unique: is_pk, // Default unique for PK
+                foreign_key: null
+            });
+        });
+
+        importCsvSubmitBtn.disabled = true;
+        importCsvSubmitBtn.textContent = 'Importing...';
+
+        const fileReader = new FileReader();
+        fileReader.onload = async (e) => {
+            const csvContent = e.target.result;
+            const payload = {
+                name: tableName,
+                csv_content: csvContent,
+                columns: columns
+            };
+
+            try {
+                const response = await fetchWithAuth(`/api/v1/databases/${state.dbId}/import-csv`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || 'Failed to import CSV.');
+                }
+                closeModal(importCsvModal);
+                const newTable = await response.json();
+                await fetchDbIdAndTables();
+                const newTableLink = tableList.querySelector(`a[data-table-id="${newTable.id}"]`);
+                if (newTableLink) newTableLink.click();
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                importCsvSubmitBtn.disabled = false;
+                importCsvSubmitBtn.textContent = 'Create Table & Import';
+            }
+        };
+        fileReader.readAsText(importCsvFile.files[0]);
+    });
+
+    importRowsCsvFile.addEventListener('change', () => {
+        const file = importRowsCsvFile.files[0];
+        const mappingContainer = document.getElementById('import-rows-mapping-container');
+        const mappingFields = document.getElementById('import-rows-mapping-fields');
+        const submitBtn = importRowsForm.querySelector('button[type="submit"]');
+
+        if (!file) {
+            mappingContainer.classList.add('hidden');
+            submitBtn.disabled = true;
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const firstLine = e.target.result.split('\n')[0].trim();
+            const csvHeaders = firstLine.split(',').map(h => h.trim().replace(/"/g, ''));
+            const tableColumns = state.selectedTable.columns.filter(c => !c.is_primary_key);
+
+            mappingFields.innerHTML = '';
+            tableColumns.forEach(col => {
+                const div = document.createElement('div');
+                div.className = 'grid grid-cols-2 gap-4 items-center';
+                div.innerHTML = `
+                    <label class="text-right font-medium text-gray-700">${col.name} <span class="font-mono text-xs text-purple-600">(${col.type})</span></label>
+                    <select data-table-col="${col.name}" class="import-rows-col-select p-2 border rounded-md bg-white">
+                        <option value="">-- Don't Import --</option>
+                        ${csvHeaders.map(h => `<option value="${h}">${h}</option>`).join('')}
+                    </select>
+                `;
+                mappingFields.appendChild(div);
+                // Auto-select if header matches column name
+                const matchingHeader = csvHeaders.find(h => h.toLowerCase().replace(/[\s_]+/g, '') === col.name.toLowerCase().replace(/[\s_]+/g, ''));
+                if (matchingHeader) {
+                    div.querySelector('select').value = matchingHeader;
+                }
+            });
+            mappingContainer.classList.remove('hidden');
+            submitBtn.disabled = false;
+        };
+        reader.readAsText(file);
+    });
+
+    importRowsForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const file = importRowsCsvFile.files[0];
+        if (!file || !state.selectedTable) return;
+
+        const columnMapping = {};
+        document.querySelectorAll('.import-rows-col-select').forEach(select => {
+            if (select.value) {
+                columnMapping[select.dataset.tableCol] = select.value;
+            }
+        });
+
+        if (Object.keys(columnMapping).length === 0) {
+            showError('You must map at least one CSV column.');
+            return;
+        }
+
+        const submitBtn = importRowsForm.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Importing...';
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const csvContent = e.target.result;
+            try {
+                const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/import-rows-from-csv`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ csv_content: csvContent, column_mapping: columnMapping })
+                });
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || 'Failed to import rows.');
+                }
+                closeModal(importRowsModal);
+                await fetchAndRenderData(state.selectedTable.id, 1); // Refresh data view
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Import Rows';
+            }
+        };
+        reader.readAsText(file);
+    });
     
     createTableBtn.addEventListener('click', () => {
         resetCreateTableModal();
@@ -1070,7 +1402,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
-    addRowBtn.addEventListener('click', handleAddRow);
     addColumnToModalBtn.addEventListener('click', () => {
         document.getElementById('new-columns-list').appendChild(createColumnRow());
     });

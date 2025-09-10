@@ -87,12 +87,30 @@ class RowResponse(BaseModel):
 class RowCreate(BaseModel):
     data: dict[str, Any]
 
+class CsvPreviewRequest(BaseModel):
+    csv_content: str
+
+class CsvPreviewResponse(BaseModel):
+    original_headers: List[str]
+    sanitized_headers: List[str]
+    inferred_types: List[str]
+
+class CsvImportRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    csv_content: str
+    # The user confirms the columns and types in the UI before sending
+    columns: List[ColumnDefinition]
+
 class PaginatedRowResponse(BaseModel):
     total: int
     data: List[RowResponse]
 
 class QueryRequest(BaseModel):
     query: str
+
+class CsvRowImportRequest(BaseModel):
+    csv_content: str
+    column_mapping: dict[str, str] # Maps table_column_name -> csv_header_name
 
 class SqlImportRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
@@ -244,6 +262,211 @@ async def create_database_table(database_id: int, table_data: TableCreate, auth_
         if "user_tables_database_id_name_key" in str(e):
                  raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A table with the name '{table_data.name}' already exists in this database.")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create table: {str(e)}")
+
+# Helper function for CSV import
+def sanitize_header(header: str) -> str:
+    # Lowercase, replace spaces/dashes with underscores, remove other invalid chars
+    header = header.lower().strip()
+    header = re.sub(r'[\s-]+', '_', header)
+    header = re.sub(r'[^a-z0-9_]', '', header)
+    # Ensure it's a valid identifier (doesn't start with a number)
+    if header and header[0].isdigit():
+        header = '_' + header
+    return header
+
+@app.post("/api/v1/import-csv/preview", response_model=CsvPreviewResponse)
+async def preview_csv_import(preview_data: CsvPreviewRequest, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Parses the start of a CSV to infer headers and column types for UI review.
+    """
+    try:
+        csv_file = io.StringIO(preview_data.csv_content)
+        reader = csv.reader(csv_file)
+        
+        original_headers = next(reader)
+        sanitized_headers = [sanitize_header(h) for h in original_headers]
+        if len(set(sanitized_headers)) != len(sanitized_headers):
+            raise ValueError("CSV contains duplicate headers after sanitization.")
+
+        sample_rows = [row for i, row in enumerate(reader) if i < 100]
+        inferred_types = infer_column_types(sample_rows, len(sanitized_headers))
+
+        return CsvPreviewResponse(original_headers=original_headers, sanitized_headers=sanitized_headers, inferred_types=inferred_types)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to parse CSV preview: {str(e)}")
+
+def infer_column_types(rows: List[List[str]], num_cols: int) -> List[str]:
+    """
+    Infers column types by inspecting the first 100 rows of data.
+    It attempts to find the most specific data type that fits all non-empty values in a column.
+    The order of preference is: integer -> real -> boolean -> timestamp -> text.
+    """
+    from datetime import datetime
+
+    # Define boolean string values (case-insensitive)
+    BOOLEAN_TRUE_STRINGS = {'true', 't', 'yes', 'y', '1'}
+    BOOLEAN_FALSE_STRINGS = {'false', 'f', 'no', 'n', '0'}
+
+    def get_type(value: str):
+        if not value:
+            return None  # Ignore empty strings for type detection
+
+        # Try integer
+        try:
+            int(value)
+            return 'integer'
+        except (ValueError, TypeError):
+            pass
+
+        # Try real (float)
+        try:
+            float(value)
+            return 'real'
+        except (ValueError, TypeError):
+            pass
+
+        # Try boolean
+        if value.lower() in BOOLEAN_TRUE_STRINGS or value.lower() in BOOLEAN_FALSE_STRINGS:
+            return 'boolean'
+
+        # Try timestamp (common formats)
+        for fmt in ('%Y-%m-%dT%H:%M:%S.%f%z', '%Y-%m-%dT%H:%M:%S%z', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+            try:
+                datetime.strptime(value, fmt)
+                return 'timestamp'
+            except (ValueError, TypeError):
+                pass
+
+        return 'text'
+
+    type_hierarchy = ['integer', 'real', 'boolean', 'timestamp', 'text']
+    inferred_types = ['integer'] * num_cols
+
+    for row in rows:
+        if len(row) != num_cols: continue
+        for i, cell in enumerate(row):
+            current_type = inferred_types[i]
+            if current_type == 'text' or not cell:
+                continue
+
+            cell_type = get_type(cell)
+            if cell_type is None:
+                continue
+
+            # If the cell type is "less specific" than the current column type, upgrade the column type.
+            if type_hierarchy.index(cell_type) > type_hierarchy.index(current_type):
+                inferred_types[i] = cell_type
+
+    return inferred_types
+
+@app.post("/api/v1/databases/{database_id}/import-csv", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
+async def import_table_from_csv(database_id: int, import_data: CsvImportRequest, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Creates a new table and populates it from a CSV file string.
+    It infers column types and sanitizes headers.
+    """
+    supabase = auth_details["client"]
+    user = auth_details["user"]
+    new_table_id = None
+
+    # The user has already reviewed and confirmed the column types in the UI.
+    # We receive the final column definitions directly in the payload.
+    try:
+        table_create_payload = TableCreate(name=import_data.name, columns=import_data.columns)
+        created_table_dict = await create_database_table(database_id, table_create_payload, auth_details)
+        created_table = TableResponse(**created_table_dict)
+        new_table_id = created_table.id
+
+        # Now, insert the data
+        csv_file = io.StringIO(import_data.csv_content)
+        
+        # Use the sanitized headers from the confirmed columns payload
+        sanitized_headers = [col.name for col in import_data.columns]
+        column_types = {col.name: col.type for col in import_data.columns}
+
+        # Rewind and read all data for insertion
+        dict_reader = csv.DictReader(csv_file, fieldnames=sanitized_headers)
+        next(dict_reader) # Skip header row
+
+        rows_to_insert = []
+        for row_dict in dict_reader:
+            processed_row = {}
+            for i, header in enumerate(sanitized_headers):
+                val = row_dict.get(header)
+                col_type = column_types.get(header, 'text')
+                if val is not None and val != '':
+                    if col_type == 'integer':
+                        try: val = int(val)
+                        except (ValueError, TypeError): pass
+                    elif col_type == 'real':
+                        try: val = float(val)
+                        except (ValueError, TypeError): pass
+                processed_row[header] = val
+            rows_to_insert.append({"user_id": user.id, "table_id": new_table_id, "data": processed_row})
+
+        if rows_to_insert:
+            supabase.table("table_rows").insert(rows_to_insert).execute()
+
+        return created_table
+    except Exception as e:
+        if new_table_id:
+            supabase.table("user_tables").delete().eq("id", new_table_id).eq("user_id", user.id).execute()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to import CSV: {str(e)}")
+
+@app.post("/api/v1/tables/{table_id}/import-rows-from-csv", status_code=status.HTTP_200_OK)
+async def import_rows_into_table(table_id: int, import_data: CsvRowImportRequest, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Imports rows from a CSV file into an existing table based on a user-defined column mapping.
+    """
+    supabase = auth_details["client"]
+    user = auth_details["user"]
+
+    try:
+        # 1. Get the schema of the target table to know the expected data types
+        table_schema_dict = await get_single_table(table_id, auth_details)
+        table_schema = TableResponse(**table_schema_dict)
+        table_column_types = {col.name: col.type for col in table_schema.columns}
+
+        # 2. Parse the CSV
+        csv_file = io.StringIO(import_data.csv_content)
+        dict_reader = csv.DictReader(csv_file)
+        
+        rows_to_insert = []
+        inserted_count = 0
+
+        for row_dict in dict_reader:
+            processed_row_data = {}
+            # 3. Map CSV columns to table columns and cast types
+            for table_col, csv_header in import_data.column_mapping.items():
+                if csv_header not in row_dict:
+                    continue # Skip if the mapped CSV header doesn't exist in this row
+                
+                val = row_dict[csv_header]
+                target_type = table_column_types.get(table_col)
+
+                if val is not None and val != '':
+                    try:
+                        if target_type == 'integer': val = int(val)
+                        elif target_type == 'real': val = float(val)
+                        elif target_type == 'boolean': val = val.lower() in {'true', 't', 'yes', 'y', '1'}
+                        # Timestamps and text are kept as strings for insertion
+                    except (ValueError, TypeError):
+                        # For now, we just insert the original string if casting fails.
+                        # A more robust solution could add error tracking.
+                        pass
+                
+                processed_row_data[table_col] = val
+            
+            if processed_row_data:
+                rows_to_insert.append({"user_id": user.id, "table_id": table_id, "data": processed_row_data})
+                inserted_count += 1
+
+        if rows_to_insert:
+            supabase.table("table_rows").insert(rows_to_insert).execute()
+
+        return {"message": f"Successfully processed {inserted_count} rows for import."}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to import rows: {str(e)}")
 
 @app.put("/api/v1/tables/{table_id}", response_model=TableResponse)
 async def update_database_table(table_id: int, table_data: TableUpdate, auth_details: dict = Depends(get_current_user_details)):
