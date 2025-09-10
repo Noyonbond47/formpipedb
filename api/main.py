@@ -112,6 +112,16 @@ class CsvRowImportRequest(BaseModel):
     csv_content: str
     column_mapping: dict[str, str] # Maps table_column_name -> csv_header_name
 
+class RowImportError(BaseModel):
+    row_number: int
+    data: dict[str, Any]
+    error: str
+
+class CsvRowImportResponse(BaseModel):
+    inserted_count: int
+    failed_count: int
+    errors: List[RowImportError]
+
 class SqlImportRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
@@ -413,7 +423,7 @@ async def import_table_from_csv(database_id: int, import_data: CsvImportRequest,
             supabase.table("user_tables").delete().eq("id", new_table_id).eq("user_id", user.id).execute()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to import CSV: {str(e)}")
 
-@app.post("/api/v1/tables/{table_id}/import-rows-from-csv", status_code=status.HTTP_200_OK)
+@app.post("/api/v1/tables/{table_id}/import-rows-from-csv", response_model=CsvRowImportResponse)
 async def import_rows_into_table(table_id: int, import_data: CsvRowImportRequest, auth_details: dict = Depends(get_current_user_details)):
     """
     Imports rows from a CSV file into an existing table based on a user-defined column mapping.
@@ -432,16 +442,20 @@ async def import_rows_into_table(table_id: int, import_data: CsvRowImportRequest
         dict_reader = csv.DictReader(csv_file)
         
         rows_to_insert = []
-        inserted_count = 0
+        failed_rows = []
 
-        for row_dict in dict_reader:
+        for i, row_dict in enumerate(dict_reader, start=2): # Row 1 is header, so data starts at line 2
             processed_row_data = {}
+            has_error = False
+            error_reason = ""
+
             # 3. Map CSV columns to table columns and cast types
             for table_col, csv_header in import_data.column_mapping.items():
                 if csv_header not in row_dict:
                     continue # Skip if the mapped CSV header doesn't exist in this row
                 
                 val = row_dict[csv_header]
+                original_val = val
                 target_type = table_column_types.get(table_col)
 
                 if val is not None and val != '':
@@ -451,20 +465,25 @@ async def import_rows_into_table(table_id: int, import_data: CsvRowImportRequest
                         elif target_type == 'boolean': val = val.lower() in {'true', 't', 'yes', 'y', '1'}
                         # Timestamps and text are kept as strings for insertion
                     except (ValueError, TypeError):
-                        # For now, we just insert the original string if casting fails.
-                        # A more robust solution could add error tracking.
-                        pass
+                        has_error = True
+                        error_reason = f"Column '{table_col}': Invalid value '{original_val}' for type '{target_type}'."
+                        break # Stop processing this row on first error
                 
                 processed_row_data[table_col] = val
             
-            if processed_row_data:
+            if has_error:
+                failed_rows.append(RowImportError(row_number=i, data=row_dict, error=error_reason))
+            elif processed_row_data:
                 rows_to_insert.append({"user_id": user.id, "table_id": table_id, "data": processed_row_data})
-                inserted_count += 1
 
         if rows_to_insert:
             supabase.table("table_rows").insert(rows_to_insert).execute()
 
-        return {"message": f"Successfully processed {inserted_count} rows for import."}
+        return CsvRowImportResponse(
+            inserted_count=len(rows_to_insert),
+            failed_count=len(failed_rows),
+            errors=failed_rows
+        )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to import rows: {str(e)}")
 

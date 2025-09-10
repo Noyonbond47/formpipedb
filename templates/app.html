@@ -274,15 +274,9 @@
                 if (!dbToDeleteId) return;
                 try {
                     const response = await fetchWithAuth(`/api/v1/databases/${dbToDeleteId}`, { method: 'DELETE' });
-                    if (!response.ok) {
-                        let errorDetail = 'Failed to delete database.';
-                        try {
-                            const err = await response.json();
-                            errorDetail = err.detail || errorDetail;
-                        } catch (e) { /* ignore if response is not json */ }
-                        throw new Error(errorDetail);
-                    }
-                    fetchDatabases(); // Re-fetch the list
+                    // Regardless of whether it was a 204 (success) or 404 (already gone),
+                    // we just want to refresh the list from the user's perspective.
+                    fetchDatabases();
                     closeModal(deleteModal);
                 } catch (error) {
                     alert(`Error: ${error.message}`);
