@@ -2091,9 +2091,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const payload = {
-                ...state.calendarIntegration, // Keep existing provider, email, etc.
+                ...state.calendarIntegration,
                 field_mapping: fieldMapping
             };
+
+            delete payload.credentials; // Explicitly remove credentials for mapping-only updates
 
             const submitBtn = e.target.querySelector('button[type="submit"]');
             submitBtn.disabled = true;
