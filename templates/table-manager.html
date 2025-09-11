@@ -706,11 +706,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(`Failed to load settings: ${errorDetail}`);
             }
 
-            const integration = await response.json();
-            // A `null` response is valid, it means no integration is set up.
-            state.calendarIntegration = integration; // Can be null if no integration exists
-            renderCalendarAutomation(state.calendarIntegration);
+            // A 200 OK with a null body is a valid response meaning "no integration".
+            // We need to check the content-length to avoid a JSON parsing error on an empty body.
+            const contentLength = response.headers.get("content-length");
+            const integration = contentLength && parseInt(contentLength, 10) > 0 ? await response.json() : null;
 
+            state.calendarIntegration = integration;
+            renderCalendarAutomation(integration);
         } catch (error) {
             console.error("Calendar Automation Error:", error);
             // Display a more informative error message
