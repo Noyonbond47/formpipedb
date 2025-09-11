@@ -1365,9 +1365,20 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderQueryResults(result) {
         queryResultsContainer.innerHTML = '';
         if (result.error) {
+            let friendlyHint = '';
+            // Check for the specific error about disallowed query types (like CREATE, ALTER, etc.)
+            if (result.error.includes('Only SELECT, INSERT, UPDATE, and DELETE queries are allowed')) {
+                friendlyHint = `
+                    <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm">
+                        <p class="font-semibold text-blue-800">Did you mean to create a table?</p>
+                        <p class="mt-1 text-blue-700">The SQL Runner is for querying data (SELECT, etc.). To create tables from a script, please use the <strong class="font-semibold">"Import SQL"</strong> feature on the main dashboard.</p>
+                    </div>
+                `;
+            }
             queryResultsContainer.innerHTML = `
                 <div class="p-4 border-b bg-red-50 text-red-700 font-semibold">Error</div>
                 <div class="p-4 font-mono text-sm text-red-600 whitespace-pre-wrap">${result.error}</div>
+                ${friendlyHint}
             `;
             return;
         }
