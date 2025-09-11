@@ -906,6 +906,8 @@ async def get_calendar_integration(table_id: int, auth_details: dict = Depends(g
         return response.data
     except APIError as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch calendar integration: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred while fetching calendar settings: {str(e)}")
 
 @app.post("/api/v1/tables/{table_id}/calendar-integration", response_model=CalendarIntegrationResponse, status_code=status.HTTP_201_CREATED)
 async def create_or_update_calendar_integration(table_id: int, integration_data: CalendarIntegrationCreate, auth_details: dict = Depends(get_current_user_details)):
