@@ -902,8 +902,12 @@ async def get_calendar_integration(table_id: int, auth_details: dict = Depends(g
     # In a real app, you'd query the database:
     supabase = auth_details["client"]
     try:
-        response = supabase.table("calendar_integrations").select("*").eq("table_id", table_id).maybe_single().execute()
-        return response.data
+        # Use .execute() which always returns a response object.
+        # .maybe_single() can return None directly, causing an attribute error.
+        response = supabase.table("calendar_integrations").select("*").eq("table_id", table_id).limit(1).execute()
+        # If data is a list and it's not empty, return the first item. Otherwise, return None.
+        # This correctly handles the "not found" case.
+        return response.data[0] if response.data else None
     except APIError as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch calendar integration: {str(e)}")
     except Exception as e:
