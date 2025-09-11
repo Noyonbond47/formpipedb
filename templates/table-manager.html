@@ -672,7 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
         calendarAutomationContainer.innerHTML = `<div class="text-sm text-gray-500">Loading calendar settings...</div>`;
         try {
             const response = await fetchWithAuth(`/api/v1/tables/${tableId}/calendar-integration`);
-
+ 
             if (!response.ok) {
                 let errorDetail = `HTTP error! status: ${response.status}`;
                 try {
@@ -681,18 +681,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch (e) {
                     errorDetail = response.statusText;
                 }
-                throw new Error(errorDetail);
+                // Throw an actual error object to ensure `error.message` is populated.
+                throw new Error(`Failed to load settings: ${errorDetail}`);
             }
 
-            // Handle cases where the API returns 200 OK with an empty body (null for maybe_single)
-            const integration = response.status === 204 ? null : await response.json();
+            const integration = await response.json();
+            // A `null` response is valid, it means no integration is set up.
             state.calendarIntegration = integration; // Can be null if no integration exists
             renderCalendarAutomation(state.calendarIntegration);
 
         } catch (error) {
             console.error("Calendar Automation Error:", error);
             // Display a more informative error message
-            calendarAutomationContainer.innerHTML = `<div class="text-sm text-red-500">Error loading calendar settings: ${error.message}</div>`;
+            calendarAutomationContainer.innerHTML = `<div class="text-sm text-red-500">Error loading calendar settings: ${error.message || 'An unknown error occurred.'}</div>`;
         }
     }
 
@@ -1924,6 +1925,17 @@ document.addEventListener('DOMContentLoaded', () => {
             connectBtn.disabled = true;
             connectBtn.textContent = 'Connecting...';
 
+            // --- Validation Step ---
+            // Ensure there's at least one non-primary-key column to use for the title.
+            const availableTitleCols = state.selectedTable.columns.filter(c => !c.is_primary_key);
+            if (availableTitleCols.length === 0) {
+                showError("Cannot connect calendar: Your table needs at least one column besides the primary key to use as an event title.");
+                connectBtn.disabled = false;
+                connectBtn.innerHTML = `<svg class="w-5 h-5" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><path d="M473.16,221.48l-2.26-9.59H262.46v88.22H387c-12.93,61.4-72.5,108.61-124.54,108.61-94.26,0-171-76.75-171-171s76.75-171,171-171c52.5,0,93.36,21.25,119.25,49.5l63.42-63.42C431.35,62.46,352.19,24,262.46,24,122.48,24,12,134.48,12,274s110.48,250,250.46,250c144.93,0,249.54-103.87,249.54-253.52,0-16.4-1.84-33.57-4.84-50Z" fill="#4285f4"/><path d="M473.16,221.48l-2.26-9.59H262.46v88.22H387c-12.93,61.4-72.5,108.61-124.54,108.61-94.26,0-171-76.75-171-171s76.75-171,171-171c52.5,0,93.36,21.25,119.25,49.5l63.42-63.42C431.35,62.46,352.19,24,262.46,24,122.48,24,12,134.48,12,274s110.48,250,250.46,250c144.93,0,249.54-103.87,249.54-253.52,0-16.4-1.84-33.57-4.84-50Z" fill-opacity="0" transform="translate(256 256) scale(0.5) translate(-256 -256)"/></svg> Connect Google Calendar`;
+                return;
+            }
+            // --- End Validation ---
+
             // Mocking a successful connection
             const mockIntegrationData = {
                 provider: "google",
@@ -1931,8 +1943,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 calendar_id: "primary", // Default to primary calendar
                 field_mapping: {
                     // Pre-fill with best guesses
-                    event_title_col: state.selectedTable.columns.find(c => c.name.includes('title') || c.name.includes('name'))?.name || state.selectedTable.columns[0].name,
-                    start_datetime_col: state.selectedTable.columns.find(c => c.type === 'timestamp' || c.name.includes('date'))?.name || state.selectedTable.columns[0].name,
+                    event_title_col: availableTitleCols.find(c => c.name.includes('title') || c.name.includes('name'))?.name || availableTitleCols[0].name,
+                    start_datetime_col: state.selectedTable.columns.find(c => c.type === 'timestamp' || c.name.includes('date'))?.name || availableTitleCols[0].name,
                 }
             };
 
