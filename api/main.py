@@ -996,12 +996,16 @@ async def create_or_update_calendar_integration(table_id: int, integration_data:
             "account_email": integration_data.account_email,
             "calendar_id": integration_data.calendar_id,
             "field_mapping": integration_data.field_mapping.dict(),
-            # IMPORTANT: In a production app, these credentials should be encrypted before saving.
-            "credentials": integration_data.credentials
         }
         
+        # Only include credentials in the payload if they are provided.
+        # This allows updating the mapping without re-sending credentials.
+        # IMPORTANT: In a production app, these credentials should be encrypted before saving.
+        if integration_data.credentials:
+            integration_payload["credentials"] = integration_data.credentials
+
         # Upsert on the table_id, which has a unique constraint. RLS ensures the user owns the table.
-        response = supabase.table("calendar_integrations").upsert(integration_payload, on_conflict="table_id", returning="representation").execute()
+        response = supabase.table("calendar_integrations").upsert(integration_payload, on_conflict="table_id", returning="representation", ignore_duplicates=False).execute()
         
         return response.data[0]
     except APIError as e:
