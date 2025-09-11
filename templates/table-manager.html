@@ -93,8 +93,17 @@
                 <h2 class="text-xl font-semibold text-gray-800">Webhook Integrations</h2>
                 <button id="create-webhook-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-semibold">Create New Webhook</button>
             </div>
-            <div id="webhooks-list-container" class="space-y-4">
+            <div id="webhooks-list-container" class="space-y-4 min-h-[6rem]">
                 <!-- Webhooks will be rendered here by JS -->
+            </div>
+
+            <hr class="my-8 border-t">
+
+            <div>
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">Calendar Automation</h2>
+                <div id="calendar-automation-container" class="bg-white rounded-lg shadow-sm border p-6">
+                    <!-- Calendar integration UI will be rendered here -->
+                </div>
             </div>
         </div>
 
@@ -338,7 +347,8 @@ document.addEventListener('DOMContentLoaded', () => {
         pagination: {
             currentPage: 1,
             limit: 50, // This should match the default limit in the API
-            totalRows: 0
+            totalRows: 0,
+            calendarIntegration: null
         }
     };
 
@@ -394,6 +404,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeSummaryModalBtn = document.getElementById('close-summary-modal-btn');
     const createWebhookBtn = document.getElementById('create-webhook-btn');
     const webhooksListContainer = document.getElementById('webhooks-list-container');
+    const calendarAutomationContainer = document.getElementById('calendar-automation-container');
 
     const importRowsCsvFile = document.getElementById('import-rows-csv-file');
     
@@ -534,6 +545,7 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchAndRenderData(state.selectedTable.id, 1);
             renderTableSql(state.selectedTable);
             fetchAndRenderWebhooks(state.selectedTable.id);
+            fetchAndRenderCalendarAutomation(state.selectedTable.id);
         }
     }
 
@@ -654,6 +666,102 @@ document.addEventListener('DOMContentLoaded', () => {
         createStatement += "\n);";
         codeElement.textContent = createStatement;
         hljs.highlightElement(codeElement);
+    }
+
+    async function fetchAndRenderCalendarAutomation(tableId) {
+        calendarAutomationContainer.innerHTML = `<div class="text-sm text-gray-500">Loading calendar settings...</div>`;
+        try {
+            const response = await fetchWithAuth(`/api/v1/tables/${tableId}/calendar-integration`);
+            if (response.status === 404 || response.status === 204 || response.status === 200 && !(await response.clone().json())) {
+                state.calendarIntegration = null;
+            } else if (response.ok) {
+                state.calendarIntegration = await response.json();
+            } else {
+                throw new Error('Failed to fetch calendar integration settings.');
+            }
+            renderCalendarAutomation(state.calendarIntegration);
+        } catch (error) {
+            console.error(error);
+            calendarAutomationContainer.innerHTML = `<div class="text-sm text-red-500">Error loading calendar settings.</div>`;
+        }
+    }
+
+    function renderCalendarAutomation(integration) {
+        if (!integration) {
+            // Disconnected state
+            calendarAutomationContainer.innerHTML = `
+                <div class="text-center">
+                    <h3 class="font-semibold text-gray-700">Connect to your Calendar</h3>
+                    <p class="mt-1 text-sm text-gray-500 max-w-xl mx-auto">Automatically create calendar events from new rows in this table. Keep track of deadlines, appointments, and tasks without leaving your workflow.</p>
+                    <button id="connect-google-calendar-btn" class="mt-4 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-50 font-semibold flex items-center gap-2 mx-auto">
+                        <svg class="w-5 h-5" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><path d="M473.16,221.48l-2.26-9.59H262.46v88.22H387c-12.93,61.4-72.5,108.61-124.54,108.61-94.26,0-171-76.75-171-171s76.75-171,171-171c52.5,0,93.36,21.25,119.25,49.5l63.42-63.42C431.35,62.46,352.19,24,262.46,24,122.48,24,12,134.48,12,274s110.48,250,250.46,250c144.93,0,249.54-103.87,249.54-253.52,0-16.4-1.84-33.57-4.84-50Z" fill="#4285f4"/><path d="M473.16,221.48l-2.26-9.59H262.46v88.22H387c-12.93,61.4-72.5,108.61-124.54,108.61-94.26,0-171-76.75-171-171s76.75-171,171-171c52.5,0,93.36,21.25,119.25,49.5l63.42-63.42C431.35,62.46,352.19,24,262.46,24,122.48,24,12,134.48,12,274s110.48,250,250.46,250c144.93,0,249.54-103.87,249.54-253.52,0-16.4-1.84-33.57-4.84-50Z" fill-opacity="0" transform="translate(256 256) scale(0.5) translate(-256 -256)"/></svg>
+                        Connect Google Calendar
+                    </button>
+                </div>
+            `;
+        } else {
+            // Connected and mapping state
+            const tableColumns = state.selectedTable.columns;
+            const dateColumns = tableColumns.filter(c => ['timestamp', 'text', 'real', 'integer'].includes(c.type)); // Allow text/numbers for flexible date parsing
+            const booleanColumns = tableColumns.filter(c => c.type === 'boolean');
+            
+            const columnOptions = (cols, selectedVal) => cols.map(c => `<option value="${c.name}" ${c.name === selectedVal ? 'selected' : ''}>${c.name}</option>`).join('');
+            const optionalColumnOptions = (cols, selectedVal) => `<option value="">-- Optional --</option>${columnOptions(cols, selectedVal)}`;
+
+            const mapping = integration.field_mapping || {};
+
+            calendarAutomationContainer.innerHTML = `
+                <form id="calendar-mapping-form">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="font-semibold text-gray-800">Calendar Automation is Active</h3>
+                            <p class="text-sm text-gray-500 mt-1">Connected to Google Calendar: <strong class="text-gray-700">${integration.account_email}</strong></p>
+                        </div>
+                        <button id="disconnect-calendar-btn" type="button" class="bg-red-100 text-red-700 px-3 py-1 rounded-md hover:bg-red-200 text-sm font-semibold">Disconnect</button>
+                    </div>
+
+                    <div class="mt-6 pt-6 border-t space-y-4">
+                        <p class="text-sm font-medium text-gray-800">Map table columns to calendar event fields:</p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Event Title <span class="text-red-500">*</span></label>
+                                <select name="event_title_col" required class="mt-1 w-full p-2 border rounded-md bg-white">
+                                    ${columnOptions(tableColumns, mapping.event_title_col)}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Description</label>
+                                <select name="description_col" class="mt-1 w-full p-2 border rounded-md bg-white">
+                                    ${optionalColumnOptions(tableColumns, mapping.description_col)}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Start Date / Time <span class="text-red-500">*</span></label>
+                                <select name="start_datetime_col" required class="mt-1 w-full p-2 border rounded-md bg-white">
+                                    ${columnOptions(dateColumns, mapping.start_datetime_col)}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">End Date / Time</label>
+                                <select name="end_datetime_col" class="mt-1 w-full p-2 border rounded-md bg-white">
+                                    ${optionalColumnOptions(dateColumns, mapping.end_datetime_col)}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Completed Status Column</label>
+                                <select name="completed_status_col" class="mt-1 w-full p-2 border rounded-md bg-white">
+                                    ${optionalColumnOptions(booleanColumns, mapping.completed_status_col)}
+                                </select>
+                                <p class="text-xs text-gray-500 mt-1">Select a BOOLEAN column. If a row's value is 'true', the event will be marked as completed.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-6 flex justify-end">
+                        <button type="submit" class="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 font-semibold">Save Mapping</button>
+                    </div>
+                </form>
+            `;
+        }
     }
 
     async function fetchAndRenderWebhooks(tableId) {
@@ -1795,6 +1903,98 @@ document.addEventListener('DOMContentLoaded', () => {
                 showError(error.message);
                 testBtn.disabled = false;
                 testBtn.textContent = 'Send Test Data';
+            }
+        }
+    });
+
+    calendarAutomationContainer.addEventListener('click', async (e) => {
+        const connectBtn = e.target.closest('#connect-google-calendar-btn');
+        if (connectBtn) {
+            // This is where the OAuth flow would start. For now, we'll mock it.
+            connectBtn.disabled = true;
+            connectBtn.textContent = 'Connecting...';
+
+            // Mocking a successful connection
+            const mockIntegrationData = {
+                provider: "google",
+                account_email: "user@gmail.com", // This would come from the real OAuth response
+                calendar_id: "primary", // Default to primary calendar
+                field_mapping: {
+                    // Pre-fill with best guesses
+                    event_title_col: state.selectedTable.columns.find(c => c.name.includes('title') || c.name.includes('name'))?.name || state.selectedTable.columns[0].name,
+                    start_datetime_col: state.selectedTable.columns.find(c => c.type === 'timestamp' || c.name.includes('date'))?.name || state.selectedTable.columns[0].name,
+                }
+            };
+
+            try {
+                const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/calendar-integration`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(mockIntegrationData)
+                });
+                if (!response.ok) throw new Error('Failed to save mock integration');
+                state.calendarIntegration = await response.json();
+                renderCalendarAutomation(state.calendarIntegration);
+            } catch (error) {
+                showError(error.message);
+                connectBtn.disabled = false;
+                connectBtn.innerHTML = `<svg class="w-5 h-5" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><path d="M473.16,221.48l-2.26-9.59H262.46v88.22H387c-12.93,61.4-72.5,108.61-124.54,108.61-94.26,0-171-76.75-171-171s76.75-171,171-171c52.5,0,93.36,21.25,119.25,49.5l63.42-63.42C431.35,62.46,352.19,24,262.46,24,122.48,24,12,134.48,12,274s110.48,250,250.46,250c144.93,0,249.54-103.87,249.54-253.52,0-16.4-1.84-33.57-4.84-50Z" fill="#4285f4"/><path d="M473.16,221.48l-2.26-9.59H262.46v88.22H387c-12.93,61.4-72.5,108.61-124.54,108.61-94.26,0-171-76.75-171-171s76.75-171,171-171c52.5,0,93.36,21.25,119.25,49.5l63.42-63.42C431.35,62.46,352.19,24,262.46,24,122.48,24,12,134.48,12,274s110.48,250,250.46,250c144.93,0,249.54-103.87,249.54-253.52,0-16.4-1.84-33.57-4.84-50Z" fill-opacity="0" transform="translate(256 256) scale(0.5) translate(-256 -256)"/></svg> Connect Google Calendar`;
+            }
+        }
+
+        const disconnectBtn = e.target.closest('#disconnect-calendar-btn');
+        if (disconnectBtn) {
+            if (confirm('Are you sure you want to disconnect your calendar? This will stop creating new events.')) {
+                try {
+                    const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/calendar-integration`, { method: 'DELETE' });
+                    if (response.ok) {
+                        state.calendarIntegration = null;
+                        renderCalendarAutomation(null);
+                    } else {
+                        throw new Error('Failed to disconnect calendar.');
+                    }
+                } catch (error) {
+                    showError(error.message);
+                }
+            }
+        }
+    });
+
+    calendarAutomationContainer.addEventListener('submit', async (e) => {
+        if (e.target.id === 'calendar-mapping-form') {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const fieldMapping = {};
+            for (const [key, value] of formData.entries()) {
+                if (value) { // Only include fields that have a value selected
+                    fieldMapping[key] = value;
+                }
+            }
+
+            const payload = {
+                ...state.calendarIntegration, // Keep existing provider, email, etc.
+                field_mapping: fieldMapping
+            };
+
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Saving...';
+
+            try {
+                const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/calendar-integration`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) throw new Error('Failed to save mapping.');
+                
+                state.calendarIntegration = await response.json();
+                renderCalendarAutomation(state.calendarIntegration); // Re-render to confirm
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Save Mapping';
             }
         }
     });
