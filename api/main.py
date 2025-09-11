@@ -19,6 +19,8 @@ from pydantic import BaseModel, Field, ConfigDict
 # --- Google API Imports ---
 from google.oauth2.credentials import Credentials as GoogleCredentials
 from googleapiclient.discovery import build as build_google_service
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.errors import HttpError
 from supabase import create_client, Client
@@ -934,8 +936,24 @@ async def google_oauth2callback(code_request: GoogleOauthCodeRequest, request: R
             scopes=['https://www.googleapis.com/auth/calendar.events'],
             redirect_uri=redirect_uri)
 
+        # This exchanges the code for credentials, which are stored on the flow object.
         flow.fetch_token(code=code_request.code)
-        return flow.credentials_to_dict()
+        creds = flow.credentials
+
+        # Manually create a dictionary from the credentials object.
+        # The 'Flow' object does not have a 'credentials_to_dict' method.
+        # We also decode the id_token here on the server to securely get user info.
+        try:
+            id_info = id_token.verify_oauth2_token(creds.id_token, google_requests.Request(), GOOGLE_CLIENT_ID)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid Google ID token: {e}")
+
+        return {
+            'token': creds.token,
+            'refresh_token': creds.refresh_token,
+            'id_token_jwt': id_info, # The decoded token info, including email
+            'scopes': creds.scopes
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to exchange Google OAuth code: {str(e)}")
 
