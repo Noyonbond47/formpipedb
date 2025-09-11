@@ -433,6 +433,39 @@ document.addEventListener('DOMContentLoaded', () => {
         return session.access_token;
     }
 
+    /**
+     * Helper functions for auto-matching webhook fields.
+     */
+    function normalizeString(str) {
+        if (!str) return '';
+        return str.toLowerCase().replace(/[\s_-]/g, '');
+    }
+
+    function findBestMatch(tableColumnName, incomingFields) {
+        const normalizedTableCol = normalizeString(tableColumnName);
+        let bestMatch = null;
+        let highestScore = 0;
+
+        for (const field of incomingFields) {
+            const normalizedField = normalizeString(field);
+            let score = 0;
+
+            if (normalizedTableCol === normalizedField) {
+                score = 100; // Perfect match
+            } else if (normalizedTableCol.includes(normalizedField) || normalizedField.includes(normalizedTableCol)) {
+                // Prioritize longer matches to avoid 'id' matching 'grid'
+                const similarity = Math.min(normalizedTableCol.length, normalizedField.length) / Math.max(normalizedTableCol.length, normalizedField.length);
+                score = 50 * similarity; // Substring match, weighted by similarity
+            }
+
+            if (score > highestScore) {
+                highestScore = score;
+                bestMatch = field;
+            }
+        }
+        return bestMatch;
+    }
+
     function debounce(func, timeout = 300){
         let timer;
         return (...args) => {
@@ -668,15 +701,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const incomingFields = Object.keys(webhook.sample_payload);
             const tableColumns = state.selectedTable.columns.filter(c => !c.is_primary_key);
 
-            const mappingFieldsHtml = tableColumns.map(col => `
-                <div class="grid grid-cols-2 gap-4 items-center">
-                    <label class="text-right font-medium text-gray-700">${col.name} <span class="font-mono text-xs text-purple-600">(${col.type})</span></label>
-                    <select data-table-col="${col.name}" class="p-2 border rounded-md bg-white">
-                        <option value="">-- Don't Import --</option>
-                        ${incomingFields.map(h => `<option value="${h}" ${webhook.field_mapping && webhook.field_mapping[col.name] === h ? 'selected' : ''}>${h}</option>`).join('')}
-                    </select>
-                </div>
-            `).join('');
+            const mappingFieldsHtml = tableColumns.map(col => {
+                // Find the best match for the current table column among the incoming fields.
+                const bestMatch = findBestMatch(col.name, incomingFields);
+                return `
+                    <div class="grid grid-cols-2 gap-4 items-center">
+                        <label class="text-right font-medium text-gray-700">${col.name} <span class="font-mono text-xs text-purple-600">(${col.type})</span></label>
+                        <select data-table-col="${col.name}" class="p-2 border rounded-md bg-white">
+                            <option value="">-- Don't Import --</option>
+                            ${incomingFields.map(h => `<option value="${h}" ${h === bestMatch ? 'selected' : ''}>${h}</option>`).join('')}
+                        </select>
+                    </div>
+                `;
+            }).join('');
 
             contentHtml = `
                 <form class="webhook-mapping-form">
@@ -704,18 +741,24 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         } else if (webhook.status === 'active') {
             // State: Active and running
-            const mappingHtml = Object.entries(webhook.field_mapping || {}).map(([tableCol, formField]) => `
-                <div class="flex items-center gap-2">
-                    <span class="font-mono text-sm text-gray-500">${formField}</span>
-                    <span class="text-gray-400">&rarr;</span>
-                    <span class="font-mono text-sm font-semibold text-gray-800">${tableCol}</span>
-                </div>
-            `).join('');
+            const fieldMapping = webhook.field_mapping || {};
+            const hasMapping = Object.keys(fieldMapping).length > 0;
+
+            const mappingHtml = hasMapping
+                ? Object.entries(fieldMapping).map(([tableCol, formField]) => `
+                    <div class="flex items-center gap-2">
+                        <span class="font-mono text-sm text-gray-500">${formField}</span>
+                        <span class="text-gray-400">&rarr;</span>
+                        <span class="font-mono text-sm font-semibold text-gray-800">${tableCol}</span>
+                    </div>
+                `).join('')
+                : '<p class="text-sm text-amber-700">No fields are currently mapped. This webhook will not insert any data.</p>';
+
             contentHtml = `
                 <div class="p-4 bg-green-50 rounded-md">
                     <div class="flex justify-between items-center">
                         <h4 class="font-semibold text-green-800">Webhook is Active</h4>
-                        <button data-webhook-id="${webhook.id}" data-status="disabled" class="toggle-webhook-status-btn text-sm bg-gray-200 text-gray-800 px-3 py-1 rounded-md hover:bg-gray-300">Disable</button>
+                        <button data-webhook-id="${webhook.id}" data-status="disabled" class="toggle-webhook-status-btn text-sm bg-gray-200 text-gray-800 px-3 py-1 rounded-md hover:bg-gray-300">Pause</button>
                     </div>
                     <p class="text-sm text-green-700 mt-2">This webhook is live and will insert data into your table based on the following mapping:</p>
                     <div class="mt-3 space-y-1">${mappingHtml}</div>
@@ -727,7 +770,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="p-4 bg-gray-50 rounded-md">
                     <div class="flex justify-between items-center">
                         <h4 class="font-semibold text-gray-800">Webhook is Disabled</h4>
-                        <button data-webhook-id="${webhook.id}" data-status="active" class="toggle-webhook-status-btn text-sm bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700">Enable</button>
+                        <button data-webhook-id="${webhook.id}" data-status="active" class="toggle-webhook-status-btn text-sm bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700">Resume</button>
                     </div>
                     <p class="text-sm text-gray-600 mt-1">This webhook is currently disabled and will not process any incoming data.</p>
                 </div>
