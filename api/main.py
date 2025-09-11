@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, ConfigDict
 # --- Google API Imports ---
 from google.oauth2.credentials import Credentials as GoogleCredentials
 from googleapiclient.discovery import build as build_google_service
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.errors import HttpError
 from supabase import create_client, Client
 from postgrest import APIError
@@ -35,6 +36,9 @@ SMTP_PORT = os.environ.get("SMTP_PORT")
 SMTP_USER = os.environ.get("SMTP_USER")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")
 CONTACT_FORM_RECIPIENT = os.environ.get("CONTACT_FORM_RECIPIENT")
+
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 
 # Get the root directory of the project
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -190,6 +194,9 @@ class CalendarAutomationLogRow(BaseModel):
     event_title: str
     event_start_time: str
     created_at: str # The timestamp of when the row was last updated/created
+
+class GoogleOauthCodeRequest(BaseModel):
+    code: str
 
 # --- Reusable Dependencies ---
 # This dependency handles getting the user's token, validating it, and providing the user object.
@@ -900,6 +907,38 @@ async def handle_incoming_webhook(webhook_token: str, request: Request):
 
 # --- Calendar Integration Endpoints ---
 
+@app.post("/api/v1/google/oauth2callback")
+async def google_oauth2callback(code_request: GoogleOauthCodeRequest, request: Request, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Exchanges a Google OAuth authorization code for credentials (access and refresh tokens).
+    This is called by the frontend after the user grants consent.
+    """
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        raise HTTPException(status_code=501, detail="Google OAuth is not configured on the server.")
+
+    try:
+        # The redirect_uri must match exactly what's in your Google Cloud Console credentials
+        # For this server-side exchange, it's not used for redirection, but for validation.
+        # We'll use the request's origin as a flexible redirect_uri.
+        redirect_uri = request.headers.get('origin')
+
+        flow = Flow.from_client_config(
+            client_config={
+                "web": {
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                }
+            },
+            scopes=['https://www.googleapis.com/auth/calendar.events'],
+            redirect_uri=redirect_uri)
+
+        flow.fetch_token(code=code_request.code)
+        return flow.credentials_to_dict()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to exchange Google OAuth code: {str(e)}")
+
 @app.get("/api/v1/tables/{table_id}/calendar-integration", response_model=Optional[CalendarIntegrationResponse])
 async def get_calendar_integration(table_id: int, auth_details: dict = Depends(get_current_user_details)):
     """
@@ -1483,6 +1522,7 @@ async def table_manager_page(request: Request, db_name: str):
             "db_name": db_name,
             "supabase_url": SUPABASE_URL,
             "supabase_anon_key": SUPABASE_ANON_KEY,
+            "google_client_id": GOOGLE_CLIENT_ID,
         },
     )
 

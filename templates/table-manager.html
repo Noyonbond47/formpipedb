@@ -20,6 +20,9 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 
+    <!-- Google Identity Services Library -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+
     <style> 
         body { font-family: 'Inter', sans-serif; } .CodeMirror { font-family: 'Fira Code', monospace; border-radius: 0.375rem; height: 10rem; }
         .modal { transition: opacity 0.3s ease-in-out; }
@@ -349,6 +352,7 @@
 const supabaseUrl = '{{ supabase_url }}';
 const supabaseAnonKey = '{{ supabase_anon_key }}';
 const supabase = supabaseUrl && supabaseAnonKey ? window.supabase.createClient(supabaseUrl, supabaseAnonKey) : null;
+const googleClientId = '{{ google_client_id }}';
 
 document.addEventListener('DOMContentLoaded', () => {
     if (!supabase) {
@@ -1989,47 +1993,69 @@ document.addEventListener('DOMContentLoaded', () => {
     calendarAutomationContainer.addEventListener('click', async (e) => {
         const connectBtn = e.target.closest('#connect-google-calendar-btn');
         if (connectBtn) {
-            // This is where the OAuth flow would start. For now, we'll mock it.
             connectBtn.disabled = true;
             connectBtn.textContent = 'Connecting...';
 
-            // --- Validation Step ---
-            // Ensure there's at least one non-primary-key column to use for the title.
-            const availableTitleCols = state.selectedTable.columns.filter(c => !c.is_primary_key);
-            if (availableTitleCols.length === 0) {
-                showError("Cannot connect calendar: Your table needs at least one column besides the primary key to use as an event title.");
-                connectBtn.disabled = false;
-                connectBtn.innerHTML = `<svg class="w-5 h-5" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><path d="M473.16,221.48l-2.26-9.59H262.46v88.22H387c-12.93,61.4-72.5,108.61-124.54,108.61-94.26,0-171-76.75-171-171s76.75-171,171-171c52.5,0,93.36,21.25,119.25,49.5l63.42-63.42C431.35,62.46,352.19,24,262.46,24,122.48,24,12,134.48,12,274s110.48,250,250.46,250c144.93,0,249.54-103.87,249.54-253.52,0-16.4-1.84-33.57-4.84-50Z" fill="#4285f4"/><path d="M473.16,221.48l-2.26-9.59H262.46v88.22H387c-12.93,61.4-72.5,108.61-124.54,108.61-94.26,0-171-76.75-171-171s76.75-171,171-171c52.5,0,93.36,21.25,119.25,49.5l63.42-63.42C431.35,62.46,352.19,24,262.46,24,122.48,24,12,134.48,12,274s110.48,250,250.46,250c144.93,0,249.54-103.87,249.54-253.52,0-16.4-1.84-33.57-4.84-50Z" fill-opacity="0" transform="translate(256 256) scale(0.5) translate(-256 -256)"/></svg> Connect Google Calendar`;
+            if (!googleClientId) {
+                showError("Google Client ID is not configured on the server. Cannot initiate login.");
+                connectBtn.disabled = false; // Re-enable button
+                connectBtn.textContent = 'Connect Google Calendar';
                 return;
             }
-            // --- End Validation ---
 
-            // Mocking a successful connection
-            const mockIntegrationData = {
-                provider: "google",
-                account_email: "user@gmail.com", // This would come from the real OAuth response
-                calendar_id: "primary", // Default to primary calendar
-                field_mapping: {
-                    // Pre-fill with best guesses
-                    event_title_col: availableTitleCols.find(c => c.name.includes('title') || c.name.includes('name'))?.name || availableTitleCols[0].name,
-                    start_datetime_col: state.selectedTable.columns.find(c => c.type === 'timestamp' || c.name.includes('date'))?.name || availableTitleCols[0].name,
-                }
-            };
+            // --- Start Real Google OAuth2 Flow ---
+            const client = google.accounts.oauth2.initCodeClient({
+                client_id: googleClientId,
+                scope: 'https://www.googleapis.com/auth/calendar.events',
+                ux_mode: 'popup',
+                callback: async (response) => {
+                    // This callback is executed after the user grants permission in the popup.
+                    // The `response.code` is the one-time authorization code.
+                    try {
+                        // 1. Exchange the code for credentials via our backend
+                        const tokenResponse = await fetchWithAuth('/api/v1/google/oauth2callback', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ code: response.code })
+                        });
+                        if (!tokenResponse.ok) {
+                            const err = await tokenResponse.json();
+                            throw new Error(err.detail || 'Failed to get Google credentials.');
+                        }
+                        const credentials = await tokenResponse.json();
 
-            try {
-                const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/calendar-integration`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(mockIntegrationData)
-                });
-                if (!response.ok) throw new Error('Failed to save mock integration');
-                state.calendarIntegration = await response.json();
-                renderCalendarAutomation(state.calendarIntegration);
-            } catch (error) {
-                showError(error.message);
-                connectBtn.disabled = false;
-                connectBtn.innerHTML = `<svg class="w-5 h-5" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><path d="M473.16,221.48l-2.26-9.59H262.46v88.22H387c-12.93,61.4-72.5,108.61-124.54,108.61-94.26,0-171-76.75-171-171s76.75-171,171-171c52.5,0,93.36,21.25,119.25,49.5l63.42-63.42C431.35,62.46,352.19,24,262.46,24,122.48,24,12,134.48,12,274s110.48,250,250.46,250c144.93,0,249.54-103.87,249.54-253.52,0-16.4-1.84-33.57-4.84-50Z" fill="#4285f4"/><path d="M473.16,221.48l-2.26-9.59H262.46v88.22H387c-12.93,61.4-72.5,108.61-124.54,108.61-94.26,0-171-76.75-171-171s76.75-171,171-171c52.5,0,93.36,21.25,119.25,49.5l63.42-63.42C431.35,62.46,352.19,24,262.46,24,122.48,24,12,134.48,12,274s110.48,250,250.46,250c144.93,0,249.54-103.87,249.54-253.52,0-16.4-1.84-33.57-4.84-50Z" fill-opacity="0" transform="translate(256 256) scale(0.5) translate(-256 -256)"/></svg> Connect Google Calendar`;
-            }
+                        // 2. Now, save the integration with the new credentials
+                        const availableTitleCols = state.selectedTable.columns.filter(c => !c.is_primary_key);
+                        const integrationData = {
+                            provider: "google",
+                            account_email: credentials.id_token_jwt.email, // Extract email from the ID token
+                            calendar_id: "primary",
+                            credentials: credentials, // The full credentials object from our backend
+                            field_mapping: {
+                                event_title_col: availableTitleCols.find(c => c.name.includes('title') || c.name.includes('name'))?.name || availableTitleCols[0].name,
+                                start_datetime_col: state.selectedTable.columns.find(c => c.type === 'timestamp' || c.name.includes('date'))?.name || availableTitleCols[0].name,
+                            }
+                        };
+
+                        const saveResponse = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/calendar-integration`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(integrationData)
+                        });
+                        if (!saveResponse.ok) throw new Error('Failed to save calendar integration.');
+                        
+                        state.calendarIntegration = await saveResponse.json();
+                        renderCalendarAutomation(state.calendarIntegration);
+
+                    } catch (error) {
+                        showError(error.message);
+                        connectBtn.disabled = false;
+                        connectBtn.textContent = 'Connect Google Calendar';
+                    }
+                },
+            });
+            // 3. Trigger the Google login popup
+            client.requestCode();
         }
 
         const disconnectBtn = e.target.closest('#disconnect-calendar-btn');
