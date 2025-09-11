@@ -144,7 +144,7 @@ class WebhookResponse(BaseModel):
 
 class WebhookUpdateRequest(BaseModel):
     # Only allow these specific status updates from the user
-    status: Optional[str] = Field(None, pattern="^(active|disabled)$")
+    status: Optional[str] = Field(None, pattern="^(active|disabled|listening)$")
     field_mapping: Optional[dict[str, str]] = None
 
 
@@ -748,6 +748,11 @@ async def update_webhook(webhook_id: int, update_data: WebhookUpdateRequest, aut
         payload = update_data.dict(exclude_unset=True)
         if not payload:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No update data provided.")
+        
+        # If user is resetting the webhook to re-map, clear out old config.
+        if payload.get("status") == "listening":
+            payload["sample_payload"] = None
+            payload["field_mapping"] = None
         
         response = supabase.table("public_webhooks").update(payload, returning="representation").eq("id", webhook_id).execute()
         if not response.data:

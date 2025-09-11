@@ -758,7 +758,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="p-4 bg-green-50 rounded-md">
                     <div class="flex justify-between items-center">
                         <h4 class="font-semibold text-green-800">Webhook is Active</h4>
-                        <button data-webhook-id="${webhook.id}" data-status="disabled" class="toggle-webhook-status-btn text-sm bg-gray-200 text-gray-800 px-3 py-1 rounded-md hover:bg-gray-300">Pause</button>
+                        <div class="flex items-center gap-2">
+                            <button data-webhook-id="${webhook.id}" data-status="listening" class="toggle-webhook-status-btn text-sm bg-white border border-blue-600 text-blue-600 px-3 py-1 rounded-md hover:bg-blue-50">Re-map Fields</button>
+                            <button data-webhook-id="${webhook.id}" data-status="disabled" class="toggle-webhook-status-btn text-sm bg-gray-200 text-gray-800 px-3 py-1 rounded-md hover:bg-gray-300">Pause</button>
+                        </div>
                     </div>
                     <p class="text-sm text-green-700 mt-2">This webhook is live and will insert data into your table based on the following mapping:</p>
                     <div class="mt-3 space-y-1">${mappingHtml}</div>
