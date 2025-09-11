@@ -933,12 +933,17 @@ async def google_oauth2callback(code_request: GoogleOauthCodeRequest, request: R
                     "token_uri": "https://oauth2.googleapis.com/token",
                 }
             },
-            scopes=['https://www.googleapis.com/auth/calendar.events'],
+            scopes=['https://www.googleapis.com/auth/calendar.events', 'openid', 'email', 'profile'],
             redirect_uri=redirect_uri)
 
         # This exchanges the code for credentials, which are stored on the flow object.
         flow.fetch_token(code=code_request.code)
         creds = flow.credentials
+
+        # Add a more specific check to ensure the id_token was returned.
+        # This fails if the 'openid' scope is missing.
+        if not creds.id_token:
+            raise HTTPException(status_code=400, detail="Google did not return an ID token. Ensure 'openid' scope is included in the request.")
 
         # Manually create a dictionary from the credentials object.
         # The 'Flow' object does not have a 'credentials_to_dict' method.

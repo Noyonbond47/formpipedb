@@ -2006,7 +2006,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // --- Start Real Google OAuth2 Flow ---
             const client = google.accounts.oauth2.initCodeClient({
                 client_id: googleClientId,
-                scope: 'https://www.googleapis.com/auth/calendar.events',
+                scope: 'https://www.googleapis.com/auth/calendar.events openid email profile',
                 ux_mode: 'popup',
                 callback: async (response) => {
                     // This callback is executed after the user grants permission in the popup.
