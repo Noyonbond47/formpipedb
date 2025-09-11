@@ -151,8 +151,8 @@ class WebhookUpdateRequest(BaseModel):
 
 # --- Calendar Integration Models ---
 class CalendarIntegrationFieldMapping(BaseModel):
-    event_title_col: str
-    start_datetime_col: str
+    event_title_col: Optional[str] = None
+    start_datetime_col: Optional[str] = None
     end_datetime_col: Optional[str] = None
     description_col: Optional[str] = None
     completed_status_col: Optional[str] = None # A boolean column
@@ -170,6 +170,12 @@ class CalendarIntegrationCreate(BaseModel):
     account_email: str # For now, we'll mock this. In reality, it comes from OAuth.
     calendar_id: str
     field_mapping: CalendarIntegrationFieldMapping
+
+class CalendarAutomationLogRow(BaseModel):
+    row_id: int
+    event_title: str
+    event_start_time: str
+    created_at: str # The timestamp of when the row was last updated/created
 
 # --- Reusable Dependencies ---
 # This dependency handles getting the user's token, validating it, and providing the user object.
@@ -930,6 +936,42 @@ async def delete_calendar_integration(table_id: int, auth_details: dict = Depend
         supabase.table("calendar_integrations").delete().eq("table_id", table_id).execute()
     except APIError as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete calendar integration: {str(e)}")
+
+@app.get("/api/v1/tables/{table_id}/calendar-integration/logs", response_model=List[CalendarAutomationLogRow])
+async def get_calendar_automation_logs(table_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Gets a log of the last 5 rows that had calendar events created for them.
+    """
+    if not SUPABASE_SERVICE_ROLE_KEY:
+        return [] # Return empty list if service key is not configured
+
+    supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    user_id = auth_details["user"].id
+
+    try:
+        # First, get the integration settings to know which column is the title/start time
+        integration_res = supabase_admin.table("calendar_integrations").select("field_mapping").eq("table_id", table_id).eq("user_id", user_id).single().execute()
+        if not integration_res.data or not integration_res.data.get("field_mapping"):
+            return []
+
+        mapping = integration_res.data["field_mapping"]
+        title_col = mapping.get("event_title_col")
+        start_col = mapping.get("start_datetime_col")
+
+        if not title_col or not start_col:
+            return []
+
+        # Now, fetch the rows that have a calendar event ID in their meta field
+        # Note the jsonb operators ->> to get field as text
+        rows_res = supabase_admin.table("table_rows").select("id, updated_at, data").eq("table_id", table_id).not_.is_("(_meta->>calendar_event_id)", "null").order("updated_at", desc=True).limit(5).execute()
+        
+        # Format the response
+        logs = [CalendarAutomationLogRow(row_id=row['id'], event_title=row['data'].get(title_col, "N/A"), event_start_time=row['data'].get(start_col, "N/A"), created_at=row['updated_at']) for row in rows_res.data]
+        return logs
+
+    except Exception as e:
+        print(f"Error fetching calendar logs for table {table_id}: {e}")
+        return [] # Return empty on error to not break the UI
 
 async def _create_or_update_calendar_event(row_id: int, supabase_admin: Client):
     """Helper function to create a calendar event from a row if conditions are met."""
