@@ -933,7 +933,7 @@ async def google_oauth2callback(code_request: GoogleOauthCodeRequest, request: R
                     "token_uri": "https://oauth2.googleapis.com/token",
                 }
             },
-            scopes=['https://www.googleapis.com/auth/calendar.events', 'openid', 'email', 'profile'],
+            scopes=['https://www.googleapis.com/auth/calendar.events', 'openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
             redirect_uri=redirect_uri)
 
         # This exchanges the code for credentials, which are stored on the flow object.
