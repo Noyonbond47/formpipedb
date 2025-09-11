@@ -1407,8 +1407,10 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
     supabase = auth_details["client"]
     query = query_data.query.strip()
 
-    # Remove SQL comments, which can interfere with parsing the query type.
-    query = re.sub(r'--.*', '', query).strip()
+    # Remove single-line SQL comments. This is more robust than a simple regex
+    # as it handles newlines correctly.
+    uncommented_lines = [line for line in query.split('\n') if not line.strip().startswith('--')]
+    query = "\n".join(uncommented_lines).strip()
     
     # 1. Clean the query by removing a single trailing semicolon.
     # A trailing semicolon is valid SQL syntax but causes an error when the query
