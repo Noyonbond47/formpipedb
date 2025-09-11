@@ -695,8 +695,11 @@ document.addEventListener('DOMContentLoaded', () => {
             contentHtml = `
                 <div class="text-center p-4 bg-blue-50 rounded-md">
                     <h4 class="font-semibold text-blue-800">Listening for data...</h4>
-                    <p class="text-sm text-blue-700 mt-1">To complete setup, submit a test entry from your form (e.g., from WordPress). We'll use it to map your fields.</p>
-                    <button data-webhook-id="${webhook.id}" class="refresh-webhook-btn text-sm text-blue-600 hover:underline mt-2">I've sent the data, check again</button>
+                    <p class="text-sm text-blue-700 mt-1">To complete setup, submit a test entry from your form (e.g., from WordPress) or send a sample payload.</p>
+                    <div class="mt-4 flex justify-center items-center gap-4">
+                        <button data-webhook-url="${webhookUrl}" class="send-test-webhook-btn text-sm bg-white border border-blue-600 text-blue-600 px-3 py-1 rounded-md hover:bg-blue-50">Send Test Data</button>
+                        <button data-webhook-id="${webhook.id}" class="refresh-webhook-btn text-sm text-blue-600 hover:underline">Check for data</button>
+                    </div>
                 </div>
             `;
         } else if (webhook.status === 'active') {
@@ -1714,6 +1717,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 await fetchAndRenderWebhooks(state.selectedTable.id);
             } else {
                 showError(`Failed to change status to ${newStatus}.`);
+            }
+        }
+
+        const testBtn = e.target.closest('.send-test-webhook-btn');
+        if (testBtn) {
+            const webhookUrl = testBtn.dataset.webhookUrl;
+            testBtn.disabled = true;
+            testBtn.textContent = 'Sending...';
+
+            const samplePayload = {
+                name: "Jane Doe",
+                email: "test@example.com",
+                company: "Acme Inc.",
+                message: "This is a test submission to help map fields."
+            };
+
+            try {
+                // This is a public endpoint, so no auth is needed.
+                const response = await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(samplePayload)
+                });
+
+                if (!response.ok) throw new Error('Failed to send test data.');
+                
+                // Success! Refresh the UI to show the mapping view.
+                setTimeout(() => fetchAndRenderWebhooks(state.selectedTable.id), 500);
+            } catch (error) {
+                showError(error.message);
+                testBtn.disabled = false;
+                testBtn.textContent = 'Send Test Data';
             }
         }
     });
