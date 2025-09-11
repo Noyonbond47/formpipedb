@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from typing import List, Optional, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from supabase import create_client, Client
 from postgrest import APIError
 
@@ -53,8 +53,7 @@ class DatabaseResponse(BaseModel):
     name: str
     description: Optional[str] = None
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 class ForeignKeyDefinition(BaseModel):
     table_id: int
@@ -82,8 +81,7 @@ class TableResponse(BaseModel):
     name: str
     columns: List[ColumnDefinition]
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 class RowResponse(BaseModel):
     id: int
@@ -91,6 +89,8 @@ class RowResponse(BaseModel):
     table_id: int
     data: dict[str, Any]
     _meta: Optional[dict[str, Any]] = None
+
+    model_config = ConfigDict(extra="ignore")
 
 class RowCreate(BaseModel):
     data: dict[str, Any]
@@ -171,8 +171,7 @@ class CalendarIntegrationResponse(BaseModel):
     calendar_id: str # The specific calendar ID (e.g., 'primary')
     field_mapping: CalendarIntegrationFieldMapping
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 class CalendarIntegrationCreate(BaseModel):
     provider: str = Field("google", pattern="^google$")
