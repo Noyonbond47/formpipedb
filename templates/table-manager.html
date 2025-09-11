@@ -700,7 +700,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const errorJson = await response.json();
                     errorDetail = errorJson.detail || JSON.stringify(errorJson);
                 } catch (e) {
-                    errorDetail = response.statusText;
+                    errorDetail = response.statusText || `(Status: ${response.status})`;
                 }
                 // Throw an actual error object to ensure `error.message` is populated.
                 throw new Error(`Failed to load settings: ${errorDetail}`);
