@@ -53,6 +53,9 @@ class DatabaseResponse(BaseModel):
     name: str
     description: Optional[str] = None
 
+    class Config:
+        extra = "ignore"
+
 class ForeignKeyDefinition(BaseModel):
     table_id: int
     column_name: str
@@ -78,6 +81,9 @@ class TableResponse(BaseModel):
     id: int
     name: str
     columns: List[ColumnDefinition]
+
+    class Config:
+        extra = "ignore"
 
 class RowResponse(BaseModel):
     id: int
@@ -164,6 +170,9 @@ class CalendarIntegrationResponse(BaseModel):
     account_email: str # The user's Google account email
     calendar_id: str # The specific calendar ID (e.g., 'primary')
     field_mapping: CalendarIntegrationFieldMapping
+
+    class Config:
+        extra = "ignore"
 
 class CalendarIntegrationCreate(BaseModel):
     provider: str = Field("google", pattern="^google$")
