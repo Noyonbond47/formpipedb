@@ -22,21 +22,27 @@
 
     <style> 
         body { font-family: 'Inter', sans-serif; } .CodeMirror { font-family: 'Fira Code', monospace; border-radius: 0.375rem; height: 10rem; }
-        .modal { transition: opacity 0.25s ease; }
+        .modal, #sidebar-drawer, #sidebar-overlay { transition: opacity 0.3s ease-in-out; }
+        #sidebar-drawer { transition: transform 0.3s ease-in-out; }
     </style>
 </head>
 <body class="bg-gray-50">
 
-<div class="flex h-screen">
-    <aside class="w-72 bg-white border-r flex flex-col">
-        <div class="p-4 border-b">
-            <a href="/app" class="text-sm text-blue-600 hover:underline">&larr; Back to Dashboard</a>
-            <h1 class="text-2xl font-bold text-gray-800 mt-2">{{ db_name }}</h1>
+<div class="relative h-screen flex overflow-hidden">
+    <!-- Sidebar Drawer -->
+    <div id="sidebar-drawer" class="fixed inset-y-0 left-0 w-72 bg-white border-r flex flex-col z-40 transform -translate-x-full md:relative md:translate-x-0">
+        <div class="p-4 border-b flex justify-between items-center">
+            <div>
+                <a href="/app" class="text-sm text-blue-600 hover:underline">&larr; Back to Dashboard</a>
+                <h1 class="text-2xl font-bold text-gray-800 mt-2">{{ db_name }}</h1>
+            </div>
+            <button id="close-sidebar-btn" class="md:hidden text-gray-500 hover:text-gray-800">&times;</button>
         </div>
         <div class="p-4 border-b">
             <h2 class="text-lg font-semibold text-gray-700">Tables</h2>
         </div>
         <nav id="table-list" class="flex-1 p-4 space-y-1 overflow-y-auto">
+            <!-- Loading state -->
             <div class="flex items-center gap-2 text-sm text-gray-500 p-2">
                 <svg class="animate-spin h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 <span>Loading tables...</span>
@@ -49,9 +55,14 @@
             <button id="view-db-sql-btn" class="w-full text-center p-2 rounded-md bg-gray-200 text-gray-800 hover:bg-gray-300 font-semibold text-sm">View Database SQL</button>
             <button id="delete-table-btn" class="w-full text-center p-2 rounded-md bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed" disabled>Delete Table</button>
         </div>
-    </aside>
+    </div>
+    <!-- Overlay for mobile -->
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-30 hidden opacity-0 md:hidden"></div>
 
-    <main id="main-content" class="flex-1 p-8 overflow-auto hidden">
+    <main id="main-content" class="flex-1 p-8 overflow-auto hidden relative">
+        <button id="open-sidebar-btn" class="md:hidden fixed top-4 left-4 z-20 p-2 bg-white border rounded-md shadow-sm">
+            <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        </button>
         <div id="table-tabs-container" class="border-b mb-6">
             <nav class="flex space-x-6">
                 <button data-tab="data" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-blue-500 text-blue-600">Data</button>
@@ -151,7 +162,7 @@
     </div>
 
     <div id="placeholder-content" class="flex-1 flex items-center justify-center text-gray-500">
-        Select a table to view its structure and data.
+        <span class="md:hidden">Select a table from the menu to get started.</span><span class="hidden md:inline">Select a table to view its structure and data.</span>
     </div>
 </div>
 
@@ -405,6 +416,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const createWebhookBtn = document.getElementById('create-webhook-btn');
     const webhooksListContainer = document.getElementById('webhooks-list-container');
     const calendarAutomationContainer = document.getElementById('calendar-automation-container');
+    const sidebarDrawer = document.getElementById('sidebar-drawer');
+    const sidebarOverlay = document.getElementById('sidebar-overlay');
+    const openSidebarBtn = document.getElementById('open-sidebar-btn');
+    const closeSidebarBtn = document.getElementById('close-sidebar-btn');
 
     const importRowsCsvFile = document.getElementById('import-rows-csv-file');
     
@@ -539,6 +554,7 @@ document.addEventListener('DOMContentLoaded', () => {
             sqlRunnerView.classList.add('hidden');
             deleteTableBtn.disabled = false;
             tableTabContainer.classList.remove('hidden');
+            closeSidebar(); // Close drawer on mobile after selection
 
             // Reset to page 1 whenever a new table is selected
             renderStructure(state.selectedTable.columns);
@@ -698,22 +714,45 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderCalendarAutomation(integration) {
+        const tableColumns = state.selectedTable.columns;
+
         if (!integration) {
-            // Disconnected state
-            calendarAutomationContainer.innerHTML = `
-                <div class="text-center">
-                    <h3 class="font-semibold text-gray-700">Connect to your Calendar</h3>
-                    <p class="mt-1 text-sm text-gray-500 max-w-xl mx-auto">Automatically create calendar events from new rows in this table. Keep track of deadlines, appointments, and tasks without leaving your workflow.</p>
-                    <button id="connect-google-calendar-btn" class="mt-4 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-50 font-semibold flex items-center gap-2 mx-auto">
-                        <svg class="w-5 h-5" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><path d="M473.16,221.48l-2.26-9.59H262.46v88.22H387c-12.93,61.4-72.5,108.61-124.54,108.61-94.26,0-171-76.75-171-171s76.75-171,171-171c52.5,0,93.36,21.25,119.25,49.5l63.42-63.42C431.35,62.46,352.19,24,262.46,24,122.48,24,12,134.48,12,274s110.48,250,250.46,250c144.93,0,249.54-103.87,249.54-253.52,0-16.4-1.84-33.57-4.84-50Z" fill="#4285f4"/><path d="M473.16,221.48l-2.26-9.59H262.46v88.22H387c-12.93,61.4-72.5,108.61-124.54,108.61-94.26,0-171-76.75-171-171s76.75-171,171-171c52.5,0,93.36,21.25,119.25,49.5l63.42-63.42C431.35,62.46,352.19,24,262.46,24,122.48,24,12,134.48,12,274s110.48,250,250.46,250c144.93,0,249.54-103.87,249.54-253.52,0-16.4-1.84-33.57-4.84-50Z" fill-opacity="0" transform="translate(256 256) scale(0.5) translate(-256 -256)"/></svg>
-                        Connect Google Calendar
-                    </button>
-                </div>
-            `;
+            // Check for prerequisites before showing the connect button
+            const hasDateColumn = tableColumns.some(c => ['timestamp'].includes(c.type));
+            const hasNonPkColumn = tableColumns.some(c => !c.is_primary_key);
+
+            if (!hasDateColumn || !hasNonPkColumn) {
+                // Show prerequisite message
+                calendarAutomationContainer.innerHTML = `
+                    <div class="text-center">
+                        <h3 class="font-semibold text-gray-700">Connect to your Calendar</h3>
+                        <p class="mt-1 text-sm text-gray-500 max-w-xl mx-auto">Automatically create calendar events from new rows in this table.</p>
+                        <div class="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg text-left max-w-2xl mx-auto">
+                            <h4 class="font-semibold text-amber-800">Prerequisites</h4>
+                            <p class="text-sm text-amber-700 mt-2">To use calendar automation, your table must have:</p>
+                            <ul class="list-disc list-inside text-sm text-amber-700 mt-2 space-y-1">
+                                <li>At least one column with a date/time type (e.g., <code class="bg-amber-200 text-amber-900 px-1 rounded font-mono">TIMESTAMP</code>) to serve as the event's start time.</li>
+                                <li>At least one other column (e.g., <code class="bg-amber-200 text-amber-900 px-1 rounded font-mono">TEXT</code>) to use for the event title.</li>
+                            </ul>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Prerequisites met, show connect button
+                calendarAutomationContainer.innerHTML = `
+                    <div class="text-center">
+                        <h3 class="font-semibold text-gray-700">Connect to your Calendar</h3>
+                        <p class="mt-1 text-sm text-gray-500 max-w-xl mx-auto">Automatically create calendar events from new rows in this table. Keep track of deadlines, appointments, and tasks without leaving your workflow.</p>
+                        <button id="connect-google-calendar-btn" class="mt-4 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-50 font-semibold flex items-center gap-2 mx-auto">
+                            <svg class="w-5 h-5" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><path d="M473.16,221.48l-2.26-9.59H262.46v88.22H387c-12.93,61.4-72.5,108.61-124.54,108.61-94.26,0-171-76.75-171-171s76.75-171,171-171c52.5,0,93.36,21.25,119.25,49.5l63.42-63.42C431.35,62.46,352.19,24,262.46,24,122.48,24,12,134.48,12,274s110.48,250,250.46,250c144.93,0,249.54-103.87,249.54-253.52,0-16.4-1.84-33.57-4.84-50Z" fill="#4285f4"/><path d="M473.16,221.48l-2.26-9.59H262.46v88.22H387c-12.93,61.4-72.5,108.61-124.54,108.61-94.26,0-171-76.75-171-171s76.75-171,171-171c52.5,0,93.36,21.25,119.25,49.5l63.42-63.42C431.35,62.46,352.19,24,262.46,24,122.48,24,12,134.48,12,274s110.48,250,250.46,250c144.93,0,249.54-103.87,249.54-253.52,0-16.4-1.84-33.57-4.84-50Z" fill-opacity="0" transform="translate(256 256) scale(0.5) translate(-256 -256)"/></svg>
+                            Connect Google Calendar
+                        </button>
+                    </div>
+                `;
+            }
         } else {
             // Connected and mapping state
-            const tableColumns = state.selectedTable.columns;
-            const dateColumns = tableColumns.filter(c => ['timestamp', 'text', 'real', 'integer'].includes(c.type)); // Allow text/numbers for flexible date parsing
+            const dateColumns = tableColumns.filter(c => ['timestamp', 'text', 'real', 'integer', 'serial'].includes(c.type)); // Allow text/numbers/serial for flexible date parsing
             const booleanColumns = tableColumns.filter(c => c.type === 'boolean');
             
             const columnOptions = (cols, selectedVal) => cols.map(c => `<option value="${c.name}" ${c.name === selectedVal ? 'selected' : ''}>${c.name}</option>`).join('');
@@ -792,9 +831,13 @@ document.addEventListener('DOMContentLoaded', () => {
         webhooksListContainer.innerHTML = '';
         if (webhooks.length === 0) {
             webhooksListContainer.innerHTML = `<div class="text-center p-6 border-2 border-dashed rounded-lg text-gray-500">
-                <h3 class="font-semibold">No webhooks yet.</h3>
-                <p class="mt-1 text-sm">Create a webhook to start receiving data from external forms like WordPress or Google Forms.</p>
-            </div>`;
+                    <h3 class="font-semibold">No webhooks yet.</h3>
+                    <p class="mt-1 text-sm">Create a webhook to start receiving data from external forms.</p>
+                    <div class="mt-4 text-xs text-left bg-gray-100 p-3 rounded-md max-w-lg mx-auto">
+                        <p class="font-semibold text-gray-600">Pro Tip:</p>
+                        <p class="text-gray-500 mt-1">For best results, ensure your table has columns that match the fields you expect to receive (e.g., columns named <code class="bg-gray-200 text-gray-700 px-1 rounded font-mono">name</code>, <code class="bg-gray-200 text-gray-700 px-1 rounded font-mono">email</code>, <code class="bg-gray-200 text-gray-700 px-1 rounded font-mono">message</code>, etc.). This makes field mapping easier after you receive your first test submission.</p>
+                    </div>
+                </div>`;
             return;
         }
         webhooks.forEach(webhook => {
@@ -956,6 +999,22 @@ document.addEventListener('DOMContentLoaded', () => {
     function closeModal(modal) {
         modal.classList.add('opacity-0');
         setTimeout(() => modal.classList.add('hidden'), 250);
+    }
+
+    function openSidebar() {
+        sidebarDrawer.classList.remove('-translate-x-full');
+        sidebarOverlay.classList.remove('hidden');
+        setTimeout(() => {
+            sidebarOverlay.classList.remove('opacity-0');
+        }, 10);
+    }
+
+    function closeSidebar() {
+        sidebarDrawer.classList.add('-translate-x-full');
+        sidebarOverlay.classList.add('opacity-0');
+        setTimeout(() => {
+            sidebarOverlay.classList.add('hidden');
+        }, 300);
     }
 
     function createColumnRow(isPk = false) {
@@ -1378,6 +1437,11 @@ document.addEventListener('DOMContentLoaded', () => {
             dbSqlCodeContent.textContent = `-- Error fetching SQL: ${error.message}`;
         }
     }
+
+    // Sidebar Drawer Event Listeners
+    openSidebarBtn.addEventListener('click', openSidebar);
+    closeSidebarBtn.addEventListener('click', closeSidebar);
+    sidebarOverlay.addEventListener('click', closeSidebar);
 
     // Event Listeners
     tableList.addEventListener('click', handleTableSelect);
