@@ -56,6 +56,7 @@
             <nav class="flex space-x-6">
                 <button data-tab="data" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-blue-500 text-blue-600">Data</button>
                 <button data-tab="structure" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Structure</button>
+                <button data-tab="integrations" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Integrations</button>
                 <button data-tab="table-sql" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">SQL</button>
             </nav>
         </div>
@@ -84,6 +85,16 @@
             <div class="p-4 rounded-md font-mono text-sm ring-1 ring-gray-200 relative bg-[#282c34]">
                 <button id="copy-table-sql-btn" class="absolute top-2 right-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs font-semibold py-1 px-2 rounded">Copy</button>
                 <pre><code id="table-sql-code"></code></pre>
+            </div>
+        </div>
+
+        <div id="integrations-tab-content" class="table-tab-content hidden space-y-6">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-semibold text-gray-800">Webhook Integrations</h2>
+                <button id="create-webhook-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-semibold">Create New Webhook</button>
+            </div>
+            <div id="webhooks-list-container" class="space-y-4">
+                <!-- Webhooks will be rendered here by JS -->
             </div>
         </div>
 
@@ -381,6 +392,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const cancelImportRowsBtn = document.getElementById('cancel-import-rows-btn');
     const importSummaryModal = document.getElementById('import-summary-modal');
     const closeSummaryModalBtn = document.getElementById('close-summary-modal-btn');
+    const createWebhookBtn = document.getElementById('create-webhook-btn');
+    const webhooksListContainer = document.getElementById('webhooks-list-container');
+
     const importRowsCsvFile = document.getElementById('import-rows-csv-file');
     
     // CodeMirror instances
@@ -486,6 +500,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderStructure(state.selectedTable.columns);
             fetchAndRenderData(state.selectedTable.id, 1);
             renderTableSql(state.selectedTable);
+            fetchAndRenderWebhooks(state.selectedTable.id);
         }
     }
 
@@ -606,6 +621,136 @@ document.addEventListener('DOMContentLoaded', () => {
         createStatement += "\n);";
         codeElement.textContent = createStatement;
         hljs.highlightElement(codeElement);
+    }
+
+    async function fetchAndRenderWebhooks(tableId) {
+        webhooksListContainer.innerHTML = `<div class="text-sm text-gray-500">Loading integrations...</div>`;
+        try {
+            const response = await fetchWithAuth(`/api/v1/tables/${tableId}/webhooks`);
+            if (!response.ok) throw new Error('Failed to fetch webhooks');
+            const webhooks = await response.json();
+            renderWebhooks(webhooks);
+        } catch (error) {
+            console.error(error);
+            webhooksListContainer.innerHTML = `<div class="text-sm text-red-500">Error loading integrations.</div>`;
+        }
+    }
+
+    function renderWebhooks(webhooks) {
+        webhooksListContainer.innerHTML = '';
+        if (webhooks.length === 0) {
+            webhooksListContainer.innerHTML = `<div class="text-center p-6 border-2 border-dashed rounded-lg text-gray-500">
+                <h3 class="font-semibold">No webhooks yet.</h3>
+                <p class="mt-1 text-sm">Create a webhook to start receiving data from external forms like WordPress or Google Forms.</p>
+            </div>`;
+            return;
+        }
+        webhooks.forEach(webhook => {
+            const webhookCard = document.createElement('div');
+            webhookCard.className = 'bg-white rounded-lg shadow-sm border p-4';
+            webhookCard.dataset.webhookId = webhook.id;
+            webhookCard.innerHTML = renderSingleWebhook(webhook);
+            webhooksListContainer.appendChild(webhookCard);
+        });
+    }
+
+    function renderSingleWebhook(webhook) {
+        const webhookUrl = `${window.location.origin}/api/v1/webhooks/incoming/${webhook.webhook_token}`;
+        const statusColors = {
+            listening: 'bg-blue-100 text-blue-800',
+            active: 'bg-green-100 text-green-800',
+            disabled: 'bg-gray-100 text-gray-800'
+        };
+
+        let contentHtml = '';
+        if (webhook.status === 'listening' && webhook.sample_payload) {
+            // State: Ready for mapping
+            const incomingFields = Object.keys(webhook.sample_payload);
+            const tableColumns = state.selectedTable.columns.filter(c => !c.is_primary_key);
+
+            const mappingFieldsHtml = tableColumns.map(col => `
+                <div class="grid grid-cols-2 gap-4 items-center">
+                    <label class="text-right font-medium text-gray-700">${col.name} <span class="font-mono text-xs text-purple-600">(${col.type})</span></label>
+                    <select data-table-col="${col.name}" class="p-2 border rounded-md bg-white">
+                        <option value="">-- Don't Import --</option>
+                        ${incomingFields.map(h => `<option value="${h}" ${webhook.field_mapping && webhook.field_mapping[col.name] === h ? 'selected' : ''}>${h}</option>`).join('')}
+                    </select>
+                </div>
+            `).join('');
+
+            contentHtml = `
+                <form class="webhook-mapping-form">
+                    <h4 class="font-semibold text-gray-800">Map Incoming Fields to Table Columns</h4>
+                    <p class="text-sm text-gray-600 mt-1">We received a test submission. Match the fields from your form to the columns in your table.</p>
+                    <div class="mt-4 space-y-2 border-t pt-4">
+                        ${mappingFieldsHtml}
+                    </div>
+                    <div class="mt-4 flex justify-end">
+                        <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 font-semibold">Save and Activate</button>
+                    </div>
+                </form>
+            `;
+        } else if (webhook.status === 'listening') {
+            // State: Listening for first submission
+            contentHtml = `
+                <div class="text-center p-4 bg-blue-50 rounded-md">
+                    <h4 class="font-semibold text-blue-800">Listening for data...</h4>
+                    <p class="text-sm text-blue-700 mt-1">To complete setup, submit a test entry from your form (e.g., from WordPress). We'll use it to map your fields.</p>
+                    <button data-webhook-id="${webhook.id}" class="refresh-webhook-btn text-sm text-blue-600 hover:underline mt-2">I've sent the data, check again</button>
+                </div>
+            `;
+        } else if (webhook.status === 'active') {
+            // State: Active and running
+            const mappingHtml = Object.entries(webhook.field_mapping || {}).map(([tableCol, formField]) => `
+                <div class="flex items-center gap-2">
+                    <span class="font-mono text-sm text-gray-500">${formField}</span>
+                    <span class="text-gray-400">&rarr;</span>
+                    <span class="font-mono text-sm font-semibold text-gray-800">${tableCol}</span>
+                </div>
+            `).join('');
+            contentHtml = `
+                <div class="p-4 bg-green-50 rounded-md">
+                    <div class="flex justify-between items-center">
+                        <h4 class="font-semibold text-green-800">Webhook is Active</h4>
+                        <button data-webhook-id="${webhook.id}" data-status="disabled" class="toggle-webhook-status-btn text-sm bg-gray-200 text-gray-800 px-3 py-1 rounded-md hover:bg-gray-300">Disable</button>
+                    </div>
+                    <p class="text-sm text-green-700 mt-2">This webhook is live and will insert data into your table based on the following mapping:</p>
+                    <div class="mt-3 space-y-1">${mappingHtml}</div>
+                </div>
+            `;
+        } else if (webhook.status === 'disabled') {
+            // State: Disabled
+            contentHtml = `
+                <div class="p-4 bg-gray-50 rounded-md">
+                    <div class="flex justify-between items-center">
+                        <h4 class="font-semibold text-gray-800">Webhook is Disabled</h4>
+                        <button data-webhook-id="${webhook.id}" data-status="active" class="toggle-webhook-status-btn text-sm bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700">Enable</button>
+                    </div>
+                    <p class="text-sm text-gray-600 mt-1">This webhook is currently disabled and will not process any incoming data.</p>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="flex justify-between items-start">
+                <div>
+                    <p class="text-sm font-semibold text-gray-500">Webhook URL</p>
+                    <div class="flex items-center gap-2 mt-1">
+                        <input type="text" readonly value="${webhookUrl}" class="w-full max-w-md p-2 font-mono text-xs bg-gray-100 border rounded-md">
+                        <button data-url="${webhookUrl}" class="copy-webhook-url-btn p-2 rounded-md bg-gray-200 hover:bg-gray-300" title="Copy URL">
+                            <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span class="text-xs font-medium px-2 py-1 rounded-full ${statusColors[webhook.status]}">${webhook.status.toUpperCase()}</span>
+                    <button data-webhook-id="${webhook.id}" class="delete-webhook-btn text-gray-400 hover:text-red-600" title="Delete Webhook">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="mt-4 pt-4 border-t">${contentHtml}</div>
+        `;
     }
 
     tableTabButtons.forEach(button => {
@@ -1513,6 +1658,66 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    createWebhookBtn.addEventListener('click', async () => {
+        if (!state.selectedTable) return;
+        createWebhookBtn.disabled = true;
+        createWebhookBtn.textContent = 'Creating...';
+        try {
+            const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/webhooks`, { method: 'POST' });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || 'Failed to create webhook');
+            }
+            await fetchAndRenderWebhooks(state.selectedTable.id);
+        } catch (error) {
+            showError(error.message);
+        } finally {
+            createWebhookBtn.disabled = false;
+            createWebhookBtn.textContent = 'Create New Webhook';
+        }
+    });
+
+    webhooksListContainer.addEventListener('click', async (e) => {
+        const copyBtn = e.target.closest('.copy-webhook-url-btn');
+        if (copyBtn) {
+            navigator.clipboard.writeText(copyBtn.dataset.url).then(() => {
+                // Maybe add a "Copied!" tooltip later
+            });
+        }
+
+        const deleteBtn = e.target.closest('.delete-webhook-btn');
+        if (deleteBtn && confirm('Are you sure you want to delete this webhook?')) {
+            const webhookId = deleteBtn.dataset.webhookId;
+            const response = await fetchWithAuth(`/api/v1/webhooks/${webhookId}`, { method: 'DELETE' });
+            if (response.ok) {
+                deleteBtn.closest('[data-webhook-id]').remove();
+            } else {
+                showError('Failed to delete webhook.');
+            }
+        }
+
+        const refreshBtn = e.target.closest('.refresh-webhook-btn');
+        if (refreshBtn) {
+            await fetchAndRenderWebhooks(state.selectedTable.id);
+        }
+
+        const toggleBtn = e.target.closest('.toggle-webhook-status-btn');
+        if (toggleBtn) {
+            const webhookId = toggleBtn.dataset.webhookId;
+            const newStatus = toggleBtn.dataset.status;
+            const response = await fetchWithAuth(`/api/v1/webhooks/${webhookId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus })
+            });
+            if (response.ok) {
+                await fetchAndRenderWebhooks(state.selectedTable.id);
+            } else {
+                showError(`Failed to change status to ${newStatus}.`);
+            }
+        }
+    });
+
     // Initialize CodeMirror editors
     sqlRunnerEditor = CodeMirror.fromTextArea(document.getElementById('sql-query-input'), {
         mode: 'text/x-sql',
@@ -1534,6 +1739,32 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => createTableSqlEditor.refresh(), 10);
     });
 
+    webhooksListContainer.addEventListener('submit', async (e) => {
+        if (e.target.classList.contains('webhook-mapping-form')) {
+            e.preventDefault();
+            const form = e.target;
+            const webhookId = form.closest('[data-webhook-id]').dataset.webhookId;
+            
+            const fieldMapping = {};
+            form.querySelectorAll('select[data-table-col]').forEach(select => {
+                if (select.value) {
+                    fieldMapping[select.dataset.tableCol] = select.value;
+                }
+            });
+
+            const payload = {
+                field_mapping: fieldMapping,
+                status: 'active'
+            };
+
+            const response = await fetchWithAuth(`/api/v1/webhooks/${webhookId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (response.ok) await fetchAndRenderWebhooks(state.selectedTable.id);
+        }
+    });
     // Initial Load
     supabase.auth.onAuthStateChange((event, session) => {
         if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {

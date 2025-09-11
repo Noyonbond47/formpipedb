@@ -132,6 +132,21 @@ class ContactForm(BaseModel):
     sender_email: str = Field(..., min_length=1)
     message: str = Field(..., min_length=1)
 
+# --- Webhook Models ---
+class WebhookResponse(BaseModel):
+    id: int
+    created_at: str
+    table_id: int
+    webhook_token: str # This is a UUID but will be sent as a string
+    status: str
+    sample_payload: Optional[dict[str, Any]] = None
+    field_mapping: Optional[dict[str, str]] = None
+
+class WebhookUpdateRequest(BaseModel):
+    # Only allow these specific status updates from the user
+    status: Optional[str] = Field(None, pattern="^(active|disabled)$")
+    field_mapping: Optional[dict[str, str]] = None
+
 
 # --- Reusable Dependencies ---
 # This dependency handles getting the user's token, validating it, and providing the user object.
@@ -686,6 +701,135 @@ async def delete_table_row(row_id: int, auth_details: dict = Depends(get_current
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Row not found or you do not have permission to delete it.")
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete row: {str(e)}")
+
+# --- Webhook Management Endpoints ---
+
+@app.post("/api/v1/tables/{table_id}/webhooks", response_model=WebhookResponse, status_code=status.HTTP_201_CREATED)
+async def create_webhook_for_table(table_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Creates a new, unique webhook receiver for a specific table.
+    """
+    supabase = auth_details["client"]
+    user = auth_details["user"]
+    try:
+        # RLS on user_tables ensures the user owns the table they're creating a webhook for.
+        # We don't need to check existence here because the INSERT RLS policy on public_webhooks does it.
+        new_webhook_data = {
+            "user_id": user.id,
+            "table_id": table_id,
+            # The webhook_token and status have default values in the DB ('listening').
+        }
+        response = supabase.table("public_webhooks").insert(new_webhook_data, returning="representation").execute()
+        return response.data[0]
+    except APIError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create webhook: {str(e)}")
+
+@app.get("/api/v1/tables/{table_id}/webhooks", response_model=List[WebhookResponse])
+async def get_webhooks_for_table(table_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Retrieves all webhooks configured for a specific table.
+    """
+    supabase = auth_details["client"]
+    try:
+        # RLS ensures user can only see webhooks for tables they own.
+        response = supabase.table("public_webhooks").select("*").eq("table_id", table_id).order("created_at").execute()
+        return response.data
+    except APIError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@app.put("/api/v1/webhooks/{webhook_id}", response_model=WebhookResponse)
+async def update_webhook(webhook_id: int, update_data: WebhookUpdateRequest, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Updates a webhook's status or field mapping.
+    """
+    supabase = auth_details["client"]
+    try:
+        # RLS on public_webhooks ensures the user can only update their own webhooks.
+        payload = update_data.dict(exclude_unset=True)
+        if not payload:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No update data provided.")
+        
+        response = supabase.table("public_webhooks").update(payload, returning="representation").eq("id", webhook_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found or access denied.")
+        return response.data[0]
+    except APIError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update webhook: {str(e)}")
+
+@app.delete("/api/v1/webhooks/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_webhook(webhook_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Deletes a specific webhook.
+    """
+    supabase = auth_details["client"]
+    try:
+        # RLS ensures the user can only delete their own webhooks.
+        response = supabase.table("public_webhooks").delete(returning="representation").eq("id", webhook_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found or access denied.")
+    except APIError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete webhook: {str(e)}")
+
+# --- Public Incoming Webhook Endpoint ---
+
+@app.post("/api/v1/webhooks/incoming/{webhook_token}", status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
+async def handle_incoming_webhook(webhook_token: str, request: Request):
+    """
+    Public, unauthenticated endpoint to receive data from third-party services.
+    It's hidden from the auto-generated API docs.
+    """
+    if not SUPABASE_SERVICE_ROLE_KEY:
+        raise HTTPException(status_code=503, detail="Webhook processing is not configured on the server.")
+
+    # Use the service role key to bypass RLS and look up the webhook config.
+    supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    
+    # 1. Find the webhook configuration
+    try:
+        webhook_config_res = supabase_admin.table("public_webhooks").select("*").eq("webhook_token", webhook_token).single().execute()
+        webhook_config = webhook_config_res.data
+    except APIError:
+        # This happens if .single() finds no rows or more than one row.
+        raise HTTPException(status_code=404, detail="Webhook not found.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Webhook lookup failed: {str(e)}")
+
+    # 2. Check webhook status and handle payload
+    if webhook_config['status'] == 'disabled':
+        return {"status": "ok", "message": "Webhook is disabled."} # Return 202 still, don't leak info.
+    
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload.")
+
+    if webhook_config['status'] == 'listening':
+        try:
+            supabase_admin.table("public_webhooks").update({"sample_payload": payload}).eq("id", webhook_config['id']).execute()
+            return {"status": "ok", "message": "Sample payload received."}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to save sample payload: {str(e)}")
+
+    elif webhook_config['status'] == 'active':
+        field_mapping = webhook_config.get('field_mapping')
+        if not field_mapping:
+            return {"status": "ok", "message": "Webhook is active but has no field mapping."}
+
+        transformed_data = {table_col: payload.get(form_field) for table_col, form_field in field_mapping.items() if form_field in payload}
+        
+        if not transformed_data:
+            return {"status": "ok", "message": "No mappable data found in payload."}
+
+        try:
+            insert_payload = { "user_id": webhook_config['user_id'], "table_id": webhook_config['table_id'], "data": transformed_data }
+            supabase_admin.table("table_rows").insert(insert_payload).execute()
+            return {"status": "ok", "message": "Data inserted."}
+        except Exception as e:
+            # Don't expose internal DB errors. Log this for debugging.
+            print(f"Webhook insert error for token {webhook_token}: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to process data.")
+    
+    return {"status": "ok", "message": "Request received."}
 
 @app.delete("/api/v1/users/me", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_current_user(auth_details: dict = Depends(get_current_user_details)):
