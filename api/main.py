@@ -983,12 +983,17 @@ async def get_calendar_automation_logs(table_id: int, auth_details: dict = Depen
 
 async def _create_or_update_calendar_event(row_id: int, supabase_admin: Client):
     """Helper function to create a calendar event from a row if conditions are met."""
-    # 1. Fetch the row, its table_id, and its user_id
-    row_res = supabase_admin.table("table_rows").select("table_id, user_id, data, _meta").eq("id", row_id).single().execute()
-    if not row_res.data: return
+    # 1. Fetch the row with its table_id and user_id.
+    # We re-fetch here to ensure we have the absolute latest data, avoiding race conditions
+    # where the calling function's data might be from just before the transaction committed.
+    try:
+        row_res = supabase_admin.table("table_rows").select("table_id, user_id, data, _meta").eq("id", row_id).single().execute()
+        if not row_res.data: return
+    except APIError:
+        return # Row might have been deleted in the same transaction, which is fine.
 
     row = row_res.data
-    table_id = row['table_id']
+    table_id = row.get('table_id')
     user_id = row['user_id']
     row_data = row.get('data', {})
     row_meta = row.get('_meta', {}) or {}

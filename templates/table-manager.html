@@ -22,47 +22,54 @@
 
     <style> 
         body { font-family: 'Inter', sans-serif; } .CodeMirror { font-family: 'Fira Code', monospace; border-radius: 0.375rem; height: 10rem; }
-        .modal, #sidebar-drawer, #sidebar-overlay { transition: opacity 0.3s ease-in-out; }
-        #sidebar-drawer { transition: transform 0.3s ease-in-out; }
+        .modal { transition: opacity 0.3s ease-in-out; }
+        #sidebar, #main-content { transition: all 0.3s ease-in-out; }
+        .sidebar-item-title, #sidebar-header-text, #sidebar-footer-text { transition: opacity 0.2s, width 0.2s; }
+        #sidebar.collapsed .sidebar-item-title, #sidebar.collapsed #sidebar-header-text, #sidebar.collapsed #sidebar-footer-text {
+            opacity: 0;
+            width: 0;
+            overflow: hidden;
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body class="bg-gray-50">
 
-<div class="relative h-screen flex overflow-hidden">
-    <!-- Sidebar Drawer -->
-    <div id="sidebar-drawer" class="fixed inset-y-0 left-0 w-72 bg-white border-r flex flex-col z-40 transform -translate-x-full md:relative md:translate-x-0">
-        <div class="p-4 border-b flex justify-between items-center">
-            <div>
+<div class="h-screen flex">
+    <!-- Collapsible Sidebar -->
+    <aside id="sidebar" class="w-72 bg-white border-r flex flex-col shrink-0">
+        <div class="p-4 border-b flex items-center gap-4 overflow-hidden">
+            <div id="sidebar-header-text" class="flex-1">
                 <a href="/app" class="text-sm text-blue-600 hover:underline">&larr; Back to Dashboard</a>
                 <h1 class="text-2xl font-bold text-gray-800 mt-2">{{ db_name }}</h1>
             </div>
-            <button id="close-sidebar-btn" class="md:hidden text-gray-500 hover:text-gray-800">&times;</button>
         </div>
         <div class="p-4 border-b">
-            <h2 class="text-lg font-semibold text-gray-700">Tables</h2>
+            <h2 id="sidebar-header-text" class="text-lg font-semibold text-gray-700">Tables</h2>
         </div>
         <nav id="table-list" class="flex-1 p-4 space-y-1 overflow-y-auto">
             <!-- Loading state -->
             <div class="flex items-center gap-2 text-sm text-gray-500 p-2">
                 <svg class="animate-spin h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                <span>Loading tables...</span>
+                <span class="sidebar-item-title">Loading tables...</span>
             </div>
         </nav>
-        <div class="p-4 border-t space-y-2">
-            <button id="create-table-btn" class="w-full text-center p-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-semibold">Create Table</button>
-            <button id="import-csv-btn" class="w-full text-center p-2 rounded-md bg-purple-600 text-white hover:bg-purple-700 font-semibold">Import CSV</button>
-            <button id="sql-runner-btn" class="w-full text-center p-2 rounded-md bg-green-600 text-white hover:bg-green-700 font-semibold">SQL Runner</button>
-            <button id="view-db-sql-btn" class="w-full text-center p-2 rounded-md bg-gray-200 text-gray-800 hover:bg-gray-300 font-semibold text-sm">View Database SQL</button>
-            <button id="delete-table-btn" class="w-full text-center p-2 rounded-md bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed" disabled>Delete Table</button>
+        <div class="p-4 border-t space-y-2 overflow-hidden">
+            <button id="create-table-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg><span class="sidebar-item-title">Create Table</span></button>
+            <button id="import-csv-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-purple-600 text-white hover:bg-purple-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg><span class="sidebar-item-title">Import CSV</span></button>
+            <button id="sql-runner-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-green-600 text-white hover:bg-green-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg><span class="sidebar-item-title">SQL Runner</span></button>
+            <button id="view-db-sql-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-gray-200 text-gray-800 hover:bg-gray-300 font-semibold text-sm"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8-4"></path></svg><span class="sidebar-item-title">View SQL</span></button>
+            <button id="delete-table-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed" disabled><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span class="sidebar-item-title">Delete Table</span></button>
         </div>
-    </div>
-    <!-- Overlay for mobile -->
-    <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-30 hidden opacity-0 md:hidden"></div>
+        <div class="p-2 border-t">
+            <button id="toggle-sidebar-btn" class="w-full flex items-center justify-center p-2 rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-800">
+                <svg id="collapse-icon" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                <svg id="expand-icon" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+            </button>
+        </div>
+    </aside>
 
-    <main id="main-content" class="flex-1 p-8 overflow-auto hidden relative">
-        <button id="open-sidebar-btn" class="md:hidden fixed top-4 left-4 z-20 p-2 bg-white border rounded-md shadow-sm">
-            <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
-        </button>
+    <main id="main-content" class="flex-1 p-8 overflow-auto hidden">
         <div id="table-tabs-container" class="border-b mb-6">
             <nav class="flex space-x-6">
                 <button data-tab="data" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-blue-500 text-blue-600">Data</button>
@@ -162,7 +169,7 @@
     </div>
 
     <div id="placeholder-content" class="flex-1 flex items-center justify-center text-gray-500">
-        <span class="md:hidden">Select a table from the menu to get started.</span><span class="hidden md:inline">Select a table to view its structure and data.</span>
+        Select a table to view its structure and data.
     </div>
 </div>
 
@@ -416,10 +423,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const createWebhookBtn = document.getElementById('create-webhook-btn');
     const webhooksListContainer = document.getElementById('webhooks-list-container');
     const calendarAutomationContainer = document.getElementById('calendar-automation-container');
-    const sidebarDrawer = document.getElementById('sidebar-drawer');
-    const sidebarOverlay = document.getElementById('sidebar-overlay');
-    const openSidebarBtn = document.getElementById('open-sidebar-btn');
-    const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+    const sidebar = document.getElementById('sidebar');
+    const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
+
 
     const importRowsCsvFile = document.getElementById('import-rows-csv-file');
     
@@ -531,8 +537,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         tables.forEach(table => {
             const tableLink = document.createElement('a');
-            tableLink.href = '#';
-            tableLink.className = 'block p-2 rounded-md hover:bg-gray-100';
+            tableLink.href = '#'; // Use flex for icon alignment
+            tableLink.className = 'flex items-center gap-3 p-2 rounded-md hover:bg-gray-100';
             tableLink.textContent = table.name;
             tableLink.dataset.tableId = table.id;
             tableList.appendChild(tableLink);
@@ -554,7 +560,6 @@ document.addEventListener('DOMContentLoaded', () => {
             sqlRunnerView.classList.add('hidden');
             deleteTableBtn.disabled = false;
             tableTabContainer.classList.remove('hidden');
-            closeSidebar(); // Close drawer on mobile after selection
 
             // Reset to page 1 whenever a new table is selected
             renderStructure(state.selectedTable.columns);
@@ -1001,20 +1006,20 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => modal.classList.add('hidden'), 250);
     }
 
-    function openSidebar() {
-        sidebarDrawer.classList.remove('-translate-x-full');
-        sidebarOverlay.classList.remove('hidden');
-        setTimeout(() => {
-            sidebarOverlay.classList.remove('opacity-0');
-        }, 10);
-    }
-
-    function closeSidebar() {
-        sidebarDrawer.classList.add('-translate-x-full');
-        sidebarOverlay.classList.add('opacity-0');
-        setTimeout(() => {
-            sidebarOverlay.classList.add('hidden');
-        }, 300);
+    function toggleSidebar() {
+        const isCollapsed = sidebar.classList.toggle('collapsed');
+        if (isCollapsed) {
+            sidebar.classList.remove('w-72');
+            sidebar.classList.add('w-20');
+        } else {
+            sidebar.classList.remove('w-20');
+            sidebar.classList.add('w-72');
+        }
+        document.getElementById('collapse-icon').classList.toggle('hidden', isCollapsed);
+        document.getElementById('expand-icon').classList.toggle('hidden', !isCollapsed);
+        
+        // Save preference to local storage
+        localStorage.setItem('sidebarCollapsed', isCollapsed);
     }
 
     function createColumnRow(isPk = false) {
@@ -1438,11 +1443,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Sidebar Drawer Event Listeners
-    openSidebarBtn.addEventListener('click', openSidebar);
-    closeSidebarBtn.addEventListener('click', closeSidebar);
-    sidebarOverlay.addEventListener('click', closeSidebar);
-
+    // Sidebar Toggle Event Listener
+    toggleSidebarBtn.addEventListener('click', toggleSidebar);
     // Event Listeners
     tableList.addEventListener('click', handleTableSelect);
     addRowBtn.addEventListener('click', handleAddRow);
@@ -2132,6 +2134,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok) await fetchAndRenderWebhooks(state.selectedTable.id);
         }
     });
+
+    // Check for saved sidebar state on load
+    if (localStorage.getItem('sidebarCollapsed') === 'true') {
+        toggleSidebar();
+    }
     // Initial Load
     supabase.auth.onAuthStateChange((event, session) => {
         if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
