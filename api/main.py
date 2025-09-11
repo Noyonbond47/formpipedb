@@ -169,7 +169,7 @@ class CalendarIntegrationResponse(BaseModel):
     provider: str # e.g., 'google'
     account_email: str # The user's Google account email
     calendar_id: str # The specific calendar ID (e.g., 'primary')
-    field_mapping: CalendarIntegrationFieldMapping
+    field_mapping: Optional[CalendarIntegrationFieldMapping] = None
 
     model_config = ConfigDict(extra="ignore")
 
