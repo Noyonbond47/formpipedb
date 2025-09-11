@@ -672,22 +672,20 @@ document.addEventListener('DOMContentLoaded', () => {
         calendarAutomationContainer.innerHTML = `<div class="text-sm text-gray-500">Loading calendar settings...</div>`;
         try {
             const response = await fetchWithAuth(`/api/v1/tables/${tableId}/calendar-integration`);
-            
-            // If the response is not OK, we need to find out why.
+
             if (!response.ok) {
                 let errorDetail = `HTTP error! status: ${response.status}`;
                 try {
-                    // Try to parse the error response from the API
                     const errorJson = await response.json();
                     errorDetail = errorJson.detail || JSON.stringify(errorJson);
                 } catch (e) {
-                    // The response was not JSON, just use the status text
                     errorDetail = response.statusText;
                 }
                 throw new Error(errorDetail);
             }
 
-            const integration = await response.json();
+            // Handle cases where the API returns 200 OK with an empty body (null for maybe_single)
+            const integration = response.status === 204 ? null : await response.json();
             state.calendarIntegration = integration; // Can be null if no integration exists
             renderCalendarAutomation(state.calendarIntegration);
 
