@@ -672,17 +672,29 @@ document.addEventListener('DOMContentLoaded', () => {
         calendarAutomationContainer.innerHTML = `<div class="text-sm text-gray-500">Loading calendar settings...</div>`;
         try {
             const response = await fetchWithAuth(`/api/v1/tables/${tableId}/calendar-integration`);
-            if (response.status === 404 || response.status === 204 || response.status === 200 && !(await response.clone().json())) {
-                state.calendarIntegration = null;
-            } else if (response.ok) {
-                state.calendarIntegration = await response.json();
-            } else {
-                throw new Error('Failed to fetch calendar integration settings.');
+            
+            // If the response is not OK, we need to find out why.
+            if (!response.ok) {
+                let errorDetail = `HTTP error! status: ${response.status}`;
+                try {
+                    // Try to parse the error response from the API
+                    const errorJson = await response.json();
+                    errorDetail = errorJson.detail || JSON.stringify(errorJson);
+                } catch (e) {
+                    // The response was not JSON, just use the status text
+                    errorDetail = response.statusText;
+                }
+                throw new Error(errorDetail);
             }
+
+            const integration = await response.json();
+            state.calendarIntegration = integration; // Can be null if no integration exists
             renderCalendarAutomation(state.calendarIntegration);
+
         } catch (error) {
-            console.error(error);
-            calendarAutomationContainer.innerHTML = `<div class="text-sm text-red-500">Error loading calendar settings.</div>`;
+            console.error("Calendar Automation Error:", error);
+            // Display a more informative error message
+            calendarAutomationContainer.innerHTML = `<div class="text-sm text-red-500">Error loading calendar settings: ${error.message}</div>`;
         }
     }
 
