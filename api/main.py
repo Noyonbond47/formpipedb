@@ -15,6 +15,11 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from typing import List, Optional, Any
 from pydantic import BaseModel, Field, ConfigDict
+
+# --- Google API Imports ---
+from google.oauth2.credentials import Credentials as GoogleCredentials
+from googleapiclient.discovery import build as build_google_service
+from googleapiclient.errors import HttpError
 from supabase import create_client, Client
 from postgrest import APIError
 
@@ -178,6 +183,7 @@ class CalendarIntegrationCreate(BaseModel):
     account_email: str # For now, we'll mock this. In reality, it comes from OAuth.
     calendar_id: str
     field_mapping: CalendarIntegrationFieldMapping
+    credentials: dict # This will hold the OAuth tokens from the frontend
 
 class CalendarAutomationLogRow(BaseModel):
     row_id: int
@@ -928,8 +934,8 @@ async def create_or_update_calendar_integration(table_id: int, integration_data:
             "account_email": integration_data.account_email,
             "calendar_id": integration_data.calendar_id,
             "field_mapping": integration_data.field_mapping.dict(),
-            # In a real OAuth flow, you'd save encrypted credentials here
-            "credentials": {"mock": True} 
+            # IMPORTANT: In a production app, these credentials should be encrypted before saving.
+            "credentials": integration_data.credentials
         }
         
         # Upsert on the table_id, which has a unique constraint. RLS ensures the user owns the table.
@@ -989,6 +995,11 @@ async def get_calendar_automation_logs(table_id: int, auth_details: dict = Depen
 
 async def _create_or_update_calendar_event(row_id: int, supabase_admin: Client):
     """Helper function to create a calendar event from a row if conditions are met."""
+    # This function now contains the logic to call the actual Google Calendar API.
+    # It assumes that the `google-api-python-client` library is installed and that
+    # valid OAuth credentials have been stored in the `calendar_integrations` table.
+    # The frontend is responsible for the OAuth flow to obtain these credentials.
+
     # 1. Fetch the row with its table_id and user_id.
     # We re-fetch here to ensure we have the absolute latest data, avoiding race conditions
     # where the calling function's data might be from just before the transaction committed.
@@ -1010,6 +1021,11 @@ async def _create_or_update_calendar_event(row_id: int, supabase_admin: Client):
 
     integration = integration_res.data
     mapping = integration.get('field_mapping', {})
+    credentials_dict = integration.get('credentials')
+
+    # If credentials aren't stored or are still the mock ones, we can't proceed.
+    if not credentials_dict or credentials_dict.get("mock"):
+        return
 
     # 3. Check if required fields are present in the row data
     title_col = mapping.get('event_title_col')
@@ -1023,21 +1039,34 @@ async def _create_or_update_calendar_event(row_id: int, supabase_admin: Client):
         print(f"Row {row_id} already has a calendar event: {row_meta['calendar_event_id']}. Skipping.")
         return
 
-    # 5. Construct the event object (mocking the Google API call)
-    event_object = {
-        "summary": row_data.get(title_col),
-        "description": row_data.get(mapping.get('description_col')),
-        "start": {"dateTime": row_data.get(start_col), "timeZone": "UTC"},
-        "end": {"dateTime": row_data.get(mapping.get('end_datetime_col'), row_data.get(start_col)), "timeZone": "UTC"},
-    }
-    print(f"SIMULATING: Would create Google Calendar event for row {row_id}: {event_object}")
-    
-    # 6. Mock event creation and update the row's meta data
-    mock_event_id = f"evt_{secrets.token_hex(12)}"
-    row_meta['calendar_event_id'] = mock_event_id
-    
-    supabase_admin.table("table_rows").update({"_meta": row_meta}).eq("id", row_id).execute()
-    print(f"Updated row {row_id} with mock event ID: {mock_event_id}")
+    try:
+        # 5. Build Google credentials and API service
+        creds = GoogleCredentials.from_authorized_user_info(credentials_dict)
+        service = build_google_service('calendar', 'v3', credentials=creds)
+
+        # 6. Construct the event object for the Google API
+        event_body = {
+            "summary": row_data.get(title_col),
+            "description": row_data.get(mapping.get('description_col')),
+            "start": {"dateTime": row_data.get(start_col), "timeZone": "UTC"}, # Assuming UTC timezone
+            "end": {"dateTime": row_data.get(mapping.get('end_datetime_col'), row_data.get(start_col)), "timeZone": "UTC"},
+        }
+
+        # 7. Call the Google Calendar API to insert the event
+        print(f"Creating Google Calendar event for row {row_id}...")
+        created_event = service.events().insert(calendarId=integration['calendar_id'], body=event_body).execute()
+        
+        real_event_id = created_event.get('id')
+        if real_event_id:
+            # 8. Update the row's meta data with the REAL event ID
+            row_meta['calendar_event_id'] = real_event_id
+            supabase_admin.table("table_rows").update({"_meta": row_meta}).eq("id", row_id).execute()
+            print(f"Successfully created event {real_event_id} and updated row {row_id}.")
+
+    except HttpError as error:
+        print(f"An error occurred calling Google Calendar API for row {row_id}: {error}")
+    except Exception as e:
+        print(f"An unexpected error occurred during calendar event creation for row {row_id}: {e}")
 
 @app.delete("/api/v1/users/me", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_current_user(auth_details: dict = Depends(get_current_user_details)):
