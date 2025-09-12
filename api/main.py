@@ -1231,8 +1231,9 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
         if processed_query.strip().upper().startswith("SELECT"):
             # This is a read query. We will execute it directly using a different RPC
             # that is designed to return a set of rows, avoiding the '21000' error.
-            # The `select()` method with `*` tells PostgREST to expect a result set.
-            response = supabase.rpc('execute_select_query', {'p_query': processed_query}).select("*").execute()
+            # By calling the existing 'execute_query' function and chaining .select("*"),
+            # we tell PostgREST to expect a set of rows, which correctly handles multi-row SELECTs.
+            response = supabase.rpc('execute_query', {'query_text': processed_query}).select("*").execute()
         else:
             # This is a write query (INSERT, UPDATE, etc.). Use the original method.
             response = supabase.rpc('execute_query', {'query_text': processed_query}).execute()
