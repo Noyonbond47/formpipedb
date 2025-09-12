@@ -51,7 +51,7 @@
     <!-- Collapsible Sidebar -->
     <aside id="sidebar" class="w-72 bg-white border-r flex flex-col shrink-0">
         <div class="p-4 border-b">
-            <a href="/app" class="text-xl font-bold text-gray-800">FormPipeDB</a>
+            <a href="/app" class="text-2xl font-bold text-black">FormPipeDB</a>
             <div id="sidebar-header-text" class="mt-2">
                 <h1 class="text-2xl font-bold text-gray-800 mt-1 truncate" title="{{ db_name }}">{{ db_name }}</h1>
             </div>
@@ -69,9 +69,6 @@
         <div class="p-4 border-t space-y-2 overflow-hidden">
             <button id="create-table-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg><span class="sidebar-item-title">Create Table</span></button>
             <button id="import-csv-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-purple-600 text-white hover:bg-purple-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg><span class="sidebar-item-title">Import CSV</span></button>
-            <button id="sql-runner-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-green-600 text-white hover:bg-green-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg><span class="sidebar-item-title">SQL Runner</span></button>
-            <button id="calendar-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-yellow-500 text-white hover:bg-yellow-600 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg><span class="sidebar-item-title">Calendar</span></button>
-            <button id="view-db-sql-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-gray-200 text-gray-800 hover:bg-gray-300 font-semibold text-sm"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8-4"></path></svg><span class="sidebar-item-title">View SQL</span></button>
             <button id="delete-table-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed" disabled><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span class="sidebar-item-title">Delete Table</span></button>
         </div>
         <div class="p-2 border-t">
@@ -83,13 +80,14 @@
     </aside>
 
     <main id="main-content" class="flex-1 p-8 overflow-auto hidden">
-        <div id="table-tabs-container" class="border-b mb-6">
-            <nav class="flex space-x-6">
+        <div class="flex justify-between items-center border-b mb-6">
+            <nav id="table-tabs-container" class="flex space-x-6">
                 <button data-tab="data" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-blue-500 text-blue-600">Data</button>
                 <button data-tab="structure" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Structure</button>
                 <button data-tab="integrations" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Integrations</button>
-                <button data-tab="table-sql" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">SQL</button>
+                <button data-tab="advanced" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Advanced</button>
             </nav>
+            <button id="calendar-btn" class="flex items-center gap-2 p-2 rounded-md bg-yellow-500 text-white hover:bg-yellow-600 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg><span>Calendar</span></button>
         </div>
 
         <div id="structure-tab-content" class="table-tab-content hidden">
@@ -112,11 +110,33 @@
             </div>
         </div>
 
-        <div id="table-sql-tab-content" class="table-tab-content hidden">
-            <div class="p-4 rounded-md font-mono text-sm ring-1 ring-gray-200 relative bg-[#282c34]">
-                <button id="copy-table-sql-btn" class="absolute top-2 right-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs font-semibold py-1 px-2 rounded">Copy</button>
-                <pre><code id="table-sql-code"></code></pre>
+        <div id="advanced-tab-content" class="table-tab-content hidden space-y-8">
+            <!-- Table SQL Schema -->
+            <div>
+                <h3 class="text-lg font-semibold mb-2">Table SQL Schema</h3>
+                <div class="p-4 rounded-md font-mono text-sm ring-1 ring-gray-200 relative bg-[#282c34]">
+                    <button id="copy-table-sql-btn" class="absolute top-2 right-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs font-semibold py-1 px-2 rounded">Copy</button>
+                    <pre><code id="table-sql-code"></code></pre>
+                </div>
+                <div class="mt-2 text-right">
+                    <button id="view-db-sql-btn" class="text-sm text-blue-600 hover:underline font-semibold">View Full Database SQL</button>
+                </div>
             </div>
+
+            <!-- SQL Runner -->
+            <div class="bg-white rounded-lg shadow-sm border">
+                <div class="p-4 border-b">
+                    <h3 class="text-lg font-semibold">SQL Runner</h3>
+                    <p class="text-sm text-gray-500 mt-1">Execute custom SQL queries against your database.</p>
+                </div>
+                <div class="p-4">
+                    <textarea id="sql-query-input" class="w-full h-40" placeholder="-- Example: SELECT * FROM users WHERE id > 10;"></textarea>
+                    <div class="mt-4 flex justify-end">
+                        <button id="run-query-btn" class="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 font-semibold">Run Query</button>
+                    </div>
+                </div>
+            </div>
+            <div id="query-results-container" class="bg-white rounded-lg shadow-sm border min-h-[10rem]"></div>
         </div>
 
         <div id="integrations-tab-content" class="table-tab-content hidden space-y-6">
@@ -185,25 +205,6 @@
             </div>
         </div>
     </main>
-
-    <div id="sql-runner-view" class="flex-1 p-8 overflow-auto hidden">
-        <div class="space-y-6">
-            <div class="bg-white rounded-lg shadow-sm border">
-                <div class="p-4 border-b">
-                    <h3 class="text-lg font-semibold">SQL Runner</h3>
-                    <p class="text-sm text-gray-500 mt-1">Execute custom SQL queries against your database.</p>
-                </div>
-                <div class="p-4">
-                    <textarea id="sql-query-input" class="w-full h-40" placeholder="-- Example: SELECT * FROM users WHERE id > 10;"></textarea>
-                    <div class="mt-4 flex justify-end">
-                        <button id="run-query-btn" class="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 font-semibold">Run Query</button>
-                    </div>
-                </div>
-            </div>
-            <div id="query-results-container" class="bg-white rounded-lg shadow-sm border min-h-[10rem]">
-            </div>
-        </div>
-    </div>
 
     <div id="calendar-view" class="flex-1 p-8 overflow-auto hidden">
         <div class="bg-white p-6 rounded-lg shadow-lg">
@@ -391,6 +392,39 @@
     </div>
 </div>
 
+<div id="create-event-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+    <form id="create-event-form" class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div class="p-4 border-b">
+            <h3 class="text-xl font-semibold">Create New Event in '<span id="create-event-table-name"></span>'</h3>
+        </div>
+        <div class="p-6 space-y-4 overflow-y-auto">
+            <p class="text-sm text-gray-600">
+                A new row will be created in your table with the data below, and a calendar event will be generated from it.
+            </p>
+            <div id="create-event-row-data-fields" class="space-y-3 border-t pt-3">
+                <!-- Dynamic row data fields will be injected here -->
+            </div>
+            <div class="border-t pt-4 mt-4">
+                <h4 class="text-md font-semibold text-gray-800">Calendar Event Mapping</h4>
+                <div class="space-y-3 mt-2">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Event Title <span class="text-red-500">*</span></label>
+                        <select id="create-event-title-col" required class="mt-1 block w-full p-2 border rounded-md bg-white"></select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Start Date/Time <span class="text-red-500">*</span></label>
+                        <select id="create-event-start-col" required class="mt-1 block w-full p-2 border rounded-md bg-white"></select>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="p-4 mt-auto border-t bg-gray-50 flex justify-end gap-4">
+            <button id="cancel-create-event-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Create Row & Event</button>
+        </div>
+    </form>
+</div>
+
 <div id="send-to-calendar-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
     <form id="send-to-calendar-form" class="bg-white rounded-lg shadow-xl w-full max-w-lg">
         <div class="p-4 border-b">
@@ -483,8 +517,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('row-search-input');
     const runQueryBtn = document.getElementById('run-query-btn');
     const sqlQueryInput = document.getElementById('sql-query-input');
-    const sqlRunnerBtn = document.getElementById('sql-runner-btn');
-    const sqlRunnerView = document.getElementById('sql-runner-view');
     const queryResultsContainer = document.getElementById('query-results-container');
     const importCsvBtn = document.getElementById('import-csv-btn');
     const importCsvModal = document.getElementById('import-csv-modal');
@@ -510,6 +542,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const calendarView = document.getElementById('calendar-view');
     const sendToCalendarModal = document.getElementById('send-to-calendar-modal');
     const cancelSendToCalendarBtn = document.getElementById('cancel-send-to-calendar-btn');
+    const createEventModal = document.getElementById('create-event-modal');
+    const cancelCreateEventBtn = document.getElementById('cancel-create-event-btn');
 
 
     const importRowsCsvFile = document.getElementById('import-rows-csv-file');
@@ -643,18 +677,17 @@ document.addEventListener('DOMContentLoaded', () => {
             
             mainContent.classList.remove('hidden');
             placeholderContent.classList.add('hidden');
-            sqlRunnerView.classList.add('hidden');
             calendarView.classList.add('hidden');
             deleteTableBtn.disabled = false;
             tableTabContainer.classList.remove('hidden');
-            // Programmatically click the data tab to ensure it's the default view
             document.querySelector('.table-tab-btn[data-tab="data"]').click();
 
             // Reset to page 1 whenever a new table is selected
             renderStructure(state.selectedTable.columns);
             fetchAndRenderData(state.selectedTable.id, 1);
             renderTableSql(state.selectedTable);
-            fetchAndRenderCalendarSync(state.selectedTable.id); // Corrected this line
+            // Pass the full table object, not just the ID
+            fetchAndRenderCalendarSync(state.selectedTable);
             fetchAndRenderWebhooks(state.selectedTable.id);
         }
     }
@@ -679,10 +712,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="p-3 font-mono text-xs">${col.foreign_key ? `-> ${col.foreign_key.table_id}.${col.foreign_key.column_name}` : ''}</td>
                 <td class="p-3 text-center">
                     <div class="flex items-center justify-center gap-2">
-                    ${!col.is_primary_key ? `
-                        <button data-row-id="${row.id}" class="send-to-calendar-btn text-gray-400 hover:text-yellow-600" title="Send to Calendar">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                        </button>
+                    ${!col.is_primary_key ? `                        
                         <button data-column-index="${index}" class="edit-column-btn text-gray-500 hover:text-blue-600" title="Edit Column"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L14.732 3.732z"></path></svg></button>
                         <button data-column-index="${index}" class="delete-column-btn text-gray-500 hover:text-red-600" title="Delete Column"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
                     ` : ''}
@@ -791,21 +821,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function fetchAndRenderCalendarSync(tableId) {
+    async function fetchAndRenderCalendarSync(table) {
         const container = document.getElementById('calendar-sync-container');
         container.innerHTML = `<div class="text-sm text-gray-500">Loading calendar settings...</div>`;
         try {
-            const response = await fetchWithAuth(`/api/v1/tables/${tableId}/calendar-sync`);
+            const response = await fetchWithAuth(`/api/v1/tables/${table.id}/calendar-sync`);
             if (!response.ok) throw new Error('Failed to fetch sync config');
             const config = await response.json();
-            renderCalendarSyncForm(config);
+            renderCalendarSyncForm(config, table);
         } catch (error) {
             console.error(error);
             container.innerHTML = `<div class="text-sm text-red-500">Error loading calendar settings.</div>`;
         }
     }
 
-    function renderCalendarSyncForm(config) {
+    function renderCalendarSyncForm(config, table) {
         const container = document.getElementById('calendar-sync-container');
         const template = document.getElementById('calendar-sync-form-template');
         container.innerHTML = template.innerHTML;
@@ -815,7 +845,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const enabledToggle = form.querySelector('#calendar-sync-enabled');
         const deleteBtn = form.querySelector('#delete-calendar-sync-btn');
 
-        const columns = state.selectedTable.columns.filter(c => !c.is_primary_key);
+        const columns = table.columns.filter(c => !c.is_primary_key);
         const dateLikeColumns = columns.filter(c => ['timestamp', 'text', 'date'].includes(c.type));
 
         const fields = [
@@ -865,14 +895,14 @@ document.addEventListener('DOMContentLoaded', () => {
             body: JSON.stringify(payload)
         });
 
-        if (response.ok) fetchAndRenderCalendarSync(state.selectedTable.id);
+        if (response.ok) fetchAndRenderCalendarSync(state.selectedTable);
         else showError('Failed to save sync settings.');
     }
 
     async function handleDeleteCalendarSync() {
         if (confirm('Are you sure you want to remove the calendar sync for this table?')) {
             const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/calendar-sync`, { method: 'DELETE' });
-            if (response.ok) fetchAndRenderCalendarSync(state.selectedTable.id);
+            if (response.ok) fetchAndRenderCalendarSync(state.selectedTable);
             else showError('Failed to delete sync settings.');
         }
     }
@@ -1220,15 +1250,59 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function handleAddRow() {
         if (!state.selectedTable) return;
+
+        addRowBtn.disabled = true;
+        addRowBtn.textContent = 'Adding...';
+
+        // 1. Create a new row element optimistically
+        const columns = state.selectedTable.columns.sort((a, b) => a.is_primary_key ? -1 : 1);
+        const newTr = document.createElement('tr');
+        newTr.classList.add('bg-blue-50'); // Give it a temporary highlight
+
+        let rowHtml = `
+            <td class="p-3 text-center flex items-center justify-center gap-3">
+                <button class="send-to-calendar-btn text-gray-300 cursor-not-allowed" title="Save row to enable" disabled>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                </button>
+                <button class="delete-row-btn text-gray-300 cursor-not-allowed" title="Save row to enable" disabled>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            </td>
+        `;
+        columns.forEach(col => {
+            const contentEditable = !col.is_primary_key ? 'contenteditable="true"' : '';
+            const placeholder = col.is_primary_key ? '(auto)' : '';
+            rowHtml += `<td class="p-3 font-mono text-sm editable-cell" data-column-name="${col.name}" ${contentEditable}>${placeholder}</td>`;
+        });
+        newTr.innerHTML = rowHtml;
+
+        // 2. Prepend to the table and focus
+        dataTbody.prepend(newTr);
+        newTr.querySelector('.editable-cell[contenteditable="true"]')?.focus();
+
+        // 3. Create the row in the database in the background
         try {
             const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/rows`, { method: 'POST' });
             if (!response.ok) {
                 const err = await response.json();
                 throw new Error(err.detail || 'Failed to add row');
             }
-            await fetchAndRenderData(state.selectedTable.id);
+            const newRowData = await response.json();
+
+            // 4. Finalize the optimistic row with the real ID
+            newTr.dataset.rowId = newRowData.id;
+            newTr.querySelectorAll('button').forEach(btn => {
+                btn.dataset.rowId = newRowData.id;
+                btn.disabled = false;
+                btn.classList.remove('text-gray-300', 'cursor-not-allowed');
+            });
+            newTr.classList.remove('bg-blue-50');
         } catch (error) {
-            alert(`Error: ${error.message}`);
+            showError(`Error: ${error.message}`);
+            newTr.remove(); // Rollback the optimistic UI change
+        } finally {
+            addRowBtn.disabled = false;
+            addRowBtn.textContent = 'Add Row';
         }
     }
 
@@ -1851,6 +1925,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     cancelDeleteTableBtn.addEventListener('click', () => closeModal(deleteTableModal));
     confirmDeleteTableBtn.addEventListener('click', handleDeleteTable);
+    cancelCreateEventBtn.addEventListener('click', () => closeModal(createEventModal));
 
     cancelSendToCalendarBtn.addEventListener('click', () => closeModal(sendToCalendarModal));
     editColumnForm.addEventListener('submit', handleEditColumnSubmit);
@@ -1897,25 +1972,12 @@ document.addEventListener('DOMContentLoaded', () => {
     runQueryBtn.addEventListener('click', handleRunQuery);
     exportCsvBtn.addEventListener('click', handleExportCsv);
 
-    viewDbSqlBtn.addEventListener('click', handleViewDbSql);
+    document.getElementById('view-db-sql-btn').addEventListener('click', handleViewDbSql);
     closeDbSqlModalBtn.addEventListener('click', () => closeModal(viewDbSqlModal));
-
-    sqlRunnerBtn.addEventListener('click', () => {
-        // Hide other main views
-        mainContent.classList.add('hidden');
-        placeholderContent.classList.add('hidden');
-        // Show the SQL runner
-        sqlRunnerView.classList.remove('hidden');
-        // Visually deselect any selected table
-        tableList.querySelectorAll('a').forEach(a => a.classList.remove('bg-blue-100', 'text-blue-700', 'font-semibold'));
-        state.selectedTable = null;
-        deleteTableBtn.disabled = true;
-    });
 
     calendarBtn.addEventListener('click', () => {
         mainContent.classList.add('hidden');
         placeholderContent.classList.add('hidden');
-        sqlRunnerView.classList.add('hidden');
         calendarView.classList.remove('hidden');
 
         tableList.querySelectorAll('a').forEach(a => a.classList.remove('bg-blue-100', 'text-blue-700', 'font-semibold'));
@@ -1991,6 +2053,105 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('new-columns-list').addEventListener('click', (e) => {
         if (e.target.classList.contains('remove-column-btn')) {
             e.target.closest('.column-row').remove();
+        }
+    });
+
+    function openCreateEventModal(dateStr) {
+        if (!state.selectedTable) {
+            showError("Please select a table first to create an event.");
+            return;
+        }
+
+        document.getElementById('create-event-table-name').textContent = state.selectedTable.name;
+        const rowDataFieldsContainer = document.getElementById('create-event-row-data-fields');
+        rowDataFieldsContainer.innerHTML = '';
+
+        const columns = state.selectedTable.columns.filter(c => !c.is_primary_key);
+        const dateLikeColumns = columns.filter(c => ['timestamp', 'text', 'date'].includes(c.type));
+        const autoStartDateColumn = dateLikeColumns.find(c => /start|date|deadline|due/i.test(c.name)) || (dateLikeColumns.length > 0 ? dateLikeColumns[0] : null);
+
+        columns.forEach(col => {
+            const isDateField = col.type === 'timestamp' || col.type === 'date';
+            const isPreselectedDateField = autoStartDateColumn && col.name === autoStartDateColumn.name;
+            const value = isPreselectedDateField ? dateStr : '';
+
+            const fieldHtml = `
+                <div class="grid grid-cols-3 gap-4 items-center">
+                    <label for="new-event-col-${col.name}" class="text-sm font-medium text-gray-700">${col.name}</label>
+                    <input type="${isDateField ? 'date' : 'text'}" id="new-event-col-${col.name}" data-col-name="${col.name}" value="${value}"
+                           class="col-span-2 p-2 border rounded-md shadow-sm">
+                </div>
+            `;
+            rowDataFieldsContainer.insertAdjacentHTML('beforeend', fieldHtml);
+        });
+
+        // Populate mapping selects
+        const titleSelect = document.getElementById('create-event-title-col');
+        const startSelect = document.getElementById('create-event-start-col');
+
+        titleSelect.innerHTML = '<option value="">-- Select Column --</option>';
+        columns.forEach(col => {
+            titleSelect.innerHTML += `<option value="${col.name}">${col.name}</option>`;
+        });
+
+        startSelect.innerHTML = '<option value="">-- Select Column --</option>';
+        dateLikeColumns.forEach(col => {
+            startSelect.innerHTML += `<option value="${col.name}">${col.name}</option>`;
+        });
+
+        // Auto-select common names for mapping
+        const autoTitle = columns.find(c => /title|name|subject|task/i.test(c.name));
+        if (autoTitle) titleSelect.value = autoTitle.name;
+        if (autoStartDateColumn) startSelect.value = autoStartDateColumn.name;
+
+        openModal(createEventModal);
+    }
+
+    document.getElementById('create-event-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const submitBtn = form.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Creating...';
+
+        // 1. Collect data for the new row
+        const rowData = {};
+        form.querySelectorAll('#create-event-row-data-fields input').forEach(input => {
+            rowData[input.dataset.colName] = input.value;
+        });
+
+        // 2. Collect calendar mapping info
+        const calendarMapping = {
+            title_column: document.getElementById('create-event-title-col').value,
+            start_time_column: document.getElementById('create-event-start-col').value,
+        };
+
+        try {
+            // 3. Create the new row
+            const rowResponse = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/rows`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ data: rowData })
+            });
+            if (!rowResponse.ok) throw new Error('Failed to create the new row.');
+            const newRow = await rowResponse.json();
+
+            // 4. Create the calendar event from the new row
+            const eventResponse = await fetchWithAuth(`/api/v1/rows/${newRow.id}/send-to-calendar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(calendarMapping)
+            });
+            if (!eventResponse.ok) throw new Error('Row was created, but failed to create the calendar event.');
+
+            closeModal(createEventModal);
+            calendar.refetchEvents();
+            fetchAndRenderData(state.selectedTable.id, state.pagination.currentPage);
+        } catch (error) {
+            showError(error.message);
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Create Row & Event';
         }
     });
 
@@ -2071,13 +2232,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 left: 'prev,next today',
                 center: 'title',
                 right: 'dayGridMonth,timeGridWeek,listWeek'
-            },
-            dateClick: function(info) {
-                if (state.selectedTable) {
-                    openSendToCalendarModal(null, info.dateStr); // Pass date to pre-fill
-                } else {
-                    showError('Please select a table from the sidebar first to create an event.');
-                }
             },
             editable: true,
             eventDrop: async (info) => {

@@ -1370,53 +1370,48 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
 @app.post("/api/v1/databases/{database_id}/execute-query")
 async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_details: dict = Depends(get_current_user_details)):
     """
-    Executes a read-only (SELECT) or data-modifying (INSERT, UPDATE, DELETE) SQL query
-    from the user by calling a secure RPC function in the database. This supports
-    complex queries like JOINs, provided that VIEWS have been created for the tables.
+    Executes a custom SQL query from the user via a secure RPC function.
+    Supports data manipulation (SELECT, INSERT, UPDATE, DELETE) and CTEs.
+    Blocks schema-modifying statements (CREATE, ALTER, DROP).
     """
     supabase = auth_details["client"]
-    query = query_data.query.strip()
+    raw_query = query_data.query.strip()
 
-    # Remove single-line SQL comments. This is more robust than a simple regex
-    # as it handles newlines correctly.
-    uncommented_lines = [line for line in query.split('\n') if not line.strip().startswith('--')]
-    query = "\n".join(uncommented_lines).strip()
+    # 1. **Security Check**: Prevent schema modification.
+    # Remove comments to prevent bypassing checks.
+    query_no_comments = re.sub(r'--.*', '', raw_query)
     
-    # 1. Clean the query by removing a single trailing semicolon.
-    # A trailing semicolon is valid SQL syntax but causes an error when the query
-    # is executed as a subquery inside the RPC function.
-    if query.endswith(';'):
-        query = query[:-1].strip()
+    # Block keywords that modify schema or permissions.
+    forbidden_keywords = r'\b(CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE)\b'
+    if re.search(forbidden_keywords, query_no_comments, re.IGNORECASE):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Schema-modifying statements (CREATE, ALTER, DROP, etc.) are not allowed in the SQL Runner. Please use the 'Structure' tab or 'Import' features."
+        )
 
-    # 2. To make the query compatible with the simple parser in the `execute_query`
-    # database function, we need to ensure there is no newline between the first
-    # command (e.g., "SELECT") and the rest of the query.
-    # This regex replaces the first block of whitespace with a single space, which is
-    # safer than normalizing the whole string as it won't corrupt string literals.
-    processed_query = re.sub(r'\s+', ' ', query, 1)
+    # Ensure the query is a data manipulation or select statement.
+    allowed_starts = ('SELECT', 'WITH', 'INSERT', 'UPDATE', 'DELETE')
+    if not query_no_comments.lstrip().upper().startswith(allowed_starts):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only SELECT, INSERT, UPDATE, DELETE, and WITH statements are allowed."
+        )
 
+    # 2. **Execution**: The query is deemed safe for execution.
+    # The `execute_query` RPC function is designed to handle this.
     try:
-        # The database function `execute_query` is now robust enough to handle all query types
-        # (SELECT, INSERT, UPDATE, etc.) and always returns a set of JSON.
-        # By always using `.select("*")`, we tell the client to expect a set of rows,
-        # which correctly handles both multi-row SELECT results and the single-row
-        # status message from other queries. This simplifies the logic and fixes the error.
-        response = supabase.rpc('execute_query', {'query_text': processed_query}).select("*").execute()
+        response = supabase.rpc('execute_query', {'query_text': raw_query}).execute()
 
-        return response.data
-
-    except Exception as e:
-        # The error from the DB will be nested. We can try to extract a cleaner message.
-        error_message = str(e)
-        try:
-            # PostgrestErrors have a 'message' attribute in their JSON representation
+        # The RPC function returns a JSON string. We need to parse it.
+        if response.data and isinstance(response.data, list) and isinstance(response.data[0], str):
             import json
-            error_details = json.loads(error_message)
-            error_message = error_details.get('message', str(e))
-        except:
-            pass # Fallback to the raw error string
-        
-        raise HTTPException(status_code=400, detail=f"Query failed: {error_message}")
+            actual_result = json.loads(response.data[0])
+            return actual_result
+        else:
+            return response.data
+
+    except APIError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Query failed: {e.message}")
 
 
 @app.post("/api/v1/contact")
