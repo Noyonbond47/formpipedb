@@ -204,7 +204,7 @@
         </div>
         <div class="p-6 mt-auto border-t bg-gray-50 flex justify-end gap-4">
             <button id="cancel-create-table-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
-            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Create Table</button>
+            <button id="submit-create-table-btn" type="button" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Create Table</button>
         </div>
     </form>
 </div>
@@ -385,6 +385,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const createTableModal = document.getElementById('create-table-modal');
     const createTableForm = document.getElementById('create-table-form');
     const cancelCreateTableBtn = document.getElementById('cancel-create-table-btn');
+    const submitCreateTableBtn = document.getElementById('submit-create-table-btn');
     const createTableTabButtonsInModal = document.querySelectorAll('#create-table-modal .create-table-tab-btn');
     const guiCreateTab = document.getElementById('gui-create-tab');
     const sqlCreateTab = document.getElementById('sql-create-tab');
@@ -1102,6 +1103,12 @@ document.addEventListener('DOMContentLoaded', () => {
         columnsList.appendChild(createColumnRow(true)); // Add default PK
     }
 
+    // This is a more robust way to handle the submit button click, especially when
+    // other libraries like CodeMirror might interfere with form submission events.
+    submitCreateTableBtn.addEventListener('click', (e) => {
+        handleCreateTableSubmit(e);
+    });
+
     async function handleCreateTableSubmit(e) {
         e.preventDefault();
         const activeTab = document.querySelector('#create-table-modal .create-table-tab-btn.bg-white').dataset.tab;
@@ -1801,7 +1808,6 @@ document.addEventListener('DOMContentLoaded', () => {
         openModal(createTableModal);
     });
     cancelCreateTableBtn.addEventListener('click', () => closeModal(createTableModal));
-    createTableForm.addEventListener('submit', handleCreateTableSubmit);
     
     deleteTableBtn.addEventListener('click', () => {
         if (!state.selectedTable) return;

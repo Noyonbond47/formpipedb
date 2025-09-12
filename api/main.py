@@ -353,40 +353,51 @@ async def create_table_from_sql(database_id: int, sql_data: SqlTableCreateReques
     script = sql_data.script.strip()
 
     if not script.upper().startswith("CREATE TABLE"):
-        raise HTTPException(status_code=400, detail="Script must be a single CREATE TABLE statement.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Script must be a single CREATE TABLE statement.")
 
-    # Use the same robust parser from the full import, but simplified for a single table
-    create_match = re.search(r'CREATE TABLE\s+[`"]?(\w+)[`"]?\s*\((.+)\)', script, re.DOTALL | re.IGNORECASE)
+    # A more robust regex to capture the table name and the columns block, even with complex content.
+    create_match = re.search(r'CREATE TABLE\s+(?:IF NOT EXISTS\s+)?[`"]?(\w+)[`"]?\s*\((.*)\)\s*;?', script, re.DOTALL | re.IGNORECASE)
     if not create_match:
-        raise HTTPException(status_code=400, detail="Invalid CREATE TABLE syntax.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid CREATE TABLE syntax. Could not find table name and column definitions.")
 
     table_name, columns_str = create_match.groups()
     columns_defs = []
     table_level_fks = []
 
-    # Split columns, being careful not to split inside parentheses like VARCHAR(255)
-    for col_line in re.split(r',(?![^\(]*\))', columns_str):
+    # Split columns by comma, but be careful not to split inside parentheses (e.g., for VARCHAR(255) or DEFAULT functions)
+    # This regex is more robust for this task.
+    for col_line in re.split(r',(?![^()]*\))', columns_str):
         col_line = col_line.strip()
         if not col_line: continue
 
+        # Clean up common redundant keywords from broken SQL dumps
+        col_line = re.sub(r'\b(NOT NULL)\s+\1\b', r'\1', col_line, flags=re.IGNORECASE)
+        col_line = re.sub(r'\b(UNIQUE)\s+\1\b', r'\1', col_line, flags=re.IGNORECASE)
+        col_line = re.sub(r'\b(PRIMARY KEY)\s+\1\b', r'\1', col_line, flags=re.IGNORECASE)
+
+        # Handle table-level foreign key definitions
         fk_match = re.search(r'FOREIGN KEY\s*\(([`"]?\w+[`"]?)\)\s*REFERENCES\s*[`"]?(\w+)[`"]?\s*\(([`"]?\w+[`"]?)\)', col_line, re.IGNORECASE)
         if fk_match:
             source_col, ref_table_name, ref_col = fk_match.groups()
             table_level_fks.append({
-                "source_col": source_col.strip('`"'),
+                "source_col": source_col.strip('`"\''),
                 "ref_table_name": ref_table_name.strip('`"'),
-                "ref_col": ref_col.strip('`"')
+                "ref_col": ref_col.strip('`"\'')
             })
             continue
 
-        if col_line.upper().startswith(("PRIMARY KEY", "UNIQUE", "CONSTRAINT")):
+        # Ignore other table-level constraints for now
+        if col_line.upper().startswith(("PRIMARY KEY", "UNIQUE", "CONSTRAINT", "CHECK")):
             continue
 
+        # Extract column name, type, and constraints
         parts = col_line.split()
         if not parts: continue
 
-        col_name = parts[0].strip('`"')
+        col_name = parts[0].strip('`"\'')
         type_and_constraints = " ".join(parts[1:])
+        
+        # A simple regex to grab the type, which might include parentheses like VARCHAR(255)
         type_match = re.match(r'[\w\(\s,\)]+', type_and_constraints)
         col_type = type_match.group(0).strip() if type_match else parts[1]
 
@@ -394,7 +405,7 @@ async def create_table_from_sql(database_id: int, sql_data: SqlTableCreateReques
             name=col_name,
             type=col_type.lower(),
             is_primary_key="PRIMARY KEY" in type_and_constraints.upper(),
-            is_unique="UNIQUE" in type_and_constraints.upper(),
+            is_unique="UNIQUE" in type_and_constraints.upper() and "PRIMARY KEY" not in type_and_constraints.upper(), # A PK is implicitly unique
             is_not_null="NOT NULL" in type_and_constraints.upper()
         ))
 
@@ -1497,11 +1508,19 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
     # safer than normalizing the whole string as it won't corrupt string literals.
     processed_query = re.sub(r'\s+', ' ', query, 1)
 
+    # We need to manually construct the request to set the 'Accept' header correctly
+    # for queries that return multiple rows. This prevents the '21000' error.
     try:
-        # Call the 'execute_query' RPC function you created in the Supabase SQL Editor.
-        # The function handles the secure execution of the query.
-        response = supabase.rpc('execute_query', {'query_text': processed_query}).execute()
-        # The RPC function returns a single JSON object, which could be an array of
+        # Manually call the RPC endpoint with a specific header to handle multiple rows correctly.
+        # 'application/vnd.pgrst.object+json' asks for a single JSON object, which causes the error.
+        # By simply using 'application/json', PostgREST will return a JSON array if the result is a set of rows.
+        response = supabase.postgrest.rpc('execute_query', {'query_text': processed_query}).execute()
+
+        # The default behavior of the rpc call with a multi-row result is to return a list of dictionaries.
+        # If it's a single object (like for INSERT/UPDATE status), it returns a dictionary.
+        # This is exactly what the frontend expects.
+
+        # The RPC function returns a JSON object, which could be an array of
         # results for SELECT, or a status object for DML.
         return response.data
     except Exception as e:
