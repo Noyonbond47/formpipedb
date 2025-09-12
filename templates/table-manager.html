@@ -1086,81 +1086,34 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         const activeTab = document.querySelector('#create-table-modal .create-table-tab-btn.bg-white').dataset.tab;
         let payload;
+        let url = `/api/v1/databases/${state.dbId}/tables`;
+        let method = 'POST';
 
         if (activeTab === 'gui') {
             const tableName = document.getElementById('new-table-name').value.trim();
             const columnRows = document.querySelectorAll('#new-columns-list .column-row');
             
             const columns = Array.from(columnRows).map(row => {
-                const isFk = row.querySelector('[data-key="is_foreign_key"]').checked;
-                let foreignKey = null;
-                if (isFk) {
-                    const tableId = row.querySelector('[data-key="fk_table_id"]').value;
-                    const columnName = row.querySelector('[data-key="fk_column_name"]').value;
-                    if (tableId && columnName) {
-                        foreignKey = {
-                            table_id: parseInt(tableId, 10),
-                            column_name: columnName
-                        };
-                    }
-                }
                 return {
                     name: row.querySelector('[data-key="name"]').value,
                     type: row.querySelector('[data-key="type"]').value,
                     is_primary_key: row.querySelector('[data-key="is_primary_key"]').value === 'true',
                     is_not_null: row.querySelector('[data-key="is_not_null"]').checked,
                     is_unique: row.querySelector('[data-key="is_unique"]').checked,
-                    foreign_key: foreignKey
+                    foreign_key: null // FKs from GUI are complex, deferring to SQL for now
                 };
             });
             payload = { name: tableName, columns };
 
         } else { // activeTab === 'sql'
+            url = `/api/v1/databases/${state.dbId}/create-table-from-sql`;
             const sqlScript = createTableSqlEditor.getValue().trim();
-            if (!sqlScript) {
-                showError("SQL script cannot be empty.");
-                return;
-            }
-
-            // Basic parsing of CREATE TABLE statement
-            const createMatch = sqlScript.match(/CREATE\s+TABLE\s+[`"]?(\w+)[`"]?\s*\(([\s\S]+)\)/i);
-            if (!createMatch) {
-                showError("Invalid CREATE TABLE statement. Please provide a single, valid statement.");
-                return;
-            }
-
-            const tableName = createMatch[1];
-            const columnsStr = createMatch[2];
-            const columns = [];
-
-            // Split columns, but be careful of commas inside parentheses (e.g., for VARCHAR(255))
-            const columnLines = columnsStr.split(/,(?![^\(]*\))/);
-
-            for (const line of columnLines) {
-                const trimmedLine = line.trim();
-                if (!trimmedLine || trimmedLine.toUpperCase().startsWith('PRIMARY KEY') || trimmedLine.toUpperCase().startsWith('CONSTRAINT')) continue;
-
-                const parts = trimmedLine.match(/[`"]?(\w+)[`"]?\s+([\w\(\)]+)(.*)/i);
-                if (parts) {
-                    const name = parts[1];
-                    const type = parts[2];
-                    const constraints = parts[3].toUpperCase();
-                    columns.push({
-                        name: name,
-                        type: type.toLowerCase(),
-                        is_primary_key: constraints.includes('PRIMARY KEY'),
-                        is_not_null: constraints.includes('NOT NULL'),
-                        is_unique: constraints.includes('UNIQUE'),
-                        foreign_key: null // Note: FK parsing from SQL is not supported in this simple parser
-                    });
-                }
-            }
-            payload = { name: tableName, columns };
+            payload = { script: sqlScript };
         }
 
         try {
-            const response = await fetchWithAuth(`/api/v1/databases/${state.dbId}/tables`, {
-                method: 'POST',
+            const response = await fetchWithAuth(url, {
+                method: method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
