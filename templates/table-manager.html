@@ -385,6 +385,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const createTableModal = document.getElementById('create-table-modal');
     const createTableForm = document.getElementById('create-table-form');
     const cancelCreateTableBtn = document.getElementById('cancel-create-table-btn');
+    const createTableTabButtonsInModal = document.querySelectorAll('#create-table-modal .create-table-tab-btn');
+    const guiCreateTab = document.getElementById('gui-create-tab');
+    const sqlCreateTab = document.getElementById('sql-create-tab');
     const addColumnToModalBtn = document.getElementById('add-column-to-modal-btn');
     const deleteTableModal = document.getElementById('delete-table-modal');
     const modalTableName = document.getElementById('modal-table-name');
@@ -997,9 +1000,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 activeContent.classList.remove('hidden');
             }
 
-            // If the SQL tab was just made visible, refresh its CodeMirror editor.
+        });
+    });
+
+    // Event Listeners for Create Table Modal Tabs
+    createTableTabButtonsInModal.forEach(button => {
+        button.addEventListener('click', () => {
+            const tab = button.dataset.tab;
+
+            // Update button styles
+            createTableTabButtonsInModal.forEach(btn => {
+                btn.classList.remove('bg-white', 'shadow');
+            });
+            button.classList.add('bg-white', 'shadow');
+
+            // Show/hide tab content
+            guiCreateTab.classList.toggle('hidden', tab !== 'gui');
+            sqlCreateTab.classList.toggle('hidden', tab !== 'sql');
+
             if (tab === 'sql') {
-                setTimeout(() => createTableSqlEditor.refresh(), 10);
+                setTimeout(() => createTableSqlEditor.refresh(), 1); // Refresh CodeMirror when it becomes visible
             }
         });
     });

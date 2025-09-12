@@ -1288,9 +1288,12 @@ async def export_database_as_sql(database_id: int, auth_details: dict = Depends(
                 for k, v in row_dict['data'].items():
                     if k == pk_col_name:
                         continue
+                    # The data from the DB is already a Python object.
+                    # If it's a string that was part of the original import, it might have extra quotes.
+                    # We need to handle the value as it is.
                     if isinstance(v, str):
-                        # Refactored for clarity: correctly escape single quotes for SQL
-                        escaped_v = str(v).replace("'", "''")
+                        # The value from JSONB is already a clean string. We just need to escape it for SQL.
+                        escaped_v = v.replace("'", "''")
                         values_to_insert.append(f"'{escaped_v}'")
                     elif v is None:
                         values_to_insert.append("NULL")
