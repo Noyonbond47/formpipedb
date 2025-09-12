@@ -1222,28 +1222,30 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
     # safer than normalizing the whole string as it won't corrupt string literals.
     processed_query = re.sub(r'\s+', ' ', query, 1)
 
-    # We need to manually construct the request to set the 'Accept' header correctly
-    # for queries that return multiple rows. This prevents the '21000' error.
     try:
-        # Manually call the RPC endpoint with a specific header to handle multiple rows correctly.
-        # 'application/vnd.pgrst.object+json' asks for a single JSON object, which causes the error.
-        # By simply using 'application/json', PostgREST will return a JSON array if the result is a set of rows.
-        response = supabase.postgrest.rpc('execute_query', {'query_text': processed_query}).execute()
+        # --- PERMANENT FIX for "more than one row" error ---
+        # The 'execute_query' function is flawed for multi-row SELECTs.
+        # We will detect SELECT queries and use a different, more robust execution path.
+        # For other queries (INSERT, UPDATE, etc.), we'll use the original function.
 
-        # The default behavior of the rpc call with a multi-row result is to return a list of dictionaries.
-        # If it's a single object (like for INSERT/UPDATE status), it returns a dictionary.
-        # This is exactly what the frontend expects.
+        if processed_query.strip().upper().startswith("SELECT"):
+            # This is a read query. We will execute it directly using a different RPC
+            # that is designed to return a set of rows, avoiding the '21000' error.
+            # The `select()` method with `*` tells PostgREST to expect a result set.
+            response = supabase.rpc('execute_select_query', {'p_query': processed_query}).select("*").execute()
+        else:
+            # This is a write query (INSERT, UPDATE, etc.). Use the original method.
+            response = supabase.rpc('execute_query', {'query_text': processed_query}).execute()
 
-        # The RPC function returns a JSON object, which could be an array of
-        # results for SELECT, or a status object for DML.
         return response.data
+
     except Exception as e:
         # The error from the DB will be nested. We can try to extract a cleaner message.
         error_message = str(e)
         try:
             # PostgrestErrors have a 'message' attribute in their JSON representation
             import json
-            error_details = json.loads(str(e))
+            error_details = json.loads(error_message)
             error_message = error_details.get('message', str(e))
         except:
             pass # Fallback to the raw error string
