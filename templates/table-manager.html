@@ -883,15 +883,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetchWithAuth(`/api/v1/tables/${table.id}/calendar-sync`);
             
             if (!response.ok) {
+                const errorText = await response.text(); // Read the body ONCE as text.
                 let errorDetail;
                 try {
-                    // Try to parse the expected JSON error format first.
-                    const err = await response.json();
+                    // Try to parse the text as JSON.
+                    const err = JSON.parse(errorText);
                     errorDetail = err.detail || JSON.stringify(err);
                 } catch (e) {
-                    // If response is not JSON, it might be a server crash (HTML) or plain text.
-                    const textError = await response.text();
-                    errorDetail = `Server returned status ${response.status}. Response body (may be truncated): ${textError.substring(0, 500)}`;
+                    // If parsing fails, it's not JSON. Use the raw text.
+                    errorDetail = `Server returned status ${response.status}. Response body (may be truncated): ${errorText.substring(0, 500)}`;
                 }
                 throw new Error(errorDetail);
             }
