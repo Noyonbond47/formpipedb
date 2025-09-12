@@ -10,6 +10,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Fira+Code&display=swap" rel="stylesheet">
     
+    <!-- FullCalendar for Calendar view -->
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.9/index.global.min.js"></script>
+    <!-- Tippy.js for event popovers -->
+    <script src="https://unpkg.com/@popperjs/core@2"></script>
+    <script src="https://unpkg.com/tippy.js@6"></script>
     <!-- CodeMirror for SQL editor -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/theme/material-darker.min.css">
@@ -22,6 +27,13 @@
 
     <style> 
         body { font-family: 'Inter', sans-serif; } .CodeMirror { font-family: 'Fira Code', monospace; border-radius: 0.375rem; height: 10rem; }
+        :root {
+            --fc-border-color: #e2e8f0;
+            --fc-daygrid-event-dot-width: 8px;
+            --fc-list-event-hover-bg-color: #f3f4f6;
+            --fc-today-bg-color: rgba(59, 130, 246, 0.08);
+        }
+        .fc .fc-button-primary { background-color: #2563eb; border-color: #2563eb; }
         .modal { transition: opacity 0.3s ease-in-out; }
         #sidebar, #main-content { transition: all 0.3s ease-in-out; }
         .sidebar-item-title, #sidebar-header-text, #sidebar-footer-text { transition: opacity 0.2s, width 0.2s; }
@@ -58,6 +70,7 @@
             <button id="create-table-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg><span class="sidebar-item-title">Create Table</span></button>
             <button id="import-csv-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-purple-600 text-white hover:bg-purple-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg><span class="sidebar-item-title">Import CSV</span></button>
             <button id="sql-runner-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-green-600 text-white hover:bg-green-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg><span class="sidebar-item-title">SQL Runner</span></button>
+            <button id="calendar-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-yellow-500 text-white hover:bg-yellow-600 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg><span class="sidebar-item-title">Calendar</span></button>
             <button id="view-db-sql-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-gray-200 text-gray-800 hover:bg-gray-300 font-semibold text-sm"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8-4"></path></svg><span class="sidebar-item-title">View SQL</span></button>
             <button id="delete-table-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed" disabled><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span class="sidebar-item-title">Delete Table</span></button>
         </div>
@@ -114,6 +127,34 @@
             <div id="webhooks-list-container" class="space-y-4 min-h-[6rem]">
                 <!-- Webhooks will be rendered here by JS -->
             </div>
+
+            <div class="pt-6 mt-6 border-t">
+                <h2 class="text-xl font-semibold text-gray-800">Calendar Automation</h2>
+                <div id="calendar-sync-container" class="mt-4">
+                    <!-- Calendar sync UI will be rendered here -->
+                </div>
+            </div>
+        </div>
+
+        <div id="calendar-sync-form-template" class="hidden">
+            <form class="bg-white rounded-lg shadow-sm border p-6">
+                <div class="flex justify-between items-start">
+                    <h4 class="font-semibold text-gray-800">Automatic Table Sync</h4>
+                    <div class="flex items-center">
+                        <span class="text-sm font-medium text-gray-700 mr-3">Enable Sync</span>
+                        <label for="calendar-sync-enabled" class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" value="" id="calendar-sync-enabled" class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-blue-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                    </div>
+                </div>
+                <p class="text-sm text-gray-600 mt-1">Automatically create or update a calendar event for every row in this table.</p>
+                <div id="calendar-sync-mapping-fields" class="mt-4 space-y-3 border-t pt-4"></div>
+                <div class="mt-6 flex justify-end gap-4">
+                    <button type="button" id="delete-calendar-sync-btn" class="text-red-600 hover:underline text-sm font-semibold hidden">Disable and Remove Sync</button>
+                    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-semibold">Save Sync Settings</button>
+                </div>
+            </form>
         </div>
 
         <div id="data-tab-content" class="table-tab-content">
@@ -156,6 +197,15 @@
             </div>
             <div id="query-results-container" class="bg-white rounded-lg shadow-sm border min-h-[10rem]">
             </div>
+        </div>
+    </div>
+
+    <div id="calendar-view" class="flex-1 p-8 overflow-auto hidden">
+        <div class="bg-white p-6 rounded-lg shadow-lg">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-800">Calendar</h2>
+            </div>
+            <div id="calendar"></div>
         </div>
     </div>
 
@@ -336,6 +386,39 @@
     </div>
 </div>
 
+<div id="send-to-calendar-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+    <form id="send-to-calendar-form" class="bg-white rounded-lg shadow-xl w-full max-w-lg">
+        <div class="p-4 border-b">
+            <h3 class="text-xl font-semibold">Send Row to Calendar</h3>
+        </div>
+        <div class="p-6 space-y-4">
+            <p class="text-sm text-gray-600">Map the columns from your table to the calendar event fields.</p>
+            <input type="hidden" id="calendar-source-row-id">
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Event Title <span class="text-red-500">*</span></label>
+                <select id="calendar-title-col" required class="mt-1 block w-full p-2 border rounded-md bg-white"></select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Start Date/Time <span class="text-red-500">*</span></label>
+                <select id="calendar-start-col" required class="mt-1 block w-full p-2 border rounded-md bg-white"></select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">End Date/Time (Optional)</label>
+                <select id="calendar-end-col" class="mt-1 block w-full p-2 border rounded-md bg-white"></select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Description (Optional)</label>
+                <select id="calendar-desc-col" class="mt-1 block w-full p-2 border rounded-md bg-white"></select>
+            </div>
+        </div>
+        <div class="p-4 mt-auto border-t bg-gray-50 flex justify-end gap-4">
+            <button id="cancel-send-to-calendar-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Create Event</button>
+        </div>
+    </form>
+</div>
+
 <script>
 const supabaseUrl = '{{ supabase_url }}';
 const supabaseAnonKey = '{{ supabase_anon_key }}';
@@ -418,6 +501,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const webhooksListContainer = document.getElementById('webhooks-list-container');
     const sidebar = document.getElementById('sidebar');
     const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
+    const calendarBtn = document.getElementById('calendar-btn');
+    const calendarView = document.getElementById('calendar-view');
+    const sendToCalendarModal = document.getElementById('send-to-calendar-modal');
+    const cancelSendToCalendarBtn = document.getElementById('cancel-send-to-calendar-btn');
 
 
     const importRowsCsvFile = document.getElementById('import-rows-csv-file');
@@ -425,6 +512,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // CodeMirror instances
     let sqlRunnerEditor;
     let createTableSqlEditor;
+    let calendar;
 
     function showError(message) {
         const banner = document.getElementById('error-banner');
@@ -551,6 +639,7 @@ document.addEventListener('DOMContentLoaded', () => {
             mainContent.classList.remove('hidden');
             placeholderContent.classList.add('hidden');
             sqlRunnerView.classList.add('hidden');
+            calendarView.classList.add('hidden');
             deleteTableBtn.disabled = false;
             tableTabContainer.classList.remove('hidden');
 
@@ -558,6 +647,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderStructure(state.selectedTable.columns);
             fetchAndRenderData(state.selectedTable.id, 1);
             renderTableSql(state.selectedTable);
+            fetchAndRenderCalendarSync(state.selectedTable.id);
             fetchAndRenderWebhooks(state.selectedTable.id);
         }
     }
@@ -583,6 +673,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="p-3 text-center">
                     <div class="flex items-center justify-center gap-2">
                     ${!col.is_primary_key ? `
+                        <button data-row-id="${row.id}" class="send-to-calendar-btn text-gray-400 hover:text-yellow-600" title="Send to Calendar">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        </button>
                         <button data-column-index="${index}" class="edit-column-btn text-gray-500 hover:text-blue-600" title="Edit Column"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L14.732 3.732z"></path></svg></button>
                         <button data-column-index="${index}" class="delete-column-btn text-gray-500 hover:text-red-600" title="Delete Column"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
                     ` : ''}
@@ -600,7 +693,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const dataTable = document.querySelector('#data-tab-content table');
         const thead = dataTable.querySelector('thead');
         const tbody = document.getElementById('data-tbody');
-        const columns = state.selectedTable.columns;
+        const columns = state.selectedTable.columns.sort((a, b) => a.is_primary_key ? -1 : 1);
         const colspan = columns.length + 1;
 
         thead.innerHTML = ''; // Clear old header while loading
@@ -618,7 +711,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const headerRow = document.createElement('tr');
             // Add an empty header for the actions column
-            headerRow.innerHTML += `<th class="p-3 w-12"></th>`;
+            headerRow.innerHTML += `<th class="p-3 w-24">Actions</th>`;
             columns.forEach(col => {
                 headerRow.innerHTML += `<th class="p-3 text-left font-semibold">${col.name}</th>`;
             });
@@ -637,7 +730,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 tr.dataset.rowId = row.id;
                 // Add delete button cell
                 tr.innerHTML += `
-                    <td class="p-3 text-center">
+                    <td class="p-3 text-center flex items-center justify-center gap-3">
+                        <button data-row-id="${row.id}" class="send-to-calendar-btn text-gray-400 hover:text-yellow-600" title="Send to Calendar">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        </button>
                         <button data-row-id="${row.id}" class="delete-row-btn text-gray-400 hover:text-red-600" title="Delete Row">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                         </button>
@@ -691,6 +787,92 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error(error);
             webhooksListContainer.innerHTML = `<div class="text-sm text-red-500">Error loading integrations.</div>`;
+        }
+    }
+
+    async function fetchAndRenderCalendarSync(tableId) {
+        const container = document.getElementById('calendar-sync-container');
+        container.innerHTML = `<div class="text-sm text-gray-500">Loading calendar settings...</div>`;
+        try {
+            const response = await fetchWithAuth(`/api/v1/tables/${tableId}/calendar-sync`);
+            if (!response.ok) throw new Error('Failed to fetch sync config');
+            const config = await response.json();
+            renderCalendarSyncForm(config);
+        } catch (error) {
+            console.error(error);
+            container.innerHTML = `<div class="text-sm text-red-500">Error loading calendar settings.</div>`;
+        }
+    }
+
+    function renderCalendarSyncForm(config) {
+        const container = document.getElementById('calendar-sync-container');
+        const template = document.getElementById('calendar-sync-form-template');
+        container.innerHTML = template.innerHTML;
+
+        const form = container.querySelector('form');
+        const mappingContainer = form.querySelector('#calendar-sync-mapping-fields');
+        const enabledToggle = form.querySelector('#calendar-sync-enabled');
+        const deleteBtn = form.querySelector('#delete-calendar-sync-btn');
+
+        const columns = state.selectedTable.columns.filter(c => !c.is_primary_key);
+        const dateLikeColumns = columns.filter(c => ['timestamp', 'text', 'date'].includes(c.type));
+
+        const fields = [
+            { id: 'title_column', label: 'Event Title', required: true, options: columns },
+            { id: 'start_time_column', label: 'Start Date/Time', required: true, options: dateLikeColumns },
+            { id: 'end_time_column', label: 'End Date/Time', required: false, options: dateLikeColumns },
+            { id: 'description_column', label: 'Description', required: false, options: columns },
+        ];
+
+        mappingContainer.innerHTML = fields.map(field => `
+            <div class="grid grid-cols-3 gap-4 items-center">
+                <label for="sync-${field.id}" class="text-sm font-medium text-gray-700">${field.label} ${field.required ? '<span class="text-red-500">*</span>' : ''}</label>
+                <select id="sync-${field.id}" data-mapping-key="${field.id}" class="col-span-2 p-2 border rounded-md bg-white" ${field.required ? 'required' : ''}>
+                    <option value="">-- Select Column --</option>
+                    ${field.options.map(c => `<option value="${c.name}">${c.name}</option>`).join('')}
+                </select>
+            </div>
+        `).join('');
+
+        if (config) {
+            enabledToggle.checked = config.is_enabled;
+            deleteBtn.classList.remove('hidden');
+            for (const [key, value] of Object.entries(config.column_mapping)) {
+                const select = form.querySelector(`[data-mapping-key="${key}"]`);
+                if (select) select.value = value;
+            }
+        }
+
+        form.addEventListener('submit', handleSaveCalendarSync);
+        deleteBtn.addEventListener('click', handleDeleteCalendarSync);
+    }
+
+    async function handleSaveCalendarSync(e) {
+        e.preventDefault();
+        const form = e.target;
+        const payload = {
+            is_enabled: form.querySelector('#calendar-sync-enabled').checked,
+            column_mapping: {}
+        };
+        form.querySelectorAll('select[data-mapping-key]').forEach(s => {
+            payload.column_mapping[s.dataset.mappingKey] = s.value || null;
+        });
+
+        const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/calendar-sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (response.ok) fetchAndRenderCalendarSync(state.selectedTable.id);
+        else showError('Failed to save sync settings.');
+    }
+
+    async function handleDeleteCalendarSync() {
+        if (confirm('Are you sure you want to remove the calendar sync for this table?')) {
+            const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/calendar-sync`, { method: 'DELETE' });
+            if (response.ok) fetchAndRenderCalendarSync(state.selectedTable.id);
+            else showError('Failed to delete sync settings.');
         }
     }
 
@@ -1669,6 +1851,7 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelDeleteTableBtn.addEventListener('click', () => closeModal(deleteTableModal));
     confirmDeleteTableBtn.addEventListener('click', handleDeleteTable);
 
+    cancelSendToCalendarBtn.addEventListener('click', () => closeModal(sendToCalendarModal));
     editColumnForm.addEventListener('submit', handleEditColumnSubmit);
     cancelEditColumnBtn.addEventListener('click', () => closeModal(editColumnModal));
 
@@ -1696,6 +1879,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const rowId = deleteBtn.dataset.rowId;
             handleDeleteRow(rowId);
         }
+        const sendToCalendarBtn = e.target.closest('.send-to-calendar-btn');
+        if (sendToCalendarBtn) {
+            const rowId = sendToCalendarBtn.dataset.rowId;
+            openSendToCalendarModal(rowId);
+        }
     });
 
     document.getElementById('copy-table-sql-btn').addEventListener('click', (e) => {
@@ -1722,6 +1910,20 @@ document.addEventListener('DOMContentLoaded', () => {
         state.selectedTable = null;
         deleteTableBtn.disabled = true;
     });
+
+    calendarBtn.addEventListener('click', () => {
+        mainContent.classList.add('hidden');
+        placeholderContent.classList.add('hidden');
+        sqlRunnerView.classList.add('hidden');
+        calendarView.classList.remove('hidden');
+
+        tableList.querySelectorAll('a').forEach(a => a.classList.remove('bg-blue-100', 'text-blue-700', 'font-semibold'));
+        state.selectedTable = null;
+        deleteTableBtn.disabled = true;
+
+        calendar.render();
+    });
+
     dataTbody.addEventListener('blur', (e) => {
         // The 'blur' event fires when a user clicks away from an editable cell.
         if (e.target.classList.contains('editable-cell') && e.target.hasAttribute('contenteditable')) {
@@ -1790,6 +1992,114 @@ document.addEventListener('DOMContentLoaded', () => {
             e.target.closest('.column-row').remove();
         }
     });
+
+    function openSendToCalendarModal(rowId) {
+        document.getElementById('calendar-source-row-id').value = rowId;
+        const columns = state.selectedTable.columns.filter(c => !c.is_primary_key);
+        const dateLikeColumns = columns.filter(c => c.type === 'timestamp' || c.type === 'text'); // Be liberal with what can be a date
+
+        const selects = {
+            'calendar-title-col': columns,
+            'calendar-start-col': dateLikeColumns,
+            'calendar-end-col': dateLikeColumns,
+            'calendar-desc-col': columns
+        };
+
+        for (const [selectId, cols] of Object.entries(selects)) {
+            const select = document.getElementById(selectId);
+            select.innerHTML = '<option value="">-- Select Column --</option>';
+            cols.forEach(col => {
+                select.innerHTML += `<option value="${col.name}">${col.name}</option>`;
+            });
+        }
+        
+        // Auto-select common names
+        const titleSelect = document.getElementById('calendar-title-col');
+        const startSelect = document.getElementById('calendar-start-col');
+        
+        const autoTitle = columns.find(c => /title|name|subject|task/i.test(c.name));
+        if (autoTitle) titleSelect.value = autoTitle.name;
+
+        const autoStart = dateLikeColumns.find(c => /start|date|deadline|due/i.test(c.name));
+        if (autoStart) startSelect.value = autoStart.name;
+
+        openModal(sendToCalendarModal);
+    }
+
+    document.getElementById('send-to-calendar-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const rowId = document.getElementById('calendar-source-row-id').value;
+        const payload = {
+            title_column: document.getElementById('calendar-title-col').value,
+            start_time_column: document.getElementById('calendar-start-col').value,
+            end_time_column: document.getElementById('calendar-end-col').value || null,
+            description_column: document.getElementById('calendar-desc-col').value || null,
+        };
+
+        try {
+            const response = await fetchWithAuth(`/api/v1/rows/${rowId}/send-to-calendar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || 'Failed to create event');
+            }
+            closeModal(sendToCalendarModal);
+            calendar.refetchEvents(); // Refresh calendar to show the new event
+        } catch (error) {
+            showError(error.message);
+        }
+    });
+
+    function initializeCalendar() {
+        const calendarEl = document.getElementById('calendar');
+        calendar = new FullCalendar.Calendar(calendarEl, {
+            initialView: 'dayGridMonth',
+            headerToolbar: {
+                left: 'prev,next today',
+                center: 'title',
+                right: 'dayGridMonth,timeGridWeek,listWeek'
+            },
+            editable: true,
+            eventDrop: async (info) => {
+                // Handle event drag-and-drop
+                const { event } = info;
+                try {
+                    await fetchWithAuth(`/api/v1/calendar/events/${event.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ start_time: event.start.toISOString(), end_time: event.end ? event.end.toISOString() : null })
+                    });
+                } catch (error) {
+                    showError('Failed to update event time.');
+                    info.revert(); // Revert the change on failure
+                }
+            },
+            events: async (fetchInfo, successCallback, failureCallback) => {
+                const token = await getAuthToken();
+                if (!token) return failureCallback(new Error('Not authenticated'));
+
+                const start = fetchInfo.start.toISOString().split('T')[0];
+                const end = fetchInfo.end.toISOString().split('T')[0];
+
+                try {
+                    const response = await fetch(`/api/v1/calendar/events?start_date=${start}&end_date=${end}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                    if (!response.ok) throw new Error('Failed to fetch events');
+                    const apiEvents = await response.json();
+                    const calendarEvents = apiEvents.map(event => ({
+                        id: event.id, title: event.title, start: event.start_time, end: event.end_time,
+                        allDay: !event.start_time.includes('T'),
+                        extendedProps: { description: event.description, isCompleted: event.is_completed },
+                        backgroundColor: event.is_completed ? '#10B981' : '#3B82F6',
+                        borderColor: event.is_completed ? '#059669' : '#2563EB',
+                    }));
+                    successCallback(calendarEvents);
+                } catch (error) { failureCallback(error); }
+            }
+        });
+    }
 
     createWebhookBtn.addEventListener('click', async () => {
         if (!state.selectedTable) return;
@@ -1936,6 +2246,7 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleSidebar();
     }
     // Initial Load
+    initializeCalendar();
     supabase.auth.onAuthStateChange((event, session) => {
         if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
             if (session) {

@@ -13,7 +13,7 @@ from fastapi import FastAPI, Request, Header, HTTPException, status, Depends, Qu
 from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
 from pydantic import BaseModel, Field, ConfigDict
 from supabase import create_client, Client
 from postgrest import APIError
@@ -157,6 +157,41 @@ class WebhookUpdateRequest(BaseModel):
 
 class SqlTableCreateRequest(BaseModel):
     script: str
+
+# --- Calendar Models ---
+class CalendarEventResponse(BaseModel):
+    id: int
+    title: str
+    start_time: str
+    end_time: Optional[str] = None
+    description: Optional[str] = None
+    is_completed: bool
+    source_table_id: Optional[int] = None
+    source_row_id: Optional[int] = None
+    created_at: str
+
+class CalendarEventUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1)
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    description: Optional[str] = None
+    is_completed: Optional[bool] = None
+
+class RowToCalendarRequest(BaseModel):
+    title_column: str
+    start_time_column: str
+    end_time_column: Optional[str] = None
+    description_column: Optional[str] = None
+
+class CalendarSyncConfig(BaseModel):
+    is_enabled: bool
+    column_mapping: RowToCalendarRequest
+
+class CalendarSyncConfigResponse(BaseModel):
+    id: int
+    table_id: int
+    is_enabled: bool
+    column_mapping: Dict[str, Any]
 
 # --- Reusable Dependencies ---
 # This dependency handles getting the user's token, validating it, and providing the user object.
@@ -796,6 +831,136 @@ async def delete_table_row(row_id: int, auth_details: dict = Depends(get_current
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete row: {str(e)}")
 
+async def _delete_item(supabase: Client, table_name: str, item_id: int, item_type_name: str):
+    """Generic helper to delete an item from a table by ID, with RLS ensuring ownership."""
+    try:
+        response = supabase.table(table_name).delete(returning="representation").eq("id", item_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{item_type_name} not found or access denied.")
+    except APIError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete {item_type_name.lower()}: {str(e)}")
+
+
+# --- Calendar Management Endpoints ---
+
+@app.get("/api/v1/calendar/events", response_model=List[CalendarEventResponse])
+async def get_calendar_events(
+    start_date: str, # ISO 8601 format: YYYY-MM-DD
+    end_date: str,   # ISO 8601 format: YYYY-MM-DD
+    auth_details: dict = Depends(get_current_user_details)
+):
+    """
+    Fetches all calendar events for the user within a given date range.
+    """
+    supabase = auth_details["client"]
+    try:
+        response = supabase.table("calendar_events").select("*").gte("start_time", start_date).lte("start_time", end_date).order("start_time").execute()
+        return response.data
+    except APIError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@app.post("/api/v1/rows/{row_id}/send-to-calendar", response_model=CalendarEventResponse, status_code=status.HTTP_201_CREATED)
+async def create_event_from_row(row_id: int, mapping: RowToCalendarRequest, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Creates a calendar event by extracting data from an existing table row based on a provided column mapping.
+    """
+    supabase = auth_details["client"]
+    user = auth_details["user"]
+    try:
+        # 1. Fetch the source row data
+        row_res = supabase.table("table_rows").select("table_id, data").eq("id", row_id).single().execute()
+        if not row_res.data:
+            raise HTTPException(status_code=404, detail="Source row not found.")
+        
+        row_data = row_res.data['data']
+        table_id = row_res.data['table_id']
+
+        # 2. Extract data based on the mapping
+        title = row_data.get(mapping.title_column)
+        start_time = row_data.get(mapping.start_time_column)
+
+        if not title or not start_time:
+            raise HTTPException(status_code=400, detail="Title and start time columns must exist in the row data and have values.")
+
+        # 3. Construct the new event
+        new_event_data = {
+            "user_id": user.id,
+            "title": str(title),
+            "start_time": str(start_time),
+            "end_time": row_data.get(mapping.end_time_column) if mapping.end_time_column else None,
+            "description": str(row_data.get(mapping.description_column)) if mapping.description_column else None,
+            "source_table_id": table_id,
+            "source_row_id": row_id
+        }
+
+        # 4. Insert the new event
+        response = supabase.table("calendar_events").insert(new_event_data, returning="representation").execute()
+        return response.data[0]
+
+    except APIError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create event: {str(e)}")
+
+@app.put("/api/v1/calendar/events/{event_id}", response_model=CalendarEventResponse)
+async def update_calendar_event(event_id: int, update_data: CalendarEventUpdate, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Updates a calendar event (e.g., mark as complete, change title).
+    """
+    supabase = auth_details["client"]
+    try:
+        payload = update_data.dict(exclude_unset=True)
+        if not payload:
+            raise HTTPException(status_code=400, detail="No update data provided.")
+        
+        response = supabase.table("calendar_events").update(payload, returning="representation").eq("id", event_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Event not found or access denied.")
+        return response.data[0]
+    except APIError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update event: {str(e)}")
+
+@app.delete("/api/v1/calendar/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_calendar_event(event_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """Deletes a calendar event."""
+    supabase = auth_details["client"]
+    await _delete_item(supabase, "calendar_events", event_id, "Event")
+
+@app.get("/api/v1/tables/{table_id}/calendar-sync", response_model=Optional[CalendarSyncConfigResponse])
+async def get_calendar_sync_config(table_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Gets the automatic calendar sync configuration for a table.
+    """
+    supabase = auth_details["client"]
+    try:
+        response = supabase.table("calendar_sync_configs").select("id, table_id, is_enabled, column_mapping").eq("table_id", table_id).maybe_single().execute()
+        return response.data
+    except APIError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/tables/{table_id}/calendar-sync", response_model=CalendarSyncConfigResponse)
+async def create_or_update_calendar_sync_config(table_id: int, config_data: CalendarSyncConfig, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Creates or updates the automatic calendar sync configuration for a table.
+    """
+    supabase = auth_details["client"]
+    user = auth_details["user"]
+    try:
+        # Upsert ensures we create a new config or update an existing one for the table.
+        response = supabase.table("calendar_sync_configs").upsert({
+            "user_id": user.id,
+            "table_id": table_id,
+            "is_enabled": config_data.is_enabled,
+            "column_mapping": config_data.column_mapping.dict(exclude_unset=True)
+        }, on_conflict="table_id", returning="representation").execute()
+        return response.data[0]
+    except APIError as e:
+        raise HTTPException(status_code=400, detail=f"Could not save sync config: {str(e)}")
+
+@app.delete("/api/v1/tables/{table_id}/calendar-sync", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_calendar_sync_config(table_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """Deletes the calendar sync configuration for a table."""
+    supabase = auth_details["client"]
+    await _delete_item(supabase, "calendar_sync_configs", table_id, "Sync config", id_column="table_id")
+
 # --- Webhook Management Endpoints ---
 
 @app.post("/api/v1/tables/{table_id}/webhooks", response_model=WebhookResponse, status_code=status.HTTP_201_CREATED)
@@ -1231,20 +1396,12 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
     processed_query = re.sub(r'\s+', ' ', query, 1)
 
     try:
-        # --- PERMANENT FIX for "more than one row" error ---
-        # The 'execute_query' function is flawed for multi-row SELECTs.
-        # We will detect SELECT queries and use a different, more robust execution path.
-        # For other queries (INSERT, UPDATE, etc.), we'll use the original function.
-
-        if processed_query.strip().upper().startswith("SELECT"):
-            # This is a read query. We will execute it directly using a different RPC
-            # that is designed to return a set of rows, avoiding the '21000' error.
-            # By calling the existing 'execute_query' function and chaining .select("*"),
-            # we tell PostgREST to expect a set of rows, which correctly handles multi-row SELECTs.
-            response = supabase.rpc('execute_query', {'query_text': processed_query}).select("*").execute()
-        else:
-            # This is a write query (INSERT, UPDATE, etc.). Use the original method.
-            response = supabase.rpc('execute_query', {'query_text': processed_query}).execute()
+        # The database function `execute_query` is now robust enough to handle all query types
+        # (SELECT, INSERT, UPDATE, etc.) and always returns a set of JSON.
+        # By always using `.select("*")`, we tell the client to expect a set of rows,
+        # which correctly handles both multi-row SELECT results and the single-row
+        # status message from other queries. This simplifies the logic and fixes the error.
+        response = supabase.rpc('execute_query', {'query_text': processed_query}).select("*").execute()
 
         return response.data
 
