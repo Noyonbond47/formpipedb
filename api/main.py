@@ -980,18 +980,61 @@ async def get_calendar_sync_config(table_id: int, auth_details: dict = Depends(g
 async def create_or_update_calendar_sync_config(table_id: int, config_data: CalendarSyncConfig, auth_details: dict = Depends(get_current_user_details)):
     """
     Creates or updates the automatic calendar sync configuration for a table.
+    If sync is enabled, this will also perform a backfill, creating calendar
+    events for all existing rows in the table.
     """
     supabase = auth_details["client"]
     user = auth_details["user"]
     try:
         # Upsert ensures we create a new config or update an existing one for the table.
-        response = supabase.table("calendar_sync_configs").upsert({
+        upsert_payload = {
             "user_id": user.id,
             "table_id": table_id,
             "is_enabled": config_data.is_enabled,
             "column_mapping": config_data.column_mapping.dict(exclude_unset=True)
-        }, on_conflict="table_id", returning="representation").execute()
-        return response.data[0]
+        }
+        response = supabase.table("calendar_sync_configs").upsert(
+            upsert_payload, 
+            on_conflict="table_id", 
+            returning="representation"
+        ).execute()
+        
+        saved_config = response.data[0]
+
+        # If sync was just enabled, trigger a backfill of existing rows to the calendar.
+        if config_data.is_enabled:
+            # 1. Fetch all rows from the source table.
+            all_rows = await get_all_table_rows(table_id, auth_details)
+            
+            # 2. Prepare calendar events from these rows.
+            events_to_upsert = []
+            mapping = config_data.column_mapping
+            
+            for row in all_rows:
+                row_data = row.get('data', {})
+                title = row_data.get(mapping.title_column)
+                start_time = row_data.get(mapping.start_time_column)
+
+                # Skip rows that are missing essential data for a calendar event.
+                if not title or not start_time:
+                    continue
+
+                events_to_upsert.append({
+                    "user_id": user.id, "source_table_id": table_id, "source_row_id": row['id'],
+                    "title": str(title), "start_time": str(start_time),
+                    "end_time": str(row_data.get(mapping.end_time_column)) if mapping.end_time_column and row_data.get(mapping.end_time_column) else None,
+                    "description": str(row_data.get(mapping.description_column)) if mapping.description_column and row_data.get(mapping.description_column) else None,
+                })
+
+            # 3. Bulk upsert the events. This creates new ones and updates existing ones based on the source row.
+            # This relies on a UNIQUE constraint on (user_id, source_table_id, source_row_id) in the calendar_events table.
+            if events_to_upsert:
+                supabase.table("calendar_events").upsert(
+                    events_to_upsert, 
+                    on_conflict="source_table_id, source_row_id"
+                ).execute()
+
+        return saved_config
     except APIError as e:
         raise HTTPException(status_code=400, detail=f"Could not save sync config: {str(e)}")
 
