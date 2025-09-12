@@ -1518,7 +1518,6 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
             await delete_user_database(new_db_id, auth_details)
         raise HTTPException(status_code=400, detail=f"Failed to import SQL script: {str(e)}. The new database has been rolled back.")
 
-# This is the query execution logic from your initial snippet, fully implemented.
 @app.post("/api/v1/databases/{database_id}/execute-query")
 async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_details: dict = Depends(get_current_user_details)):
     """
@@ -1550,19 +1549,17 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
         )
 
     # 2. **Execution**: The query is deemed safe for execution.
-    # The `execute_query` RPC function is designed to handle this.
-    # We now use a new, smarter function that can handle case-insensitivity.
+    # The `execute_dynamic_query` RPC function is designed to handle this.
     try:
         response = supabase.rpc('execute_dynamic_query', {
             'p_query_text': processed_query,
             'p_database_id': database_id
         }).execute()
-        # The new RPC function returns a properly formatted JSON object directly.
+        # The RPC function returns a properly formatted JSON object directly.
         return response.data
 
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Query failed: {e.message}")
-
 
 @app.post("/api/v1/contact")
 async def handle_contact_form(form_data: ContactForm):

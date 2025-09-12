@@ -71,6 +71,7 @@
             <button id="import-csv-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-purple-600 text-white hover:bg-purple-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg><span class="sidebar-item-title">Import CSV</span></button>
             <button id="sql-runner-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-green-600 text-white hover:bg-green-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg><span class="sidebar-item-title">SQL Runner</span></button>
             <button id="calendar-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-yellow-500 text-white hover:bg-yellow-600 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg><span class="sidebar-item-title">Calendar</span></button>
+            <button id="view-db-sql-sidebar-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4M4 7v5c0 2.21 3.582 4 8 4s8-1.79 8-4V7"></path></svg><span class="sidebar-item-title">View DB SQL</span></button>
             <button id="delete-table-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed" disabled><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span class="sidebar-item-title">Delete Table</span></button>
         </div>
         <div class="p-2 border-t">
@@ -204,6 +205,7 @@
                 </div>
             </div>
             <div id="query-results-container" class="bg-white rounded-lg shadow-sm border min-h-[10rem]">
+                <!-- Query results will be rendered here -->
             </div>
         </div>
     </div>
@@ -578,6 +580,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sqlRunnerView = document.getElementById('sql-runner-view');
     const queryResultsContainer = document.getElementById('query-results-container');
     const importCsvBtn = document.getElementById('import-csv-btn');
+    const viewDbSqlSidebarBtn = document.getElementById('view-db-sql-sidebar-btn');
     const importCsvModal = document.getElementById('import-csv-modal');
     const importCsvForm = document.getElementById('import-csv-form');
     const cancelImportCsvBtn = document.getElementById('cancel-import-csv-btn');
@@ -609,9 +612,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedDateElement = null; // To track the highlighted day cell
 
     const importRowsCsvFile = document.getElementById('import-rows-csv-file');
+    let sqlRunnerEditor;
     
     // CodeMirror instances
-    let sqlRunnerEditor;
     let createTableSqlEditor;
     let calendar;
 
@@ -1593,11 +1596,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (result.error) {
             let friendlyHint = '';
             // Check for the specific error about disallowed query types (like CREATE, ALTER, etc.)
-            if (result.error.includes('Only SELECT, INSERT, UPDATE, and DELETE queries are allowed')) {
+            if (result.error.includes("Schema-modifying statements (CREATE, ALTER, DROP, etc.) are not allowed")) {
                 friendlyHint = `
                     <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm">
                         <p class="font-semibold text-blue-800">Did you mean to create a table?</p>
-                        <p class="mt-1 text-blue-700">The SQL Runner is for querying data (SELECT, etc.). To create tables from a script, please use the <strong class="font-semibold">"Import SQL"</strong> feature on the main dashboard.</p>
+                        <p class="mt-1 text-blue-700">The SQL Runner is for querying data (SELECT, etc.). To create tables from a script, please use the <strong class="font-semibold">"Import SQL"</strong> feature on the main dashboard or the "Create Table from SQL" option.</p>
                     </div>
                 `;
             }
@@ -1637,7 +1640,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <tr>${headers.map(h => `<th class="p-3 text-left font-semibold">${h}</th>`).join('')}</tr>
             </thead>
             <tbody class="divide-y">
-                ${data.map(row => `<tr>${headers.map(h => `<td class="p-3 font-mono">${row[h]}</td>`).join('')}</tr>`).join('')}
+                ${data.map(row => `<tr>${headers.map(h => `<td class="p-3 font-mono">${row[h] === null ? 'NULL' : row[h]}</td>`).join('')}</tr>`).join('')}
             </tbody>
         `;
         queryResultsContainer.appendChild(table);
@@ -2063,6 +2066,7 @@ document.addEventListener('DOMContentLoaded', () => {
     exportCsvBtn.addEventListener('click', handleExportCsv);
 
     viewDbSqlBtn.addEventListener('click', handleViewDbSql);
+    viewDbSqlSidebarBtn.addEventListener('click', handleViewDbSql);
     closeDbSqlModalBtn.addEventListener('click', () => closeModal(viewDbSqlModal));
 
     sqlRunnerBtn.addEventListener('click', () => {
@@ -2076,6 +2080,18 @@ document.addEventListener('DOMContentLoaded', () => {
         tableList.querySelectorAll('a').forEach(a => a.classList.remove('bg-blue-100', 'text-blue-700', 'font-semibold'));
         state.selectedTable = null;
         deleteTableBtn.disabled = true;
+        
+        // A short delay ensures the textarea is visible before CodeMirror tries to initialize or refresh.
+        setTimeout(() => {
+            if (!sqlRunnerEditor) {
+                sqlRunnerEditor = CodeMirror.fromTextArea(document.getElementById('sql-query-input'), {
+                    mode: 'text/x-sql', theme: 'material-darker', lineNumbers: true, lineWrapping: true,
+                });
+            } else {
+                sqlRunnerEditor.refresh();
+            }
+            sqlRunnerEditor.focus();
+        }, 10);
     });
 
     calendarBtn.addEventListener('click', () => {
@@ -2638,13 +2654,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initialize CodeMirror editors
-    sqlRunnerEditor = CodeMirror.fromTextArea(document.getElementById('sql-query-input'), {
-        mode: 'text/x-sql',
-        theme: 'material-darker',
-        lineNumbers: true,
-        lineWrapping: true,
-    });
-
     createTableSqlEditor = CodeMirror.fromTextArea(document.getElementById('create-table-sql-input'), {
         mode: 'text/x-sql',
         theme: 'material-darker',
