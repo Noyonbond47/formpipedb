@@ -864,7 +864,15 @@ async def get_calendar_events(
     """
     supabase = auth_details["client"]
     try:
-        response = supabase.table("calendar_events").select("*").gte("start_time", start_date).lte("start_time", end_date).order("start_time").execute()
+        # This logic fetches events that OVERLAP with the requested date range.
+        # An event overlaps if:
+        # 1. It starts before the range ends (start_time <= end_date)
+        # 2. It ends after the range starts (end_time >= start_date)
+        # We also handle events with no end_time by treating their end as their start.
+        response = supabase.rpc('get_calendar_events_in_range', {
+            'p_start_date': start_date,
+            'p_end_date': end_date
+        }).execute()
         return response.data
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
@@ -1034,7 +1042,7 @@ async def create_or_update_calendar_sync_config(table_id: int, config_data: Cale
         # If sync was just enabled, trigger a backfill of existing rows to the calendar.
         if config_data.is_enabled:
             # 1. Fetch all rows from the source table.
-            all_rows = await get_all_table_rows(table_id, auth_details)
+            all_rows = await _get_all_table_rows_for_sync(table_id, auth_details)
             
             # 2. Prepare calendar events from these rows.
             events_to_upsert = []
@@ -1067,6 +1075,18 @@ async def create_or_update_calendar_sync_config(table_id: int, config_data: Cale
         return saved_config
     except APIError as e:
         raise HTTPException(status_code=400, detail=f"Could not save sync config: {str(e)}")
+
+async def _get_all_table_rows_for_sync(table_id: int, auth_details: dict) -> List[Dict[str, Any]]:
+    """
+    Internal helper to fetch all rows for a table without any modification.
+    This is used for backend processes like calendar backfill that need raw, unmodified data.
+    It bypasses the response_model processing of the main API endpoint.
+    """
+    supabase = auth_details["client"]
+    # RLS on table_rows ensures user can only access rows they own.
+    # We fetch the raw data directly.
+    response = supabase.table("table_rows").select("id, data").eq("table_id", table_id).order("id").execute()
+    return response.data if response.data else []
 
 @app.delete("/api/v1/tables/{table_id}/calendar-sync", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_calendar_sync_config(table_id: int, auth_details: dict = Depends(get_current_user_details)):
