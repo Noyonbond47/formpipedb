@@ -1377,9 +1377,14 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
     supabase = auth_details["client"]
     raw_query = query_data.query.strip()
 
+    # **Fix for JOINs and case-sensitivity**: The system creates lowercase views for tables.
+    # This regex finds quoted table names after FROM/JOIN and unquotes them, allowing
+    # Postgres to match them to the lowercase views regardless of the case in the query.
+    processed_query = re.sub(r'\b(FROM|JOIN)\s+"([^"]+)"', r'\1 \2', raw_query, flags=re.IGNORECASE)
+
     # 1. **Security Check**: Prevent schema modification.
     # Remove comments to prevent bypassing checks.
-    query_no_comments = re.sub(r'--.*', '', raw_query)
+    query_no_comments = re.sub(r'--.*', '', processed_query)
     
     # Block keywords that modify schema or permissions.
     forbidden_keywords = r'\b(CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE)\b'
@@ -1400,7 +1405,7 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
     # 2. **Execution**: The query is deemed safe for execution.
     # The `execute_query` RPC function is designed to handle this.
     try:
-        response = supabase.rpc('execute_query', {'query_text': raw_query}).execute()
+        response = supabase.rpc('execute_query', {'query_text': processed_query}).execute()
 
         # The RPC function returns a JSON string. We need to parse it.
         if response.data and isinstance(response.data, list) and isinstance(response.data[0], str):
