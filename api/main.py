@@ -1514,13 +1514,7 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
     Blocks schema-modifying statements (CREATE, ALTER, DROP).
     """
     supabase = auth_details["client"]
-    raw_query = query_data.query.strip()
-
-    # **Fix for case-sensitivity**: The system creates lowercase views for tables.
-    # This regex finds quoted table names after FROM, JOIN, UPDATE, or INSERT INTO
-    # and unquotes them. This allows Postgres to match them to the lowercase views
-    # regardless of the case used in the query (e.g., "Customers" becomes Customers).
-    processed_query = re.sub(r'\b(FROM|JOIN|UPDATE|INSERT\s+INTO)\s+"([^"]+)"', r'\1 \2', raw_query, flags=re.IGNORECASE)
+    processed_query = query_data.query.strip()
 
     # 1. **Security Check**: Prevent schema modification.
     # Remove comments to prevent bypassing checks.
@@ -1544,9 +1538,12 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
 
     # 2. **Execution**: The query is deemed safe for execution.
     # The `execute_query` RPC function is designed to handle this.
+    # We now use a new, smarter function that can handle case-insensitivity.
     try:
-        response = supabase.rpc('execute_query', {'query_text': processed_query}).execute()
-
+        response = supabase.rpc('execute_dynamic_query', {
+            'p_query_text': processed_query,
+            'p_database_id': database_id
+        }).execute()
         # The RPC function returns a JSON string. We need to parse it.
         if response.data and isinstance(response.data, list) and isinstance(response.data[0], str):
             import json
