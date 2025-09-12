@@ -2466,9 +2466,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const channel = supabase.channel('calendar-events-realtime')
             .on(
                 'postgres_changes',
-                { event: 'INSERT', schema: 'public', table: 'calendar_events' },
+                { event: '*', schema: 'public', table: 'calendar_events' }, // Listen to ALL changes
                 (payload) => {
-                    console.log('Realtime: New calendar event detected, refreshing calendar.', payload);
+                    console.log(`Realtime: ${payload.eventType} on calendar_events detected, refreshing calendar.`, payload);
                     if (calendar) {
                         calendar.refetchEvents();
                     }

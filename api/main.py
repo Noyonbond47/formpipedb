@@ -934,14 +934,44 @@ async def create_event_from_row(row_id: int, mapping: RowToCalendarRequest, auth
 @app.put("/api/v1/calendar/events/{event_id}", response_model=CalendarEventResponse)
 async def update_calendar_event(event_id: int, update_data: CalendarEventUpdate, auth_details: dict = Depends(get_current_user_details)):
     """
-    Updates a calendar event (e.g., mark as complete, change title).
+    Updates a calendar event. If the event is linked to a table row via auto-sync,
+    it will also update the data in the source row, enabling bi-directional sync.
     """
     supabase = auth_details["client"]
     try:
         payload = update_data.dict(exclude_unset=True)
         if not payload:
             raise HTTPException(status_code=400, detail="No update data provided.")
-        
+
+        # --- Bi-directional Sync Logic ---
+        # 1. Get the event's source info first to see if it's linked to a row.
+        event_res = supabase.table("calendar_events").select("source_table_id, source_row_id").eq("id", event_id).single().execute()
+        if event_res.data and event_res.data.get("source_table_id") and event_res.data.get("source_row_id"):
+            source_table_id = event_res.data["source_table_id"]
+            source_row_id = event_res.data["source_row_id"]
+
+            # 2. Get the sync config for the source table to know the column mapping.
+            sync_config_res = supabase.table("calendar_sync_configs").select("column_mapping").eq("table_id", source_table_id).maybe_single().execute()
+            
+            # Only write back to the source table if a sync config exists.
+            if sync_config_res.data and sync_config_res.data.get("column_mapping"):
+                mapping = sync_config_res.data["column_mapping"]
+                
+                # 3. Fetch the original row data.
+                source_row_res = supabase.table("table_rows").select("data").eq("id", source_row_id).single().execute()
+                if source_row_res.data:
+                    updated_row_data = source_row_res.data['data'].copy()
+                    
+                    # 4. Map calendar changes back to the row data fields.
+                    if 'title' in payload and mapping.get('title_column'): updated_row_data[mapping['title_column']] = payload['title']
+                    if 'start_time' in payload and mapping.get('start_time_column'): updated_row_data[mapping['start_time_column']] = payload['start_time']
+                    if 'end_time' in payload and mapping.get('end_time_column'): updated_row_data[mapping['end_time_column']] = payload['end_time']
+                    if 'description' in payload and mapping.get('description_column'): updated_row_data[mapping['description_column']] = payload['description']
+                    
+                    # 5. Update the source row in the database.
+                    supabase.table("table_rows").update({"data": updated_row_data}).eq("id", source_row_id).execute()
+
+        # --- Original Logic: Update the calendar event itself ---
         response = supabase.table("calendar_events").update(payload, returning="representation").eq("id", event_id).execute()
         if not response.data:
             raise HTTPException(status_code=404, detail="Event not found or access denied.")
@@ -1011,7 +1041,7 @@ async def create_or_update_calendar_sync_config(table_id: int, config_data: Cale
             mapping = config_data.column_mapping
             
             for row in all_rows:
-                row_data = row.get('data', {})
+                row_data = row['data']
                 title = row_data.get(mapping.title_column)
                 start_time = row_data.get(mapping.start_time_column)
 
@@ -1020,7 +1050,7 @@ async def create_or_update_calendar_sync_config(table_id: int, config_data: Cale
                     continue
 
                 events_to_upsert.append({
-                    "user_id": user.id, "source_table_id": table_id, "source_row_id": row['id'],
+                    "user_id": user.id, "source_table_id": table_id, "source_row_id": row['id'], # Use the top-level 'id'
                     "title": str(title), "start_time": str(start_time),
                     "end_time": str(row_data.get(mapping.end_time_column)) if mapping.end_time_column and row_data.get(mapping.end_time_column) else None,
                     "description": str(row_data.get(mapping.description_column)) if mapping.description_column and row_data.get(mapping.description_column) else None,
