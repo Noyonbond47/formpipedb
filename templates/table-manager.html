@@ -397,32 +397,36 @@
 <div id="create-event-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
     <form id="create-event-form" class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div class="p-4 border-b">
-            <h3 class="text-xl font-semibold">Create New Event in '<span id="create-event-table-name"></span>'</h3>
+            <h3 class="text-xl font-semibold">Create Event from Existing Row</h3>
         </div>
         <div class="p-6 space-y-4 overflow-y-auto">
-            <p class="text-sm text-gray-600">
-                A new row will be created in your table with the data below, and a calendar event will be generated from it.
-            </p>
-            <div id="create-event-row-data-fields" class="space-y-3 border-t pt-3">
-                <!-- Dynamic row data fields will be injected here -->
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Source Table</label>
+                    <select id="event-source-table-select" required class="mt-1 block w-full p-2 border rounded-md bg-white"></select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Source Row</label>
+                    <select id="event-source-row-select" required class="mt-1 block w-full p-2 border rounded-md bg-white" disabled></select>
+                </div>
             </div>
             <div class="border-t pt-4 mt-4">
-                <h4 class="text-md font-semibold text-gray-800">Calendar Event Mapping</h4>
+                <h4 class="text-md font-semibold text-gray-800">Event Details</h4>
                 <div class="space-y-3 mt-2">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Event Title <span class="text-red-500">*</span></label>
-                        <select id="create-event-title-col" required class="mt-1 block w-full p-2 border rounded-md bg-white"></select>
+                        <label for="create-event-title" class="block text-sm font-medium text-gray-700">Event Title <span class="text-red-500">*</span></label>
+                        <input type="text" id="create-event-title" required class="mt-1 block w-full p-2 border rounded-md">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Start Date/Time <span class="text-red-500">*</span></label>
-                        <select id="create-event-start-col" required class="mt-1 block w-full p-2 border rounded-md bg-white"></select>
+                        <label for="create-event-start-time" class="block text-sm font-medium text-gray-700">Start Date/Time <span class="text-red-500">*</span></label>
+                        <input type="datetime-local" id="create-event-start-time" required class="mt-1 block w-full p-2 border rounded-md">
                     </div>
                 </div>
             </div>
         </div>
         <div class="p-4 mt-auto border-t bg-gray-50 flex justify-end gap-4">
             <button id="cancel-create-event-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
-            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Create Row & Event</button>
+            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Create Event</button>
         </div>
     </form>
 </div>
@@ -2082,101 +2086,108 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function openCreateEventModal(dateStr) {
-        if (!state.selectedTable) {
-            showError("Please select a table first to create an event.");
+        if (state.tables.length === 0) {
+            showError("You must have at least one table in this database to create an event.");
             return;
         }
 
-        document.getElementById('create-event-table-name').textContent = state.selectedTable.name;
-        const rowDataFieldsContainer = document.getElementById('create-event-row-data-fields');
-        rowDataFieldsContainer.innerHTML = '';
+        const form = document.getElementById('create-event-form');
+        form.reset();
 
-        const columns = state.selectedTable.columns.filter(c => !c.is_primary_key);
-        const dateLikeColumns = columns.filter(c => ['timestamp', 'text', 'date'].includes(c.type));
-        const autoStartDateColumn = dateLikeColumns.find(c => /start|date|deadline|due/i.test(c.name)) || (dateLikeColumns.length > 0 ? dateLikeColumns[0] : null);
+        const tableSelect = document.getElementById('event-source-table-select');
+        const rowSelect = document.getElementById('event-source-row-select');
+        const startTimeInput = document.getElementById('create-event-start-time');
 
-        columns.forEach(col => {
-            const isDateField = col.type === 'timestamp' || col.type === 'date';
-            const isPreselectedDateField = autoStartDateColumn && col.name === autoStartDateColumn.name;
-            const value = isPreselectedDateField ? dateStr : '';
-
-            const fieldHtml = `
-                <div class="grid grid-cols-3 gap-4 items-center">
-                    <label for="new-event-col-${col.name}" class="text-sm font-medium text-gray-700">${col.name}</label>
-                    <input type="${isDateField ? 'date' : 'text'}" id="new-event-col-${col.name}" data-col-name="${col.name}" value="${value}"
-                           class="col-span-2 p-2 border rounded-md shadow-sm">
-                </div>
-            `;
-            rowDataFieldsContainer.insertAdjacentHTML('beforeend', fieldHtml);
+        // Populate table dropdown
+        tableSelect.innerHTML = '<option value="">-- Select a Table --</option>';
+        state.tables.forEach(table => {
+            tableSelect.innerHTML += `<option value="${table.id}">${table.name}</option>`;
         });
+        rowSelect.innerHTML = '<option value="">-- Select a Table First --</option>';
+        rowSelect.disabled = true;
 
-        // Populate mapping selects
-        const titleSelect = document.getElementById('create-event-title-col');
-        const startSelect = document.getElementById('create-event-start-col');
-
-        titleSelect.innerHTML = '<option value="">-- Select Column --</option>';
-        columns.forEach(col => {
-            titleSelect.innerHTML += `<option value="${col.name}">${col.name}</option>`;
-        });
-
-        startSelect.innerHTML = '<option value="">-- Select Column --</option>';
-        dateLikeColumns.forEach(col => {
-            startSelect.innerHTML += `<option value="${col.name}">${col.name}</option>`;
-        });
-
-        // Auto-select common names for mapping
-        const autoTitle = columns.find(c => /title|name|subject|task/i.test(c.name));
-        if (autoTitle) titleSelect.value = autoTitle.name;
-        if (autoStartDateColumn) startSelect.value = autoStartDateColumn.name;
+        // Pre-fill date
+        startTimeInput.value = `${dateStr}T12:00`;
 
         openModal(createEventModal);
     }
+
+    document.getElementById('event-source-table-select').addEventListener('change', async (e) => {
+        const tableId = e.target.value;
+        const rowSelect = document.getElementById('event-source-row-select');
+        const titleInput = document.getElementById('create-event-title');
+
+        if (!tableId) {
+            rowSelect.innerHTML = '<option value="">-- Select a Table First --</option>';
+            rowSelect.disabled = true;
+            return;
+        }
+
+        rowSelect.disabled = true;
+        rowSelect.innerHTML = '<option value="">Loading rows...</option>';
+
+        try {
+            const response = await fetchWithAuth(`/api/v1/tables/${tableId}/all-rows`);
+            if (!response.ok) throw new Error('Failed to fetch rows for selection.');
+            const rows = await response.json();
+
+            const table = state.tables.find(t => t.id == tableId);
+            const displayColumn = table.columns.find(c => /name|title|subject|email/i.test(c.name)) || table.columns.find(c => c.is_primary_key);
+
+            rowSelect.innerHTML = '<option value="">-- Select a Row --</option>';
+            rows.forEach(row => {
+                const displayValue = row.data[displayColumn.name] || `Row ID: ${row.id}`;
+                rowSelect.innerHTML += `<option value="${row.id}" data-display-text="${displayValue}">${displayValue}</option>`;
+            });
+            rowSelect.disabled = false;
+
+        } catch (error) {
+            showError(error.message);
+            rowSelect.innerHTML = '<option value="">-- Error Loading Rows --</option>';
+        }
+    });
+
+    document.getElementById('event-source-row-select').addEventListener('change', (e) => {
+        const selectedOption = e.target.options[e.target.selectedIndex];
+        const titleInput = document.getElementById('create-event-title');
+        if (selectedOption && selectedOption.value) {
+            titleInput.value = selectedOption.dataset.displayText;
+        }
+    });
 
     document.getElementById('create-event-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const form = e.target;
         const submitBtn = form.querySelector('button[type="submit"]');
+
+        const payload = {
+            source_table_id: document.getElementById('event-source-table-select').value,
+            source_row_id: document.getElementById('event-source-row-select').value,
+            title: document.getElementById('create-event-title').value,
+            start_time: document.getElementById('create-event-start-time').value,
+        };
+
         submitBtn.disabled = true;
         submitBtn.textContent = 'Creating...';
 
-        // 1. Collect data for the new row
-        const rowData = {};
-        form.querySelectorAll('#create-event-row-data-fields input').forEach(input => {
-            rowData[input.dataset.colName] = input.value;
-        });
-
-        // 2. Collect calendar mapping info
-        const calendarMapping = {
-            title_column: document.getElementById('create-event-title-col').value,
-            start_time_column: document.getElementById('create-event-start-col').value,
-        };
-
         try {
-            // 3. Create the new row
-            const rowResponse = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/rows`, {
+            const response = await fetchWithAuth(`/api/v1/calendar/events`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ data: rowData })
+                body: JSON.stringify(payload)
             });
-            if (!rowResponse.ok) throw new Error('Failed to create the new row.');
-            const newRow = await rowResponse.json();
-
-            // 4. Create the calendar event from the new row
-            const eventResponse = await fetchWithAuth(`/api/v1/rows/${newRow.id}/send-to-calendar`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(calendarMapping)
-            });
-            if (!eventResponse.ok) throw new Error('Row was created, but failed to create the calendar event.');
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || 'Failed to create event.');
+            }
 
             closeModal(createEventModal);
             calendar.refetchEvents();
-            fetchAndRenderData(state.selectedTable.id, state.pagination.currentPage);
         } catch (error) {
             showError(error.message);
         } finally {
             submitBtn.disabled = false;
-            submitBtn.textContent = 'Create Row & Event';
+            submitBtn.textContent = 'Create Event';
         }
     });
 
@@ -2258,18 +2269,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 center: 'title',
                 right: 'dayGridMonth,timeGridWeek,listWeek'
             },
-            dateClick: (info) => {
-                // Check if there are any events on the clicked day
-                const eventsOnDay = calendar.getEvents().filter(event => {
-                    const eventDate = event.start.toISOString().split('T')[0];
-                    return eventDate === info.dateStr;
-                });
-
-                if (eventsOnDay.length === 0) {
-                    showError("No events on this date. Select a table from the sidebar to create a new one.");
-                }
-                
-                // The create event flow is now handled by selecting a table first
+            dateClick: (info) => {                
                 openCreateEventModal(info.dateStr);
             },
             editable: true,

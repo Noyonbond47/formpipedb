@@ -177,6 +177,15 @@ class CalendarEventUpdate(BaseModel):
     description: Optional[str] = None
     is_completed: Optional[bool] = None
 
+class CalendarEventCreate(BaseModel):
+    title: str
+    start_time: str
+    end_time: Optional[str] = None
+    description: Optional[str] = None
+    is_completed: bool = False
+    source_table_id: int
+    source_row_id: int
+
 class RowToCalendarRequest(BaseModel):
     title_column: str
     start_time_column: str
@@ -858,6 +867,27 @@ async def get_calendar_events(
         return response.data
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@app.post("/api/v1/calendar/events", response_model=CalendarEventResponse, status_code=status.HTTP_201_CREATED)
+async def create_calendar_event(event_data: CalendarEventCreate, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Creates a new calendar event linked to an existing source row.
+    """
+    supabase = auth_details["client"]
+    user = auth_details["user"]
+    try:
+        new_event_data = event_data.dict()
+        new_event_data["user_id"] = user.id
+
+        # RLS on table_rows will ensure the user owns the source row, preventing unauthorized linking.
+        # We don't need to explicitly check it here.
+
+        response = supabase.table("calendar_events").insert(new_event_data, returning="representation").execute()
+        if not response.data:
+            raise APIError("Failed to create event.", code="500", message="Insert operation returned no data.")
+        return response.data[0]
+    except APIError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create event: {str(e)}")
 
 @app.post("/api/v1/rows/{row_id}/send-to-calendar", response_model=CalendarEventResponse, status_code=status.HTTP_201_CREATED)
 async def create_event_from_row(row_id: int, mapping: RowToCalendarRequest, auth_details: dict = Depends(get_current_user_details)):
