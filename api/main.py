@@ -964,7 +964,7 @@ async def get_calendar_sync_config(table_id: int, auth_details: dict = Depends(g
         response = supabase.table("calendar_sync_configs").select("id, table_id, is_enabled, column_mapping").eq("table_id", table_id).maybe_single().execute()
         return response.data
     except APIError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=e.message)
 
 @app.post("/api/v1/tables/{table_id}/calendar-sync", response_model=CalendarSyncConfigResponse)
 async def create_or_update_calendar_sync_config(table_id: int, config_data: CalendarSyncConfig, auth_details: dict = Depends(get_current_user_details)):
