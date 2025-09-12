@@ -1042,8 +1042,11 @@ async def _parse_and_execute_insert(statement: str, created_tables_map: dict, db
     header_match = re.search(r'INSERT INTO\s+[`"]?(\w+)[`"]?\s*\(([^)]+)\)\s*VALUES', statement, re.IGNORECASE)
     if not header_match: return
     
-    table_name, columns_str = header_match.groups()
-    if table_name not in created_tables_map: return
+    raw_table_name, columns_str = header_match.groups()
+    # Sanitize the table name to lowercase to match the name used during table creation.
+    # This is the critical fix to ensure data is inserted into the correct table.
+    table_name = raw_table_name.lower()
+    if table_name not in created_tables_map: return # Now this check will pass.
     
     table_id = created_tables_map[table_name]
     columns = [c.strip().strip('`"') for c in columns_str.split(',')]
