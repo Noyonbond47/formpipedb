@@ -959,7 +959,13 @@ async def create_or_update_calendar_sync_config(table_id: int, config_data: Cale
 async def delete_calendar_sync_config(table_id: int, auth_details: dict = Depends(get_current_user_details)):
     """Deletes the calendar sync configuration for a table."""
     supabase = auth_details["client"]
-    await _delete_item(supabase, "calendar_sync_configs", table_id, "Sync config", id_column="table_id")
+    try:
+        # RLS ensures the user can only delete their own sync configs.
+        response = supabase.table("calendar_sync_configs").delete(returning="representation").eq("table_id", table_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sync config not found or access denied.")
+    except APIError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete sync config: {str(e)}")
 
 # --- Webhook Management Endpoints ---
 
@@ -1377,10 +1383,11 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
     supabase = auth_details["client"]
     raw_query = query_data.query.strip()
 
-    # **Fix for JOINs and case-sensitivity**: The system creates lowercase views for tables.
-    # This regex finds quoted table names after FROM/JOIN and unquotes them, allowing
-    # Postgres to match them to the lowercase views regardless of the case in the query.
-    processed_query = re.sub(r'\b(FROM|JOIN)\s+"([^"]+)"', r'\1 \2', raw_query, flags=re.IGNORECASE)
+    # **Fix for case-sensitivity**: The system creates lowercase views for tables.
+    # This regex finds quoted table names after FROM, JOIN, UPDATE, or INSERT INTO
+    # and unquotes them. This allows Postgres to match them to the lowercase views
+    # regardless of the case used in the query (e.g., "Customers" becomes Customers).
+    processed_query = re.sub(r'\b(FROM|JOIN|UPDATE|INSERT\s+INTO)\s+"([^"]+)"', r'\1 \2', raw_query, flags=re.IGNORECASE)
 
     # 1. **Security Check**: Prevent schema modification.
     # Remove comments to prevent bypassing checks.

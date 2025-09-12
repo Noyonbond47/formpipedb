@@ -228,7 +228,7 @@
     <button onclick="this.parentElement.classList.add('hidden')" class="absolute top-0 bottom-0 right-0 px-4 py-3">&times;</button>
 </div>
 
-<div id="create-table-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+<div id="create-table-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
     <form id="create-table-form" class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
         <div class="p-4 border-b">
             <h3 class="text-xl font-semibold">Create New Table</h3>
@@ -255,7 +255,7 @@
     </form>
 </div>
 
-<div id="view-db-sql-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+<div id="view-db-sql-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
         <div class="p-4 border-b flex justify-between items-center">
             <h3 class="text-xl font-semibold">Database SQL Schema</h3>
@@ -267,7 +267,7 @@
     </div>
 </div>
 
-<div id="edit-column-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+<div id="edit-column-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
     <form id="edit-column-form" class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
         <h3 class="text-lg font-semibold mb-6">Edit Column</h3>
         <input type="hidden" id="edit-column-index">
@@ -302,7 +302,7 @@
     </form>
 </div>
 
-<div id="delete-table-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+<div id="delete-table-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
         <h3 class="text-lg font-semibold mb-4">Confirm Table Deletion</h3>
         <p>Are you sure you want to delete the table "<strong id="modal-table-name"></strong>"? This will permanently delete all of its data. This action cannot be undone.</p>
@@ -313,7 +313,7 @@
     </div>
 </div>
 
-<div id="import-csv-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+<div id="import-csv-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
     <form id="import-csv-form" class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
         <div class="p-4 border-b">
             <h3 class="text-xl font-semibold">Import Table from CSV</h3>
@@ -359,7 +359,7 @@
     </form>
 </div>
 
-<div id="import-rows-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+<div id="import-rows-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
     <form id="import-rows-form" class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
         <div class="p-4 border-b">
             <h3 class="text-xl font-semibold">Import Rows into '<span id="import-rows-table-name"></span>'</h3>
@@ -383,7 +383,7 @@
     </form>
 </div>
 
-<div id="import-summary-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+<div id="import-summary-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
         <h3 class="text-xl font-semibold mb-4">Import Summary</h3>
         <div id="import-summary-content" class="space-y-3 text-gray-700">
@@ -394,7 +394,7 @@
     </div>
 </div>
 
-<div id="create-event-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+<div id="create-event-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
     <form id="create-event-form" class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div class="p-4 border-b">
             <h3 class="text-xl font-semibold">Create New Event in '<span id="create-event-table-name"></span>'</h3>
@@ -427,7 +427,7 @@
     </form>
 </div>
 
-<div id="send-to-calendar-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
+<div id="send-to-calendar-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
     <form id="send-to-calendar-form" class="bg-white rounded-lg shadow-xl w-full max-w-lg">
         <div class="p-4 border-b">
             <h3 class="text-xl font-semibold">Send Row to Calendar</h3>
