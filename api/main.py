@@ -1544,13 +1544,8 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
             'p_query_text': processed_query,
             'p_database_id': database_id
         }).execute()
-        # The RPC function returns a JSON string. We need to parse it.
-        if response.data and isinstance(response.data, list) and isinstance(response.data[0], str):
-            import json
-            actual_result = json.loads(response.data[0])
-            return actual_result
-        else:
-            return response.data
+        # The new RPC function returns a properly formatted JSON object directly.
+        return response.data
 
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Query failed: {e.message}")
