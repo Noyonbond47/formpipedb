@@ -15,14 +15,6 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from typing import List, Optional, Any
 from pydantic import BaseModel, Field, ConfigDict
-
-# --- Google API Imports ---
-from google.oauth2.credentials import Credentials as GoogleCredentials
-from googleapiclient.discovery import build as build_google_service
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
-from google_auth_oauthlib.flow import Flow
-from googleapiclient.errors import HttpError
 from supabase import create_client, Client
 from postgrest import APIError
 
@@ -38,9 +30,6 @@ SMTP_PORT = os.environ.get("SMTP_PORT")
 SMTP_USER = os.environ.get("SMTP_USER")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")
 CONTACT_FORM_RECIPIENT = os.environ.get("CONTACT_FORM_RECIPIENT")
-
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 
 # Get the root directory of the project
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -168,40 +157,6 @@ class WebhookUpdateRequest(BaseModel):
 
 class SqlTableCreateRequest(BaseModel):
     script: str
-
-# --- Calendar Integration Models ---
-class CalendarIntegrationFieldMapping(BaseModel):
-    event_title_col: Optional[str] = None
-    start_datetime_col: Optional[str] = None
-    end_datetime_col: Optional[str] = None
-    description_col: Optional[str] = None
-    completed_status_col: Optional[str] = None # A boolean column
-
-class CalendarIntegrationResponse(BaseModel):
-    id: int
-    table_id: int
-    provider: str # e.g., 'google'
-    account_email: str # The user's Google account email
-    calendar_id: str # The specific calendar ID (e.g., 'primary')
-    field_mapping: Optional[CalendarIntegrationFieldMapping] = None
-
-    model_config = ConfigDict(extra="ignore")
-
-class CalendarIntegrationCreate(BaseModel):
-    provider: str = Field("google", pattern="^google$")
-    account_email: str # For now, we'll mock this. In reality, it comes from OAuth.
-    calendar_id: str
-    field_mapping: CalendarIntegrationFieldMapping
-    credentials: dict # This will hold the OAuth tokens from the frontend
-
-class CalendarAutomationLogRow(BaseModel):
-    row_id: int
-    event_title: str
-    event_start_time: str
-    created_at: str # The timestamp of when the row was last updated/created
-
-class GoogleOauthCodeRequest(BaseModel):
-    code: str
 
 # --- Reusable Dependencies ---
 # This dependency handles getting the user's token, validating it, and providing the user object.
@@ -817,14 +772,6 @@ async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict 
         response = supabase.table("table_rows").update({"data": row_data.data}, returning="representation").eq("id", row_id).execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Row not found or access denied.")
-        
-        # --- Trigger Calendar Automation ---
-        # After a successful update, check if we need to create a calendar event.
-        # We create an admin client here to run the logic with elevated privileges.
-        if SUPABASE_SERVICE_ROLE_KEY:
-            supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-            await _create_or_update_calendar_event(row_id, supabase_admin)
-        # --- End Trigger ---
 
         # Re-fetch the row to include any meta updates from the trigger
         final_response = supabase.table("table_rows").select("*").eq("id", row_id).single().execute()
@@ -972,12 +919,6 @@ async def handle_incoming_webhook(webhook_token: str, request: Request):
         try:
             insert_payload = { "user_id": webhook_config['user_id'], "table_id": webhook_config['table_id'], "data": transformed_data }
             insert_response = supabase_admin.table("table_rows").insert(insert_payload, returning="representation").execute()
-            
-            # --- Trigger Calendar Automation ---
-            if insert_response.data:
-                new_row_id = insert_response.data[0]['id']
-                await _create_or_update_calendar_event(new_row_id, supabase_admin)
-            # --- End Trigger ---
 
             return {"status": "ok", "message": "Data inserted."}
         except Exception as e:
@@ -986,233 +927,6 @@ async def handle_incoming_webhook(webhook_token: str, request: Request):
             raise HTTPException(status_code=500, detail="Failed to process data.")
     
     return {"status": "ok", "message": "Request received."}
-
-# --- Calendar Integration Endpoints ---
-
-@app.post("/api/v1/google/oauth2callback")
-async def google_oauth2callback(code_request: GoogleOauthCodeRequest, request: Request, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Exchanges a Google OAuth authorization code for credentials (access and refresh tokens).
-    This is called by the frontend after the user grants consent.
-    """
-    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
-        raise HTTPException(status_code=501, detail="Google OAuth is not configured on the server.")
-
-    try:
-        # The redirect_uri must match exactly what's in your Google Cloud Console credentials
-        # For this server-side exchange, it's not used for redirection, but for validation.
-        # We'll use the request's origin as a flexible redirect_uri.
-        redirect_uri = request.headers.get('origin')
-
-        flow = Flow.from_client_config(
-            client_config={
-                "web": {
-                    "client_id": GOOGLE_CLIENT_ID,
-                    "client_secret": GOOGLE_CLIENT_SECRET,
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                }
-            },
-            scopes=['https://www.googleapis.com/auth/calendar.events', 'openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
-            redirect_uri=redirect_uri)
-
-        # This exchanges the code for credentials, which are stored on the flow object.
-        flow.fetch_token(code=code_request.code)
-        creds = flow.credentials
-
-        # Add a more specific check to ensure the id_token was returned.
-        # This fails if the 'openid' scope is missing.
-        if not creds.id_token:
-            raise HTTPException(status_code=400, detail="Google did not return an ID token. Ensure 'openid' scope is included in the request.")
-
-        # Manually create a dictionary from the credentials object.
-        # The 'Flow' object does not have a 'credentials_to_dict' method.
-        # We also decode the id_token here on the server to securely get user info.
-        try:
-            id_info = id_token.verify_oauth2_token(creds.id_token, google_requests.Request(), GOOGLE_CLIENT_ID)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=f"Invalid Google ID token: {e}")
-
-        return {
-            'token': creds.token,
-            'refresh_token': creds.refresh_token,
-            'id_token_jwt': id_info, # The decoded token info, including email
-            'scopes': creds.scopes
-        }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to exchange Google OAuth code: {str(e)}")
-
-@app.get("/api/v1/tables/{table_id}/calendar-integration", response_model=Optional[CalendarIntegrationResponse])
-async def get_calendar_integration(table_id: int, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Gets the active calendar integration for a table, if one exists.
-    """
-    # In a real app, you'd query the database:
-    supabase = auth_details["client"]
-    try:
-        # Use .execute() which always returns a response object.
-        # .maybe_single() can return None directly, causing an attribute error.
-        response = supabase.table("calendar_integrations").select("*").eq("table_id", table_id).limit(1).execute()
-        # If data is a list and it's not empty, return the first item. Otherwise, return None.
-        # This correctly handles the "not found" case.
-        return response.data[0] if response.data else None
-    except APIError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch calendar integration: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred while fetching calendar settings: {str(e)}")
-
-@app.post("/api/v1/tables/{table_id}/calendar-integration", response_model=CalendarIntegrationResponse, status_code=status.HTTP_201_CREATED)
-async def create_or_update_calendar_integration(table_id: int, integration_data: CalendarIntegrationCreate, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Creates or updates the calendar integration settings for a table.
-    """
-    supabase = auth_details["client"]
-    user = auth_details["user"]
-    try:
-        integration_payload = {
-            "user_id": user.id,
-            "table_id": table_id,
-            "provider": integration_data.provider,
-            "account_email": integration_data.account_email,
-            "calendar_id": integration_data.calendar_id,
-            "field_mapping": integration_data.field_mapping.dict(),
-        }
-        
-        # Only include credentials in the payload if they are provided.
-        # This allows updating the mapping without re-sending credentials.
-        # IMPORTANT: In a production app, these credentials should be encrypted before saving.
-        if integration_data.credentials:
-            integration_payload["credentials"] = integration_data.credentials
-
-        # Upsert on the table_id, which has a unique constraint. RLS ensures the user owns the table.
-        response = supabase.table("calendar_integrations").upsert(integration_payload, on_conflict="table_id", returning="representation", ignore_duplicates=False).execute()
-        
-        return response.data[0]
-    except APIError as e:
-        raise HTTPException(status_code=400, detail=f"Failed to save calendar integration: {str(e)}")
-
-@app.delete("/api/v1/tables/{table_id}/calendar-integration", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_calendar_integration(table_id: int, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Deletes the calendar integration for a table.
-    """
-    supabase = auth_details["client"]
-    try:
-        # RLS ensures the user can only delete their own integration.
-        supabase.table("calendar_integrations").delete().eq("table_id", table_id).execute()
-    except APIError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete calendar integration: {str(e)}")
-
-@app.get("/api/v1/tables/{table_id}/calendar-integration/logs", response_model=List[CalendarAutomationLogRow])
-async def get_calendar_automation_logs(table_id: int, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Gets a log of the last 5 rows that had calendar events created for them.
-    """
-    if not SUPABASE_SERVICE_ROLE_KEY:
-        return [] # Return empty list if service key is not configured
-
-    supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-    user_id = auth_details["user"].id
-
-    try:
-        # First, get the integration settings to know which column is the title/start time
-        integration_res = supabase_admin.table("calendar_integrations").select("field_mapping").eq("table_id", table_id).eq("user_id", user_id).single().execute()
-        if not integration_res.data or not integration_res.data.get("field_mapping"):
-            return []
-
-        mapping = integration_res.data["field_mapping"]
-        title_col = mapping.get("event_title_col")
-        start_col = mapping.get("start_datetime_col")
-
-        if not title_col or not start_col:
-            return []
-
-        # Now, fetch the rows that have a calendar event ID in their meta field
-        # Note the jsonb operators ->> to get field as text
-        rows_res = supabase_admin.table("table_rows").select("id, updated_at, data").eq("table_id", table_id).not_.is_("(_meta->>calendar_event_id)", "null").order("updated_at", desc=True).limit(5).execute()
-        
-        # Format the response
-        logs = [CalendarAutomationLogRow(row_id=row['id'], event_title=row['data'].get(title_col, "N/A"), event_start_time=row['data'].get(start_col, "N/A"), created_at=row['updated_at']) for row in rows_res.data]
-        return logs
-
-    except Exception as e:
-        print(f"Error fetching calendar logs for table {table_id}: {e}")
-        return [] # Return empty on error to not break the UI
-
-async def _create_or_update_calendar_event(row_id: int, supabase_admin: Client):
-    """Helper function to create a calendar event from a row if conditions are met."""
-    # This function now contains the logic to call the actual Google Calendar API.
-    # It assumes that the `google-api-python-client` library is installed and that
-    # valid OAuth credentials have been stored in the `calendar_integrations` table.
-    # The frontend is responsible for the OAuth flow to obtain these credentials.
-
-    # 1. Fetch the row with its table_id and user_id.
-    # We re-fetch here to ensure we have the absolute latest data, avoiding race conditions
-    # where the calling function's data might be from just before the transaction committed.
-    try:
-        row_res = supabase_admin.table("table_rows").select("table_id, user_id, data, _meta").eq("id", row_id).single().execute()
-        if not row_res.data: return
-    except APIError:
-        return # Row might have been deleted in the same transaction, which is fine.
-
-    row = row_res.data
-    table_id = row.get('table_id')
-    user_id = row['user_id']
-    row_data = row.get('data', {})
-    row_meta = row.get('_meta', {}) or {}
-
-    # 2. Fetch calendar integration for the table
-    integration_res = supabase_admin.table("calendar_integrations").select("*").eq("table_id", table_id).eq("user_id", user_id).single().execute()
-    if not integration_res.data: return
-
-    integration = integration_res.data
-    mapping = integration.get('field_mapping', {})
-    credentials_dict = integration.get('credentials')
-
-    # If credentials aren't stored or are still the mock ones, we can't proceed.
-    if not credentials_dict or credentials_dict.get("mock"):
-        return
-
-    # 3. Check if required fields are present in the row data
-    title_col = mapping.get('event_title_col')
-    start_col = mapping.get('start_datetime_col')
-
-    if not (title_col and start_col and row_data.get(title_col) and row_data.get(start_col)):
-        return # Not enough data to create an event
-
-    # 4. Check if an event has already been created to prevent duplicates
-    if row_meta.get('calendar_event_id'):
-        print(f"Row {row_id} already has a calendar event: {row_meta['calendar_event_id']}. Skipping.")
-        return
-
-    try:
-        # 5. Build Google credentials and API service
-        creds = GoogleCredentials.from_authorized_user_info(credentials_dict)
-        service = build_google_service('calendar', 'v3', credentials=creds)
-
-        # 6. Construct the event object for the Google API
-        event_body = {
-            "summary": row_data.get(title_col),
-            "description": row_data.get(mapping.get('description_col')),
-            "start": {"dateTime": row_data.get(start_col), "timeZone": "UTC"}, # Assuming UTC timezone
-            "end": {"dateTime": row_data.get(mapping.get('end_datetime_col'), row_data.get(start_col)), "timeZone": "UTC"},
-        }
-
-        # 7. Call the Google Calendar API to insert the event
-        print(f"Creating Google Calendar event for row {row_id}...")
-        created_event = service.events().insert(calendarId=integration['calendar_id'], body=event_body).execute()
-        
-        real_event_id = created_event.get('id')
-        if real_event_id:
-            # 8. Update the row's meta data with the REAL event ID
-            row_meta['calendar_event_id'] = real_event_id
-            supabase_admin.table("table_rows").update({"_meta": row_meta}).eq("id", row_id).execute()
-            print(f"Successfully created event {real_event_id} and updated row {row_id}.")
-
-    except HttpError as error:
-        print(f"An error occurred calling Google Calendar API for row {row_id}: {error}")
-    except Exception as e:
-        print(f"An unexpected error occurred during calendar event creation for row {row_id}: {e}")
 
 @app.delete("/api/v1/users/me", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_current_user(auth_details: dict = Depends(get_current_user_details)):
@@ -1642,7 +1356,6 @@ async def table_manager_page(request: Request, db_name: str):
             "db_name": db_name,
             "supabase_url": SUPABASE_URL,
             "supabase_anon_key": SUPABASE_ANON_KEY,
-            "google_client_id": GOOGLE_CLIENT_ID,
         },
     )
 
