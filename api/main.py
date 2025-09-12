@@ -737,18 +737,19 @@ async def get_table_rows(
 
         # 3. Process results to inject the user-visible PK
         processed_rows = []
-        if pk_col_name:
-            for i, row in enumerate(response.data):
-                # Calculate the user-visible ID based on pagination
-                user_visible_id = offset + i + 1
-                
-                # Inject it into the data blob
-                if row.get("data") is not None:
-                    row["data"][pk_col_name] = user_visible_id
-                else:
-                    row["data"] = {pk_col_name: user_visible_id}
-                processed_rows.append(row)
-        else:
+        # Ensure response.data is a list before iterating
+        if response.data and isinstance(response.data, list):
+            if pk_col_name:
+                for i, row in enumerate(response.data):
+                    # Calculate the user-visible ID based on pagination
+                    user_visible_id = offset + i + 1
+                    
+                    # Inject it into the data blob
+                    if row.get("data") is not None:
+                        row["data"][pk_col_name] = user_visible_id
+                    else:
+                        row["data"] = {pk_col_name: user_visible_id}
+                    processed_rows.append(row)
             # Fallback if no PK is defined (shouldn't happen with current UI)
             processed_rows = response.data
 
