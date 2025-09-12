@@ -431,6 +431,47 @@
     </form>
 </div>
 
+<!-- Event Details/Edit Modal -->
+<div id="event-details-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
+    <form id="event-details-form" class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div class="p-4 border-b flex justify-between items-center">
+            <h3 class="text-xl font-semibold">Event Details</h3>
+            <button id="close-event-details-btn" type="button" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+        </div>
+        <div class="p-6 space-y-4 overflow-y-auto">
+            <input type="hidden" id="edit-event-id">
+            <div>
+                <label for="edit-event-title" class="block text-sm font-medium text-gray-700">Event Title</label>
+                <input type="text" id="edit-event-title" required class="mt-1 block w-full p-2 border rounded-md">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label for="edit-event-start-time" class="block text-sm font-medium text-gray-700">Start Time</label>
+                    <input type="datetime-local" id="edit-event-start-time" required class="mt-1 block w-full p-2 border rounded-md">
+                </div>
+                <div>
+                    <label for="edit-event-end-time" class="block text-sm font-medium text-gray-700">End Time (Optional)</label>
+                    <input type="datetime-local" id="edit-event-end-time" class="mt-1 block w-full p-2 border rounded-md">
+                </div>
+            </div>
+            <div>
+                <label for="edit-event-description" class="block text-sm font-medium text-gray-700">Description</label>
+                <textarea id="edit-event-description" rows="3" class="mt-1 block w-full p-2 border rounded-md"></textarea>
+            </div>
+            <div>
+                <label class="flex items-center"><input id="edit-event-completed" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"> Mark as Completed</label>
+            </div>
+        </div>
+        <div class="p-4 mt-auto border-t bg-gray-50 flex justify-between items-center">
+            <button id="delete-event-btn" type="button" class="bg-red-100 text-red-700 px-4 py-2 rounded-md hover:bg-red-200 font-semibold">Delete Event</button>
+            <div class="flex gap-4">
+                <button id="cancel-edit-event-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Save Changes</button>
+            </div>
+        </div>
+    </form>
+</div>
+
 <div id="send-to-calendar-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
     <form id="send-to-calendar-form" class="bg-white rounded-lg shadow-xl w-full max-w-lg">
         <div class="p-4 border-b">
@@ -552,6 +593,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const cancelSendToCalendarBtn = document.getElementById('cancel-send-to-calendar-btn');
     const createEventModal = document.getElementById('create-event-modal');
     const cancelCreateEventBtn = document.getElementById('cancel-create-event-btn');
+    const eventDetailsModal = document.getElementById('event-details-modal');
 
 
     const importRowsCsvFile = document.getElementById('import-rows-csv-file');
@@ -841,6 +883,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetchWithAuth(`/api/v1/tables/${table.id}/calendar-sync`);
             if (!response.ok) throw new Error('Failed to fetch sync config');
             const config = await response.json();
+            if (!response.ok) {
+                // A 404 is not an error here, it just means no config exists.
+                // We only throw for other server errors.
+                if (response.status === 404) {
+                    renderCalendarSyncForm(null, table);
+                    return;
+                }
+                throw new Error('Failed to fetch sync config');
+            }
+            
+            // Handle potentially empty body for a null response
+            const responseText = await response.text();
+            const config = responseText ? JSON.parse(responseText) : null;
+            
             renderCalendarSyncForm(config, table);
         } catch (error) {
             console.error(error);
@@ -1940,6 +1996,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     cancelDeleteTableBtn.addEventListener('click', () => closeModal(deleteTableModal));
     confirmDeleteTableBtn.addEventListener('click', handleDeleteTable);
+    
     cancelCreateEventBtn.addEventListener('click', () => closeModal(createEventModal));
 
     cancelSendToCalendarBtn.addEventListener('click', () => closeModal(sendToCalendarModal));
@@ -2269,6 +2326,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 center: 'title',
                 right: 'dayGridMonth,timeGridWeek,listWeek'
             },
+            eventClick: (info) => {
+                // When an existing event is clicked, open the details modal
+                openEventDetailsModal(info.event);
+            },
             dateClick: (info) => {                
                 openCreateEventModal(info.dateStr);
             },
@@ -2313,6 +2374,75 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    function formatDateTimeForInput(date) {
+        if (!date) return '';
+        // JavaScript's toISOString() is almost what we need, but it includes 'Z' for UTC.
+        // The datetime-local input doesn't want the Z.
+        // We also need to adjust for the local timezone offset to display the correct local time.
+        const d = new Date(date);
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+        return d.toISOString().slice(0, 16);
+    }
+
+    function openEventDetailsModal(event) {
+        document.getElementById('edit-event-id').value = event.id;
+        document.getElementById('edit-event-title').value = event.title;
+        document.getElementById('edit-event-start-time').value = formatDateTimeForInput(event.start);
+        document.getElementById('edit-event-end-time').value = formatDateTimeForInput(event.end);
+        document.getElementById('edit-event-description').value = event.extendedProps.description || '';
+        document.getElementById('edit-event-completed').checked = event.extendedProps.isCompleted;
+        openModal(eventDetailsModal);
+    }
+
+    document.getElementById('close-event-details-btn').addEventListener('click', () => closeModal(eventDetailsModal));
+    document.getElementById('cancel-edit-event-btn').addEventListener('click', () => closeModal(eventDetailsModal));
+
+    document.getElementById('event-details-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const eventId = document.getElementById('edit-event-id').value;
+        const payload = {
+            title: document.getElementById('edit-event-title').value,
+            start_time: document.getElementById('edit-event-start-time').value,
+            end_time: document.getElementById('edit-event-end-time').value || null,
+            description: document.getElementById('edit-event-description').value,
+            is_completed: document.getElementById('edit-event-completed').checked,
+        };
+
+        try {
+            const response = await fetchWithAuth(`/api/v1/calendar/events/${eventId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || 'Failed to update event.');
+            }
+            closeModal(eventDetailsModal);
+            calendar.refetchEvents();
+        } catch (error) {
+            showError(error.message);
+        }
+    });
+
+    document.getElementById('delete-event-btn').addEventListener('click', async () => {
+        const eventId = document.getElementById('edit-event-id').value;
+        if (confirm('Are you sure you want to delete this event? This action cannot be undone.')) {
+            try {
+                const response = await fetchWithAuth(`/api/v1/calendar/events/${eventId}`, { method: 'DELETE' });
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || 'Failed to delete event.');
+                }
+                closeModal(eventDetailsModal);
+                calendar.refetchEvents();
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+    });
+
 
     createWebhookBtn.addEventListener('click', async () => {
         if (!state.selectedTable) return;
