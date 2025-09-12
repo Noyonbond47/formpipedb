@@ -87,7 +87,7 @@
                 <button data-tab="data" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-blue-500 text-blue-600">Data</button>
                 <button data-tab="structure" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Structure</button>
                 <button data-tab="integrations" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Integrations</button>
-                <button data-tab="advanced" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Advanced</button>
+                <button data-tab="table-sql" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">SQL</button>
             </nav>
         </div>
 
@@ -111,33 +111,15 @@
             </div>
         </div>
 
-        <div id="advanced-tab-content" class="table-tab-content hidden space-y-8">
-            <!-- Table SQL Schema -->
-            <div>
-                <h3 class="text-lg font-semibold mb-2">Table SQL Schema</h3>
-                <div class="p-4 rounded-md font-mono text-sm ring-1 ring-gray-200 relative bg-[#282c34]">
-                    <button id="copy-table-sql-btn" class="absolute top-2 right-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs font-semibold py-1 px-2 rounded">Copy</button>
-                    <pre><code id="table-sql-code"></code></pre>
-                </div>
-                <div class="mt-2 text-right">
-                    <button id="view-db-sql-btn" class="text-sm text-blue-600 hover:underline font-semibold">View Full Database SQL</button>
-                </div>
+        <div id="table-sql-tab-content" class="table-tab-content hidden">
+            <h3 class="text-lg font-semibold mb-2">Table SQL Schema</h3>
+            <div class="p-4 rounded-md font-mono text-sm ring-1 ring-gray-200 relative bg-[#282c34]">
+                <button id="copy-table-sql-btn" class="absolute top-2 right-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs font-semibold py-1 px-2 rounded">Copy</button>
+                <pre><code id="table-sql-code"></code></pre>
             </div>
-
-            <!-- SQL Runner -->
-            <div class="bg-white rounded-lg shadow-sm border">
-                <div class="p-4 border-b">
-                    <h3 class="text-lg font-semibold">SQL Runner</h3>
-                    <p class="text-sm text-gray-500 mt-1">Execute custom SQL queries against your database.</p>
-                </div>
-                <div class="p-4">
-                    <textarea id="sql-query-input" class="w-full h-40" placeholder="-- Example: SELECT * FROM users WHERE id > 10;"></textarea>
-                    <div class="mt-4 flex justify-end">
-                        <button id="run-query-btn" class="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 font-semibold">Run Query</button>
-                    </div>
-                </div>
+            <div class="mt-2 text-right">
+                <button id="view-db-sql-btn" class="text-sm text-blue-600 hover:underline font-semibold">View Full Database SQL</button>
             </div>
-            <div id="query-results-container" class="bg-white rounded-lg shadow-sm border min-h-[10rem]"></div>
         </div>
 
         <div id="integrations-tab-content" class="table-tab-content hidden space-y-6">
@@ -575,11 +557,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let createTableSqlEditor;
     let calendar;
 
-    function showError(message) {
+    function showError(message, error = null) {
         const banner = document.getElementById('error-banner');
         const bannerMessage = document.getElementById('error-banner-message');
         bannerMessage.textContent = message;
         banner.classList.remove('hidden');
+
+        if (error) {
+            console.error("An error occurred:", message, error);
+        }
     }
 
     /**
@@ -1269,7 +1255,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.selectedTable = null;
             await fetchDbIdAndTables(); // Refresh list
         } catch (error) {
-            alert(`Error: ${error.message}`);
+            showError(error.message, error);
         }
     }
 
@@ -1344,7 +1330,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 state.pagination.totalRows -= 1;
                 renderPagination();
             } catch (error) {
-                alert(`Error: ${error.message}`);
+                showError(error.message, error);
             }
         }
     }
@@ -1360,7 +1346,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const rows = await response.json();
             if (rows.length === 0) {
-                alert('Table is empty, nothing to export.');
+                showError('Table is empty, nothing to export.');
                 return;
             }
 
@@ -1389,7 +1375,7 @@ document.addEventListener('DOMContentLoaded', () => {
             a.click();
             URL.revokeObjectURL(url);
         } catch (error) {
-            alert(`Error exporting CSV: ${error.message}`);
+            showError(`Error exporting CSV: ${error.message}`, error);
         } finally {
             exportCsvBtn.textContent = 'Export to CSV';
             exportCsvBtn.disabled = false;
@@ -1432,7 +1418,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 cellElement.style.backgroundColor = '';
             }, 1500);
         } catch (error) {
-            alert(`Error saving data: ${error.message}`);
+            showError(`Error saving data: ${error.message}`, error);
             fetchAndRenderData(state.selectedTable.id); // Revert UI on failure
         }
     }
@@ -1496,7 +1482,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderStructure(state.selectedTable.columns);
             return true; // Success
         } catch (error) {
-            alert(`Error: ${error.message}`);
+            showError(`Error: ${error.message}`, error);
             await fetchDbIdAndTables(); // Re-fetch to revert optimistic changes
             return false; // Failure
         }
@@ -2320,7 +2306,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         borderColor: event.is_completed ? '#059669' : '#2563EB',
                     }));
                     successCallback(calendarEvents);
-                } catch (error) { failureCallback(error); }
+                } catch (error) {
+                    showError('Failed to load calendar events. Please check console for details.', error);
+                    failureCallback(error);
+                }
             }
         });
     }
