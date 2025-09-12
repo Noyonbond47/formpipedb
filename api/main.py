@@ -650,7 +650,21 @@ async def update_database_table(table_id: int, table_data: TableUpdate, auth_det
         response = supabase.table("user_tables").update(update_data, returning="representation").eq("id", table_id).execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found or access denied.")
-        return response.data[0]
+        
+        updated_table = response.data[0]
+
+        # --- FIX: Re-create the view to reflect the structure changes ---
+        # This is the missing piece. Without this, the SQL Runner's view becomes outdated.
+        try:
+            supabase.rpc('create_or_replace_view_for_table', {
+                'p_table_id': updated_table['id'],
+                'p_table_name': updated_table['name'],
+                'p_columns': updated_table['columns']
+            }).execute()
+        except Exception as view_error:
+            print(f"Warning: Could not update view for table {updated_table['id']} after structure change: {view_error}")
+
+        return updated_table
     except APIError as e:
         # Handle case where the new table name conflicts with an existing one in the same database.
         if "user_tables_database_id_name_key" in str(e):
@@ -1345,12 +1359,11 @@ async def _parse_and_execute_insert(statement: str, created_tables_map: dict, db
     # Handle multi-value INSERT statements
     header_match = re.search(r'INSERT INTO\s+[`"]?(\w+)[`"]?\s*\(([^)]+)\)\s*VALUES', statement, re.IGNORECASE)
     if not header_match: return
-    
+
     raw_table_name, columns_str = header_match.groups()
-    # Sanitize the table name to lowercase to match the name used during table creation.
-    # This is the critical fix to ensure data is inserted into the correct table.
-    table_name = raw_table_name.lower()
-    if table_name not in created_tables_map: return # Now this check will pass.
+    table_name = raw_table_name.lower() # Sanitize to lowercase
+    if table_name not in created_tables_map:
+        return # Silently skip if the table wasn't created in the first pass
     
     table_id = created_tables_map[table_name]
     columns = [c.strip().strip('`"') for c in columns_str.split(',')]
