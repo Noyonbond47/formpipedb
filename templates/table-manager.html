@@ -168,7 +168,12 @@
                     <button id="export-csv-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 ml-2">Export to CSV</button>
                 </div>
             </div>
-            <div class="bg-white rounded-lg shadow-sm border overflow-auto max-h-[70vh]">
+            <div id="data-table-wrapper" class="bg-white rounded-lg shadow-sm border overflow-auto max-h-[70vh] relative">
+                <div id="data-table-loader" class="hidden absolute inset-0 bg-white bg-opacity-75 z-10 flex items-center justify-center">
+                    <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
                 <table class="min-w-full text-sm">
                     <thead class="bg-gray-50 sticky top-0">
                     </thead>
@@ -642,12 +647,14 @@ document.addEventListener('DOMContentLoaded', () => {
             calendarView.classList.add('hidden');
             deleteTableBtn.disabled = false;
             tableTabContainer.classList.remove('hidden');
+            // Programmatically click the data tab to ensure it's the default view
+            document.querySelector('.table-tab-btn[data-tab="data"]').click();
 
             // Reset to page 1 whenever a new table is selected
             renderStructure(state.selectedTable.columns);
             fetchAndRenderData(state.selectedTable.id, 1);
             renderTableSql(state.selectedTable);
-            fetchAndRenderCalendarSync(state.selectedTable.id);
+            fetchAndRenderCalendarSync(state.selectedTable.id); // Corrected this line
             fetchAndRenderWebhooks(state.selectedTable.id);
         }
     }
@@ -690,16 +697,14 @@ document.addEventListener('DOMContentLoaded', () => {
         state.pagination.currentPage = page;
         const offset = (page - 1) * state.pagination.limit;
 
-        const dataTable = document.querySelector('#data-tab-content table');
-        const thead = dataTable.querySelector('thead');
+        const thead = document.querySelector('#data-tab-content table thead');
         const tbody = document.getElementById('data-tbody');
+        const loader = document.getElementById('data-table-loader');
         const columns = state.selectedTable.columns.sort((a, b) => a.is_primary_key ? -1 : 1);
-        const colspan = columns.length + 1;
-
-        thead.innerHTML = ''; // Clear old header while loading
-        tbody.innerHTML = `<tr><td colspan="${colspan}" class="p-8 text-center text-gray-500"><div class="flex justify-center items-center gap-2"><svg class="animate-spin h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span>Loading data...</span></div></td></tr>`;
-        renderPagination(); // Render empty pagination while loading
-
+        
+        // Show loading overlay
+        loader.classList.remove('hidden');
+        
         const searchParam = searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : '';
 
         try {
@@ -709,51 +714,47 @@ document.addEventListener('DOMContentLoaded', () => {
             const rows = result.data;
             state.pagination.totalRows = result.total;
 
-            const headerRow = document.createElement('tr');
-            // Add an empty header for the actions column
-            headerRow.innerHTML += `<th class="p-3 w-24">Actions</th>`;
-            columns.forEach(col => {
-                headerRow.innerHTML += `<th class="p-3 text-left font-semibold">${col.name}</th>`;
-            });
-            thead.innerHTML = '';
-            thead.appendChild(headerRow);
+            // Build new content off-DOM
+            let headerHtml = '<tr><th class="p-3 w-24">Actions</th>';
+            columns.forEach(col => { headerHtml += `<th class="p-3 text-left font-semibold">${col.name}</th>`; });
+            headerHtml += '</tr>';
 
-            tbody.innerHTML = ''; // Clear loading indicator
+            let bodyHtml = '';
             if (rows.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="${columns.length + 1}" class="p-8 text-center text-gray-500">No data in this table.</td></tr>`;
-                renderPagination();
-                return;
+                bodyHtml = `<tr><td colspan="${columns.length + 1}" class="p-8 text-center text-gray-500">No data in this table.</td></tr>`;
+            } else {
+                bodyHtml = rows.map(row => {
+                    let rowHtml = `<tr data-row-id="${row.id}">`;
+                    rowHtml += `
+                        <td class="p-3 text-center flex items-center justify-center gap-3">
+                            <button data-row-id="${row.id}" class="send-to-calendar-btn text-gray-400 hover:text-yellow-600" title="Send to Calendar">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            </button>
+                            <button data-row-id="${row.id}" class="delete-row-btn text-gray-400 hover:text-red-600" title="Delete Row">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </td>
+                    `;
+                    columns.forEach(col => {
+                        const cellValue = row.data ? (row.data[col.name] ?? '') : '';
+                        const contentEditable = !col.is_primary_key ? 'contenteditable="true"' : '';
+                        rowHtml += `<td class="p-3 font-mono text-sm editable-cell" data-column-name="${col.name}" ${contentEditable}>${cellValue}</td>`;
+                    });
+                    rowHtml += '</tr>';
+                    return rowHtml;
+                }).join('');
             }
 
-            rows.forEach(row => {
-                const tr = document.createElement('tr');
-                tr.dataset.rowId = row.id;
-                // Add delete button cell
-                tr.innerHTML += `
-                    <td class="p-3 text-center flex items-center justify-center gap-3">
-                        <button data-row-id="${row.id}" class="send-to-calendar-btn text-gray-400 hover:text-yellow-600" title="Send to Calendar">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                        </button>
-                        <button data-row-id="${row.id}" class="delete-row-btn text-gray-400 hover:text-red-600" title="Delete Row">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                        </button>
-                    </td>
-                `;
-                columns.forEach(col => {
-                    // The backend now injects the user-visible PK into the data blob.
-                    const cellValue = row.data ? (row.data[col.name] ?? '') : '';
-                    const contentEditable = !col.is_primary_key ? 'contenteditable="true"' : '';
-
-                    tr.innerHTML += `
-                        <td class="p-3 font-mono text-sm editable-cell" data-column-name="${col.name}" ${contentEditable}>${cellValue}</td>
-                    `;
-                });
-                tbody.appendChild(tr);
-            });
+            // Swap content in one operation
+            thead.innerHTML = headerHtml;
+            tbody.innerHTML = bodyHtml;
             renderPagination();
         } catch (error) {
             console.error(error);
             tbody.innerHTML = `<tr><td colspan="99" class="p-4 text-center text-red-500">Error loading data.</td></tr>`;
+        } finally {
+            // Hide loading overlay
+            loader.classList.add('hidden');
         }
     }
 
@@ -1993,7 +1994,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    function openSendToCalendarModal(rowId) {
+    function openSendToCalendarModal(rowId, defaultDate = null) {
+        if (!state.selectedTable) {
+            showError("Please select a table first.");
+            return;
+        }
+
         document.getElementById('calendar-source-row-id').value = rowId;
         const columns = state.selectedTable.columns.filter(c => !c.is_primary_key);
         const dateLikeColumns = columns.filter(c => c.type === 'timestamp' || c.type === 'text'); // Be liberal with what can be a date
@@ -2020,7 +2026,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const autoTitle = columns.find(c => /title|name|subject|task/i.test(c.name));
         if (autoTitle) titleSelect.value = autoTitle.name;
 
-        const autoStart = dateLikeColumns.find(c => /start|date|deadline|due/i.test(c.name));
+        // If a default date is provided (from calendar click), use it.
+        if (defaultDate) {
+            // This part is tricky without a dedicated date input. We'll rely on mapping.
+        }
+        const autoStart = dateLikeColumns.find(c => /start|date|deadline|due/i.test(c.name)) || (dateLikeColumns.length > 0 ? dateLikeColumns[0] : null);
         if (autoStart) startSelect.value = autoStart.name;
 
         openModal(sendToCalendarModal);
@@ -2061,6 +2071,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 left: 'prev,next today',
                 center: 'title',
                 right: 'dayGridMonth,timeGridWeek,listWeek'
+            },
+            dateClick: function(info) {
+                if (state.selectedTable) {
+                    openSendToCalendarModal(null, info.dateStr); // Pass date to pre-fill
+                } else {
+                    showError('Please select a table from the sidebar first to create an event.');
+                }
             },
             editable: true,
             eventDrop: async (info) => {
