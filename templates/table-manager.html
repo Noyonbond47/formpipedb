@@ -2332,6 +2332,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 center: 'title',
                 right: 'dayGridMonth,timeGridWeek,listWeek'
             },
+            dayMaxEvents: true, // This is the key for handling multiple events!
             eventClick: (info) => {
                 // When an existing event is clicked, open the details modal
                 openEventDetailsModal(info.event);
@@ -2379,6 +2380,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         });
+    }
+
+    function initializeCalendarRealtime() {
+        if (!supabase) return;
+
+        const channel = supabase.channel('calendar-events-realtime')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'calendar_events' },
+                (payload) => {
+                    console.log('Realtime: New calendar event detected, refreshing calendar.', payload);
+                    if (calendar) {
+                        calendar.refetchEvents();
+                    }
+                }
+            ).subscribe();
     }
 
     function formatDateTimeForInput(date) {
@@ -2596,6 +2613,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // Initial Load
     initializeCalendar();
+    initializeCalendarRealtime();
     supabase.auth.onAuthStateChange((event, session) => {
         if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
             if (session) {
