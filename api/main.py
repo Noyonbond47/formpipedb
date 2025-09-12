@@ -315,7 +315,10 @@ async def create_table_from_sql(database_id: int, sql_data: SqlTableCreateReques
     if not create_match:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid CREATE TABLE syntax. Could not find table name and column definitions.")
 
-    table_name, columns_str = create_match.groups()
+    raw_table_name, columns_str = create_match.groups()
+    # Sanitize the table name to lowercase to prevent case-sensitivity issues
+    # when querying the view later.
+    table_name = raw_table_name.lower()
     columns_defs = []
     table_level_fks = []
 
@@ -1109,7 +1112,9 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
             create_match = re.search(r'CREATE TABLE\s+[`"]?(\w+)[`"]?\s*\((.+)\)', statement, re.DOTALL | re.IGNORECASE)
             if not create_match: continue
             
-            table_name, columns_str = create_match.groups()
+            raw_table_name, columns_str = create_match.groups()
+            # Sanitize the table name to lowercase to prevent case-sensitivity issues.
+            table_name = raw_table_name.lower()
             columns_defs = []
             table_level_fks = []
 
