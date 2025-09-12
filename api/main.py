@@ -962,7 +962,11 @@ async def get_calendar_sync_config(table_id: int, auth_details: dict = Depends(g
     supabase = auth_details["client"]
     try:
         response = supabase.table("calendar_sync_configs").select("id, table_id, is_enabled, column_mapping").eq("table_id", table_id).maybe_single().execute()
-        return response.data
+        # .maybe_single() returns None in the data field if no row is found.
+        # We must handle this case explicitly before Pydantic tries to validate it.
+        if response.data is None:
+            return None
+        return CalendarSyncConfigResponse(**response.data)
     except APIError as e:
         # This handles specific database errors (e.g., table not found)
         raise HTTPException(status_code=500, detail=f"Database error: {e.message}")
