@@ -214,6 +214,16 @@
                 <h2 class="text-2xl font-bold text-gray-800">Calendar</h2>
             </div>
             <div id="calendar"></div>
+            <!-- Container for events of a selected day -->
+            <div id="selected-day-events-container" class="mt-6 hidden">
+                <div class="bg-white p-4 rounded-lg shadow-md border">
+                    <div class="flex justify-between items-center mb-3 pb-3 border-b">
+                        <h3 id="selected-day-header" class="text-lg font-semibold text-gray-800">Events for...</h3>
+                        <button id="add-event-for-selected-day-btn" class="bg-blue-600 text-white px-3 py-1 rounded-md text-sm font-semibold hover:bg-blue-700">Add Event</button>
+                    </div>
+                    <div id="selected-day-events-list" class="space-y-2 max-h-60 overflow-y-auto"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -595,6 +605,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const cancelCreateEventBtn = document.getElementById('cancel-create-event-btn');
     const eventDetailsModal = document.getElementById('event-details-modal');
 
+
+    let selectedDateElement = null; // To track the highlighted day cell
 
     const importRowsCsvFile = document.getElementById('import-rows-csv-file');
     
@@ -2337,8 +2349,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // When an existing event is clicked, open the details modal
                 openEventDetailsModal(info.event);
             },
-            dateClick: (info) => {                
-                openCreateEventModal(info.dateStr);
+            dateClick: (info) => {
+                handleDateClick(info);
             },
             editable: true,
             eventDrop: async (info) => {
@@ -2379,6 +2391,72 @@ document.addEventListener('DOMContentLoaded', () => {
                     failureCallback(error);
                 }
             }
+        });
+    }
+
+    function handleDateClick(info) {
+        const eventsContainer = document.getElementById('selected-day-events-container');
+        eventsContainer.classList.remove('hidden');
+
+        // Remove highlight from previously selected date
+        if (selectedDateElement) {
+            selectedDateElement.style.backgroundColor = '';
+        }
+        // Add highlight to current date. Direct style is more reliable than a class.
+        info.dayEl.style.backgroundColor = '#dbeafe'; // Tailwind's blue-100
+        selectedDateElement = info.dayEl;
+
+        const allEvents = calendar.getEvents();
+        const clickedDate = info.date;
+
+        // Set the end of the clicked day for filtering
+        const endOfDay = new Date(clickedDate);
+        endOfDay.setDate(endOfDay.getDate() + 1);
+
+        const dayEvents = allEvents.filter(event => {
+            // An event is on this day if its range overlaps with the day's range.
+            const eventStart = event.start;
+            // If an event has no end, its range is just that single point in time.
+            const eventEnd = event.end || event.start;
+            return eventStart < endOfDay && eventEnd > clickedDate;
+        });
+
+        renderSelectedDayEvents(dayEvents, clickedDate);
+    }
+
+    function renderSelectedDayEvents(events, date) {
+        const header = document.getElementById('selected-day-header');
+        const list = document.getElementById('selected-day-events-list');
+        const addEventBtn = document.getElementById('add-event-for-selected-day-btn');
+
+        header.textContent = `Events for ${date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
+        addEventBtn.onclick = () => openCreateEventModal(date.toISOString().split('T')[0]);
+
+        if (events.length === 0) {
+            list.innerHTML = `<p class="text-gray-500 text-sm p-4 text-center">No events scheduled for this day.</p>`;
+            return;
+        }
+
+        list.innerHTML = '';
+        events.sort((a, b) => a.start - b.start).forEach(event => {
+            const eventEl = document.createElement('div');
+            eventEl.className = 'p-3 rounded-md hover:bg-gray-100 cursor-pointer border-l-4';
+            eventEl.style.borderColor = event.backgroundColor;
+
+            const timeFormat = { hour: 'numeric', minute: '2-digit', hour12: true };
+            const timeText = event.allDay ? 'All-day' : event.start.toLocaleTimeString([], timeFormat);
+
+            eventEl.innerHTML = `
+                <div class="flex justify-between items-center">
+                    <p class="font-semibold text-gray-800">${event.title}</p>
+                    <p class="text-xs font-medium text-gray-500">${timeText}</p>
+                </div>
+                ${event.extendedProps.description ? `<p class="text-sm text-gray-600 mt-1 truncate">${event.extendedProps.description}</p>` : ''}`;
+            eventEl.addEventListener('click', () => {
+                const fullEvent = calendar.getEventById(event.id);
+                if (fullEvent) openEventDetailsModal(fullEvent);
+            });
+            list.appendChild(eventEl);
         });
     }
 
