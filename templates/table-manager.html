@@ -881,22 +881,15 @@ document.addEventListener('DOMContentLoaded', () => {
         container.innerHTML = `<div class="text-sm text-gray-500">Loading calendar settings...</div>`;
         try {
             const response = await fetchWithAuth(`/api/v1/tables/${table.id}/calendar-sync`);
-            if (!response.ok) throw new Error('Failed to fetch sync config');
-            const config = await response.json();
+            
             if (!response.ok) {
-                // A 404 is not an error here, it just means no config exists.
-                // We only throw for other server errors.
-                if (response.status === 404) {
-                    renderCalendarSyncForm(null, table);
-                    return;
-                }
+                // This will catch 500 errors, etc.
                 throw new Error('Failed to fetch sync config');
             }
             
-            // Handle potentially empty body for a null response
-            const responseText = await response.text();
-            const config = responseText ? JSON.parse(responseText) : null;
-            
+            // The API returns 200 OK with a null body if no config is found.
+            // response.json() handles this correctly and will resolve to null.
+            const config = await response.json();
             renderCalendarSyncForm(config, table);
         } catch (error) {
             console.error(error);
