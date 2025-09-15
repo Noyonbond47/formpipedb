@@ -1672,6 +1672,24 @@ document.addEventListener('DOMContentLoaded', () => {
         queryResultsContainer.appendChild(table);
     }
 
+    async function handleViewDbSql() {
+        if (!state.dbId) return;
+        
+        dbSqlCodeContent.textContent = 'Loading SQL...';
+        openModal(viewDbSqlModal);
+
+        try {
+            const response = await fetchWithAuth(`/api/v1/databases/${state.dbId}/export-sql`);
+            if (!response.ok) throw new Error('Failed to fetch database SQL');
+            
+            const sqlText = await response.text();
+            dbSqlCodeContent.textContent = sqlText;
+            hljs.highlightElement(dbSqlCodeContent);
+        } catch (error) {
+            dbSqlCodeContent.textContent = `-- Error fetching SQL: ${error.message}`;
+        }
+    }
+
     // Sidebar Toggle Event Listener
     toggleSidebarBtn.addEventListener('click', toggleSidebar);
     // Event Listeners
