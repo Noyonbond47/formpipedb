@@ -45,14 +45,17 @@
         <!-- Create New Database -->
         <section class="mb-12 bg-white p-6 rounded-lg shadow-sm border">
             <h2 class="text-xl font-semibold mb-4">Create or Import Database</h2>
-            <div class="flex items-center gap-4">
-                <form id="create-db-form" class="flex-grow flex items-center gap-4">
-                    <input id="new-db-name" type="text" placeholder="project_alpha" required pattern="^[a-z0-9_]+$" title="Use only lowercase letters, numbers, and underscores." class="w-1/3 p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
-                    <input id="new-db-desc" type="text" placeholder="Description (optional)" class="flex-grow p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
-                    <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">Create</button>
+            <div class="flex flex-col md:flex-row items-center gap-4">
+                <form id="create-db-form" class="w-full flex-grow flex flex-col sm:flex-row items-center gap-4">
+                    <input id="new-db-name" type="text" placeholder="project_alpha" required pattern="^[a-z0-9_]+$" title="Use only lowercase letters, numbers, and underscores." class="w-full sm:w-1/3 p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <input id="new-db-desc" type="text" placeholder="Description (optional)" class="w-full sm:flex-grow p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <button type="submit" class="w-full sm:w-auto bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">Create</button>
                 </form>
-                <div class="px-2 text-gray-400">or</div>
-                <button id="import-sql-btn" class="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 whitespace-nowrap">Import SQL...</button>
+                <div class="text-gray-400 hidden md:block">or</div>
+                <div class="w-full md:w-auto flex items-center gap-2 text-gray-400 md:hidden">
+                    <hr class="flex-grow border-t"><span class="text-sm">OR</span><hr class="flex-grow border-t">
+                </div>
+                <button id="import-sql-btn" class="w-full md:w-auto bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 whitespace-nowrap">Import SQL...</button>
             </div>
         </section>
 
@@ -227,14 +230,14 @@
                 }
                 databases.forEach(db => {
                     const dbElement = document.createElement('div');
-                    dbElement.className = 'bg-white p-4 rounded-lg shadow-sm flex items-center justify-between border';
+                    dbElement.className = 'bg-white p-4 rounded-lg shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between border gap-4 md:gap-2';
                     dbElement.setAttribute('data-id', db.id);
                     dbElement.innerHTML = `
-                        <div>
+                        <div class="w-full md:w-auto">
                             <span class="font-medium text-gray-800">${db.name}</span>
                             <p class="text-sm text-gray-500">${db.description || 'No description'}</p>
                         </div>
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
                             <a href="/app/database/${db.name}" class="open-btn text-sm bg-blue-100 text-blue-700 px-3 py-1 rounded-md hover:bg-blue-200 font-semibold">Open</a>
                             <button data-db-id="${db.id}" data-db-name="${db.name}" class="export-sql-btn text-sm bg-gray-200 px-3 py-1 rounded-md hover:bg-gray-300">Export SQL</button>
                             <button class="delete-btn text-sm bg-red-100 text-red-700 px-3 py-1 rounded-md hover:bg-red-200">Delete</button>
