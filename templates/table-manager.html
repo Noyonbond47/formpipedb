@@ -1591,12 +1591,40 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function renderQueryResults(result) {
+    async function handleRunQuery() {
+        const query = sqlRunnerEditor.getValue().trim();
+        if (!query) return;
+
+        runQueryBtn.disabled = true;
+        runQueryBtn.textContent = 'Running...';
+        queryResultsContainer.innerHTML = `<div class="p-4 text-gray-500 flex items-center gap-2"><svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Executing query...</div>`;
+
+        try {
+            const response = await fetchWithAuth(`/api/v1/databases/${state.dbId}/execute-query`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: query })
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                renderQueryResults(null, result.detail || 'An unknown error occurred.');
+            } else {
+                renderQueryResults(result);
+            }
+        } catch (error) {
+            renderQueryResults(null, error.message);
+        }
+
+        runQueryBtn.disabled = false;
+        runQueryBtn.textContent = 'Run Query';
+    }
+
+    function renderQueryResults(data, error) {
         queryResultsContainer.innerHTML = '';
-        if (result.error) {
+        if (error) {
             let friendlyHint = '';
             // Check for the specific error about disallowed query types (like CREATE, ALTER, etc.)
-            if (result.error.includes("Schema-modifying statements (CREATE, ALTER, DROP, etc.) are not allowed")) {
+            if (error.includes("Schema-modifying statements (CREATE, ALTER, DROP, etc.) are not allowed")) {
                 friendlyHint = `
                     <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm">
                         <p class="font-semibold text-blue-800">Did you mean to create a table?</p>
@@ -1606,13 +1634,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             queryResultsContainer.innerHTML = `
                 <div class="p-4 border-b bg-red-50 text-red-700 font-semibold">Error</div>
-                <div class="p-4 font-mono text-sm text-red-600 whitespace-pre-wrap">${result.error}</div>
+                <div class="p-4 font-mono text-sm text-red-600 whitespace-pre-wrap">${error}</div>
                 ${friendlyHint}
             `;
             return;
         }
-
-        const data = result.data;
 
         // Handle success message from INSERT/UPDATE/DELETE
         if (data && data.status === 'success') {
@@ -1644,52 +1670,6 @@ document.addEventListener('DOMContentLoaded', () => {
             </tbody>
         `;
         queryResultsContainer.appendChild(table);
-    }
-
-    async function handleRunQuery() {
-        const query = sqlRunnerEditor.getValue().trim();
-        if (!query) return;
-
-        runQueryBtn.disabled = true;
-        runQueryBtn.textContent = 'Running...';
-        queryResultsContainer.innerHTML = `<div class="p-4 text-gray-500 flex items-center gap-2"><svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Executing query...</div>`;
-
-        try {
-            const response = await fetchWithAuth(`/api/v1/databases/${state.dbId}/execute-query`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: query })
-            });
-            const result = await response.json();
-            if (!response.ok) {
-                renderQueryResults({ error: result.detail || 'An unknown error occurred.' });
-            } else {
-                renderQueryResults({ data: result });
-            }
-        } catch (error) {
-            renderQueryResults({ error: error.message });
-        }
-
-        runQueryBtn.disabled = false;
-        runQueryBtn.textContent = 'Run Query';
-    }
-
-    async function handleViewDbSql() {
-        if (!state.dbId) return;
-        
-        dbSqlCodeContent.textContent = 'Loading SQL...';
-        openModal(viewDbSqlModal);
-
-        try {
-            const response = await fetchWithAuth(`/api/v1/databases/${state.dbId}/export-sql`);
-            if (!response.ok) throw new Error('Failed to fetch database SQL');
-            
-            const sqlText = await response.text();
-            dbSqlCodeContent.textContent = sqlText;
-            hljs.highlightElement(dbSqlCodeContent);
-        } catch (error) {
-            dbSqlCodeContent.textContent = `-- Error fetching SQL: ${error.message}`;
-        }
     }
 
     // Sidebar Toggle Event Listener
