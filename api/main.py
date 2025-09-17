@@ -170,6 +170,10 @@ class CalendarEventResponse(BaseModel):
     source_row_id: Optional[int] = None
     created_at: str
 
+class CalendarEventWithDetailsResponse(CalendarEventResponse):
+    source_table_name: Optional[str] = None
+    source_row_data: Optional[Dict[str, Any]] = None
+
 class CalendarEventUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1)
     start_time: Optional[str] = None
@@ -902,23 +906,22 @@ async def _delete_item(supabase: Client, table_name: str, item_id: int, item_typ
 
 # --- Calendar Management Endpoints ---
 
-@app.get("/api/v1/calendar/events", response_model=List[CalendarEventResponse])
+@app.get("/api/v1/calendar/events", response_model=List[CalendarEventWithDetailsResponse])
 async def get_calendar_events(
     start_date: str, # ISO 8601 format: YYYY-MM-DD
     end_date: str,   # ISO 8601 format: YYYY-MM-DD
     auth_details: dict = Depends(get_current_user_details)
 ):
     """
-    Fetches all calendar events for the user within a given date range.
+    Fetches all calendar events for the user within a given date range,
+    including the full source row data if available.
     """
     supabase = auth_details["client"]
     try:
-        # This logic fetches events that OVERLAP with the requested date range.
-        # An event overlaps if:
-        # 1. It starts before the range ends (start_time <= end_date)
-        # 2. It ends after the range starts (end_time >= start_date)
-        # We also handle events with no end_time by treating their end as their start.
-        response = supabase.rpc('get_calendar_events_in_range', {
+        # This RPC function joins calendar_events with table_rows and user_tables
+        # to return a much richer dataset for the calendar UI.
+        # You will need to add this function to your Supabase SQL Editor.
+        response = supabase.rpc('get_calendar_events_with_details', {
             'p_start_date': start_date,
             'p_end_date': end_date
         }).execute()

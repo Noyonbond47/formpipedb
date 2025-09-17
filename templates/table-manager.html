@@ -447,6 +447,11 @@
                 <label for="edit-event-description" class="block text-sm font-medium text-gray-700">Description</label>
                 <textarea id="edit-event-description" rows="3" class="mt-1 block w-full p-2 border rounded-md"></textarea>
             </div>
+            <!-- This section will be populated with the full source row data -->
+            <div id="event-source-data-container" class="hidden pt-4 mt-4 border-t">
+                <h4 class="text-md font-semibold text-gray-800">Source Data from <span id="event-source-table-name" class="font-mono"></span></h4>
+                <div id="event-source-data-details" class="mt-2 space-y-1 text-sm font-mono bg-gray-50 p-3 rounded-md"></div>
+            </div>
             <div>
                 <label class="flex items-center"><input id="edit-event-completed" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"> Mark as Completed</label>
             </div>
@@ -2445,7 +2450,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const calendarEvents = apiEvents.map(event => ({
                         id: event.id, title: event.title, start: event.start_time, end: event.end_time,
                         allDay: !event.start_time.includes('T'),
-                        extendedProps: { description: event.description, isCompleted: event.is_completed },
+                        extendedProps: { ...event }, // Pass the whole event object
                         backgroundColor: event.is_completed ? '#10B981' : '#3B82F6',
                         borderColor: event.is_completed ? '#059669' : '#2563EB',
                     }));
@@ -2551,12 +2556,47 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function openEventDetailsModal(event) {
-        document.getElementById('edit-event-id').value = event.id;
-        document.getElementById('edit-event-title').value = event.title;
-        document.getElementById('edit-event-start-time').value = formatDateTimeForInput(event.start);
-        document.getElementById('edit-event-end-time').value = formatDateTimeForInput(event.end);
-        document.getElementById('edit-event-description').value = event.extendedProps.description || '';
-        document.getElementById('edit-event-completed').checked = event.extendedProps.isCompleted;
+        const props = event.extendedProps;
+        document.getElementById('edit-event-id').value = props.id;
+        document.getElementById('edit-event-title').value = props.title;
+        document.getElementById('edit-event-start-time').value = formatDateTimeForInput(props.start_time);
+        document.getElementById('edit-event-end-time').value = formatDateTimeForInput(props.end_time);
+        document.getElementById('edit-event-description').value = props.description || '';
+        document.getElementById('edit-event-completed').checked = props.is_completed;
+
+        const sourceDataContainer = document.getElementById('event-source-data-container');
+        const sourceDataDetails = document.getElementById('event-source-data-details');
+
+        if (props.source_row_data) {
+            sourceDataContainer.classList.remove('hidden');
+            document.getElementById('event-source-table-name').textContent = props.source_table_name;
+            
+            const sourceTable = state.tables.find(t => t.id === props.source_table_id);
+            let detailsHtml = '';
+
+            if (sourceTable) {
+                sourceTable.columns.forEach(col => {
+                    const value = props.source_row_data[col.name];
+                    if (value === undefined || value === null) return;
+
+                    let displayValue = value;
+                    // If it's a foreign key, try to resolve it for a user-friendly display
+                    if (col.foreign_key) {
+                        const fkCache = state.fkDataCache[col.foreign_key.table_id];
+                        if (fkCache && fkCache.rows) {
+                            const fkRow = fkCache.rows.find(r => (r.data[fkCache.pkColumn] ?? r.id) == value);
+                            if (fkRow) {
+                                displayValue = `${fkRow.data[fkCache.displayColumn] || value} <span class="text-gray-400">(FK to ${col.foreign_key.table_id})</span>`;
+                            }
+                        }
+                    }
+                    detailsHtml += `<div><span class="text-gray-500">${col.name}:</span> <span class="text-black font-semibold">${displayValue}</span></div>`;
+                });
+            }
+            sourceDataDetails.innerHTML = detailsHtml;
+        } else {
+            sourceDataContainer.classList.add('hidden');
+        }
         openModal(eventDetailsModal);
     }
 
@@ -2571,7 +2611,7 @@ document.addEventListener('DOMContentLoaded', () => {
             start_time: document.getElementById('edit-event-start-time').value,
             end_time: document.getElementById('edit-event-end-time').value || null,
             description: document.getElementById('edit-event-description').value,
-            is_completed: document.getElementById('edit-event-completed').checked,
+            is_completed: document.getElementById('edit-event-completed').checked
         };
 
         try {
