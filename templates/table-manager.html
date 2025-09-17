@@ -1642,8 +1642,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // The RPC function returns a JSON object. If it contains a 'result' key, that's our data.
-        // Otherwise, it might be a success/status message from an INSERT/UPDATE.
+        // The backend now returns a single JSON object.
+        // If it's a SELECT, the rows are in the 'result' key.
+        // If it's an INSERT/UPDATE/DELETE, it will have a 'status' key.
+        // We check for `data.result` being an array, as an empty SELECT returns `{"result": null}`.
         const rows = data && Array.isArray(data.result) ? data.result : null;
 
         if (data && data.status === 'success' && !rows) {

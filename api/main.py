@@ -1584,7 +1584,11 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
             'p_database_id': database_id
         }).execute()
         # The RPC function returns a properly formatted JSON object directly.
-        return response.data
+        # The supabase-python client wraps the single JSONB response in a list.
+        # We need to extract the first element to return the object itself.
+        if response.data and isinstance(response.data, list) and len(response.data) > 0:
+            return response.data[0]
+        return response.data # Fallback for other cases
 
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Query failed: {e.message}")
