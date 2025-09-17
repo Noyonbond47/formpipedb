@@ -1477,10 +1477,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 1. Create the row in the database
         try {
-            const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/rows`, { method: 'POST' });
+            const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/rows`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                // The backend now expects a `data` object, even if it's empty.
+                body: JSON.stringify({ data: {} })
+            });
             if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.detail || 'Failed to add row');
+                const errorDetail = await getErrorFromResponse(response);
+                throw new Error(errorDetail);
             }
             const newRow = await response.json();
 
@@ -1502,7 +1507,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
         } catch (error) {
-            showError(`Error: ${error.message}`);
+            showError(error.message || 'Failed to add row. Please check the console for details.', error);
         } finally {
             addRowBtn.disabled = false;
             addRowBtn.textContent = 'Add Row';
