@@ -885,6 +885,8 @@ async def create_table_row(table_id: int, auth_details: dict = Depends(get_curre
         return created_row
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create row: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(e)}")
 
 @app.put("/api/v1/rows/{row_id}", response_model=RowResponse)
 async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict = Depends(get_current_user_details)):
