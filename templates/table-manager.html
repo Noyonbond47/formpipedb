@@ -781,13 +781,14 @@ document.addEventListener('DOMContentLoaded', () => {
             state.selectedTable = state.tables.find(t => t.id == tableId);
             if (!state.selectedTable) return;
 
-            // Clear previous FK cache and populate for the new table
-            // This needs to be done before fetchAndRenderData
-            cacheForeignKeyData(state.selectedTable);
-
             tableList.querySelectorAll('a').forEach(a => a.classList.remove('bg-blue-100', 'text-blue-700', 'font-semibold'));
             e.target.classList.add('bg-blue-100', 'text-blue-700', 'font-semibold');
             
+            // FIX: Await the FK caching before rendering data to prevent race conditions.
+            cacheForeignKeyData(state.selectedTable).then(() => {
+                fetchAndRenderData(state.selectedTable.id, 1);
+            });
+
             mainContent.classList.remove('hidden');
             placeholderContent.classList.add('hidden');
             calendarView.classList.add('hidden');
@@ -797,7 +798,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Reset to page 1 whenever a new table is selected
             renderStructure(state.selectedTable.columns);
-            fetchAndRenderData(state.selectedTable.id, 1);
             renderTableSql(state.selectedTable);
             // Pass the full table object, not just the ID
             fetchAndRenderCalendarSync(state.selectedTable);
@@ -872,65 +872,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (rows.length === 0) {
                 bodyHtml = `<tr><td colspan="${columns.length + 1}" class="p-8 text-center text-gray-500">No data in this table.</td></tr>`;
             } else {
-                bodyHtml = rows.map(row => {
-                    let rowHtml = `<tr data-row-id="${row.id}">`;
-                    rowHtml += `
-                        <td class="p-3 text-center flex items-center justify-center gap-3">
-                            <button data-row-id="${row.id}" class="send-to-calendar-btn text-gray-400 hover:text-yellow-600" title="Send to Calendar">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                            </button>
-                            <button data-row-id="${row.id}" class="delete-row-btn text-gray-400 hover:text-red-600" title="Delete Row">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                            </button>
-                        </td>
-                    `;
-                    columns.forEach(col => {
-                        const cellValue = row.data ? (row.data[col.name] ?? '') : '';
-                        
-                        if (col.foreign_key) {
-                            const fkInfo = col.foreign_key;
-                            const cacheEntry = state.fkDataCache[fkInfo.table_id];
-                            
-                            if (cacheEntry && !cacheEntry.error) {
-                                const options = cacheEntry.rows.map(fkRow => {
-                                    const optionValue = fkRow.data[cacheEntry.pkColumn] ?? fkRow.id;
-                                    const optionText = fkRow.data[cacheEntry.displayColumn] ?? `(ID: ${optionValue})`;
-                                    const isSelected = optionValue == cellValue ? 'selected' : '';
-                                    return `<option value="${optionValue}" ${isSelected}>${optionText}</option>`;
-                                }).join('');
-
-                                rowHtml += `<td class="p-1" data-column-name="${col.name}"><select class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 fk-select"><option value="">-- Select --</option>${options}</select></td>`;
-                            } else {
-                                // Fallback for failed cache or error
-                                rowHtml += `<td class="p-3 font-mono text-sm text-red-500" data-column-name="${col.name}">FK Error</td>`;
-                            }
-                        } else {
-                            let cellContent = '';
-                            if (col.is_primary_key) {
-                                cellContent = `(${cellValue})`;
-                            } else if (col.type === 'boolean') {
-                                const isTrue = ['true', 't', '1', true].includes(String(cellValue).toLowerCase());
-                                const isFalse = ['false', 'f', '0', false].includes(String(cellValue).toLowerCase());
-                                cellContent = `
-                                    <select class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 boolean-select">
-                                        <option value="" ${!isTrue && !isFalse ? 'selected' : ''}>--</option>
-                                        <option value="true" ${isTrue ? 'selected' : ''}>True</option>
-                                        <option value="false" ${isFalse ? 'selected' : ''}>False</option>
-                                    </select>
-                                `;
-                            } else if (col.type === 'timestamp') {
-                                const dateValue = cellValue ? new Date(cellValue).toISOString().split('T')[0] : '';
-                                cellContent = `<input type="date" value="${dateValue}" class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 timestamp-input">`;
-                            } else {
-                                const inputType = (col.type === 'integer' || col.type === 'real') ? 'number' : 'text';
-                                cellContent = `<input type="${inputType}" value="${cellValue}" class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 editable-cell-input">`;
-                            }
-                            rowHtml += `<td class="p-1" data-column-name="${col.name}">${cellContent}</td>`;
-                        }
-                    });
-                    rowHtml += '</tr>';
-                    return rowHtml;
-                }).join('');
+                bodyHtml = rows.map(row => renderRow(row, columns)).join('');
             }
             
             // Swap content in one operation
@@ -948,6 +890,66 @@ document.addEventListener('DOMContentLoaded', () => {
             // Hide loading overlay
             loader.classList.add('hidden');
         }
+    }
+
+    function renderRow(row, columns) {
+        let rowHtml = `<tr data-row-id="${row.id}">`;
+        rowHtml += `
+            <td class="p-3 text-center flex items-center justify-center gap-3">
+                <button data-row-id="${row.id}" class="send-to-calendar-btn text-gray-400 hover:text-yellow-600" title="Send to Calendar">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                </button>
+                <button data-row-id="${row.id}" class="delete-row-btn text-gray-400 hover:text-red-600" title="Delete Row">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            </td>
+        `;
+        columns.forEach(col => {
+            const cellValue = row.data ? (row.data[col.name] ?? '') : '';
+            
+            if (col.foreign_key) {
+                const fkInfo = col.foreign_key;
+                const cacheEntry = state.fkDataCache[fkInfo.table_id];
+                
+                if (cacheEntry && !cacheEntry.error) {
+                    const options = cacheEntry.rows.map(fkRow => {
+                        const optionValue = fkRow.data[cacheEntry.pkColumn] ?? fkRow.id;
+                        const optionText = fkRow.data[cacheEntry.displayColumn] ?? `(ID: ${optionValue})`;
+                        const isSelected = optionValue == cellValue ? 'selected' : '';
+                        return `<option value="${optionValue}" ${isSelected}>${optionText}</option>`;
+                    }).join('');
+
+                    rowHtml += `<td class="p-1" data-column-name="${col.name}"><select class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 fk-select"><option value="">-- Select --</option>${options}</select></td>`;
+                } else {
+                    // Fallback for failed cache or error
+                    rowHtml += `<td class="p-3 font-mono text-sm text-red-500" data-column-name="${col.name}">FK Error</td>`;
+                }
+            } else {
+                let cellContent = '';
+                if (col.is_primary_key) {
+                    cellContent = `(${cellValue})`;
+                } else if (col.type === 'boolean') {
+                    const isTrue = ['true', 't', '1', true].includes(String(cellValue).toLowerCase());
+                    const isFalse = ['false', 'f', '0', false].includes(String(cellValue).toLowerCase());
+                    cellContent = `
+                        <select class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 boolean-select">
+                            <option value="" ${!isTrue && !isFalse ? 'selected' : ''}>--</option>
+                            <option value="true" ${isTrue ? 'selected' : ''}>True</option>
+                            <option value="false" ${isFalse ? 'selected' : ''}>False</option>
+                        </select>
+                    `;
+                } else if (col.type === 'timestamp') {
+                    const dateValue = cellValue ? new Date(cellValue).toISOString().split('T')[0] : '';
+                    cellContent = `<input type="date" value="${dateValue}" class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 timestamp-input">`;
+                } else {
+                    const inputType = (col.type === 'integer' || col.type === 'real') ? 'number' : 'text';
+                    cellContent = `<input type="${inputType}" value="${cellValue}" class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 editable-cell-input">`;
+                }
+                rowHtml += `<td class="p-1" data-column-name="${col.name}">${cellContent}</td>`;
+            }
+        });
+        rowHtml += '</tr>';
+        return rowHtml;
     }
 
     function renderTableSql(table) {
@@ -1027,14 +1029,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const isEnabled = config ? config.is_enabled : false;
 
         const columns = table.columns.filter(c => !c.is_primary_key);
-        const textLikeColumns = columns.filter(c => ['text', 'integer', 'real'].includes(c.type));
         const dateLikeColumns = columns.filter(c => ['timestamp', 'text', 'date', 'real', 'integer'].includes(c.type));
 
         const fields = [
-            { id: 'title_column', label: 'Event Title', required: true, options: textLikeColumns },
             { id: 'start_time_column', label: 'Start Date/Time', required: true, options: dateLikeColumns },
             { id: 'end_time_column', label: 'End Date/Time', required: false, options: dateLikeColumns },
-            { id: 'description_column', label: 'Description', required: false, options: textLikeColumns },
         ];
 
         mappingContainer.innerHTML = fields.map(field => `
@@ -1047,16 +1046,10 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `).join('');
 
-        // Add a listener to enable the save button only when the required fields are filled
-        const titleSelect = form.querySelector('#sync-title_column');
+        // Add a listener to enable the save button only when the required field is filled
         const startSelect = form.querySelector('#sync-start_time_column');
         const saveBtn = form.querySelector('button[type="submit"]');
-        
-        const validateSyncForm = () => {
-            saveBtn.disabled = !titleSelect.value || !startSelect.value;
-        };
-        titleSelect.addEventListener('change', validateSyncForm);
-        startSelect.addEventListener('change', validateSyncForm);
+        startSelect.addEventListener('change', () => { saveBtn.disabled = !startSelect.value; });
 
         enabledToggle.checked = isEnabled;
         if (config) deleteBtn.classList.remove('hidden');
@@ -1064,8 +1057,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const select = form.querySelector(`[data-mapping-key="${key}"]`);
             if (select) select.value = value;
         }
-        
-        validateSyncForm(); // Initial check for the save button state
+
+        // Initial check for the save button state
+        saveBtn.disabled = !startSelect.value;
 
         form.addEventListener('submit', handleSaveCalendarSync);
         deleteBtn.addEventListener('click', handleDeleteCalendarSync);
@@ -1481,52 +1475,31 @@ document.addEventListener('DOMContentLoaded', () => {
         addRowBtn.disabled = true;
         addRowBtn.textContent = 'Adding...';
 
-        // 1. Create a new row element optimistically
-        const columns = state.selectedTable.columns.sort((a, b) => a.is_primary_key ? -1 : 1);
-        const newTr = document.createElement('tr');
-        newTr.classList.add('bg-blue-50'); // Give it a temporary highlight
-
-        let rowHtml = `
-            <td class="p-3 text-center flex items-center justify-center gap-3">
-                <button class="send-to-calendar-btn text-gray-300 cursor-not-allowed" title="Save row to enable" disabled>
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                </button>
-                <button class="delete-row-btn text-gray-300 cursor-not-allowed" title="Save row to enable" disabled>
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                </button>
-            </td>
-        `;
-        columns.forEach(col => {
-            const contentEditable = !col.is_primary_key ? 'contenteditable="true"' : '';
-            const placeholder = col.is_primary_key ? '(auto)' : '';
-            rowHtml += `<td class="p-3 font-mono text-sm editable-cell" data-column-name="${col.name}" ${contentEditable}>${placeholder}</td>`;
-        });
-        newTr.innerHTML = rowHtml;
-
-        // 2. Prepend to the table and focus
-        dataTbody.prepend(newTr);
-        newTr.querySelector('.editable-cell[contenteditable="true"]')?.focus();
-
-        // 3. Create the row in the database in the background
+        // 1. Create the row in the database
         try {
             const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/rows`, { method: 'POST' });
             if (!response.ok) {
                 const err = await response.json();
                 throw new Error(err.detail || 'Failed to add row');
             }
-            const newRowData = await response.json();
+            const newRow = await response.json();
 
-            // 4. Finalize the optimistic row with the real ID
-            newTr.dataset.rowId = newRowData.id;
-            newTr.querySelectorAll('button').forEach(btn => {
-                btn.dataset.rowId = newRowData.id;
-                btn.disabled = false;
-                btn.classList.remove('text-gray-300', 'cursor-not-allowed');
-            });
-            newTr.classList.remove('bg-blue-50');
+            // 2. Render the new row using the correct logic
+            const columns = state.selectedTable.columns.sort((a, b) => a.is_primary_key ? -1 : 1);
+            const newRowHtml = renderRow(newRow, columns);
+
+            // 3. Prepend to the table and focus
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = newRowHtml;
+            const newTr = tempDiv.firstChild;
+            newTr.classList.add('bg-blue-50'); // Highlight
+            dataTbody.prepend(newTr);
+            newTr.querySelector('.editable-cell-input')?.focus();
+
+            setTimeout(() => newTr.classList.remove('bg-blue-50'), 2000);
+
         } catch (error) {
             showError(`Error: ${error.message}`);
-            newTr.remove(); // Rollback the optimistic UI change
         } finally {
             addRowBtn.disabled = false;
             addRowBtn.textContent = 'Add Row';

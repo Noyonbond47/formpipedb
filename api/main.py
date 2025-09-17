@@ -191,10 +191,10 @@ class CalendarEventCreate(BaseModel):
     source_row_id: int
 
 class RowToCalendarRequest(BaseModel):
-    title_column: str
+    title_column: Optional[str] = None
     start_time_column: str
     end_time_column: Optional[str] = None
-    description_column: Optional[str] = None
+    description_column: Optional[str] = None # This is fine as optional
 
 class CalendarSyncConfig(BaseModel):
     is_enabled: bool
@@ -966,14 +966,25 @@ async def create_event_from_row(row_id: int, mapping: RowToCalendarRequest, auth
         row_data = row_res.data['data']
         table_id = row_res.data['table_id']
 
-        # 2. Extract data based on the mapping
-        title = row_data.get(mapping.title_column)
+        # 2. Determine the title column to use
+        title_col_name = mapping.title_column
+        if not title_col_name:
+            # If no title column is specified in the mapping, find the best one automatically.
+            table_schema_dict = await get_single_table(table_id, auth_details)
+            table_schema = TableResponse(**table_schema_dict)
+            title_col_name = _find_best_title_column(table_schema.columns)
+
+        if not title_col_name:
+            raise HTTPException(status_code=400, detail="Could not automatically determine a title column for this table.")
+
+        # 3. Extract data based on the mapping
+        title = row_data.get(title_col_name)
         start_time = row_data.get(mapping.start_time_column)
 
         if not title or not start_time:
             raise HTTPException(status_code=400, detail="Title and start time columns must exist in the row data and have values.")
 
-        # 3. Construct the new event
+        # 4. Construct the new event
         new_event_data = {
             "user_id": user.id,
             "title": str(title),
@@ -984,7 +995,7 @@ async def create_event_from_row(row_id: int, mapping: RowToCalendarRequest, auth
             "source_row_id": row_id
         }
 
-        # 4. Insert the new event
+        # 5. Insert the new event
         response = supabase.table("calendar_events").insert(new_event_data, returning="representation").execute()
         return response.data[0]
 
@@ -1099,10 +1110,20 @@ async def create_or_update_calendar_sync_config(table_id: int, config_data: Cale
             # 2. Prepare calendar events from these rows.
             events_to_upsert = []
             mapping = config_data.column_mapping
+
+            # Determine the title column once, outside the loop.
+            title_col_name = mapping.title_column
+            if not title_col_name:
+                table_schema_dict = await get_single_table(table_id, auth_details)
+                table_schema = TableResponse(**table_schema_dict)
+                title_col_name = _find_best_title_column(table_schema.columns)
+            
+            if not title_col_name:
+                raise HTTPException(status_code=400, detail="Could not automatically determine a title column for backfill.")
             
             for row in all_rows:
                 row_data = row['data']
-                title = row_data.get(mapping.title_column)
+                title = row_data.get(title_col_name)
                 start_time = row_data.get(mapping.start_time_column)
 
                 # Skip rows that are missing essential data for a calendar event.
@@ -1127,6 +1148,29 @@ async def create_or_update_calendar_sync_config(table_id: int, config_data: Cale
         return saved_config
     except APIError as e:
         raise HTTPException(status_code=400, detail=f"Could not save sync config: {str(e)}")
+
+def _find_best_title_column(columns: List[ColumnDefinition]) -> Optional[str]:
+    """
+    Finds the best column to use for an event title if not specified.
+    Searches for common names and falls back to the primary key.
+    """
+    # Prioritized search for common title-like column names
+    for name_pattern in ['title', 'name', 'subject', 'task', 'event', 'label']:
+        for col in columns:
+            if name_pattern in col.name.lower():
+                return col.name
+    
+    # Fallback to the first text-like column
+    for col in columns:
+        if col.type == 'text':
+            return col.name
+
+    # Final fallback to the primary key
+    pk_col = next((col.name for col in columns if col.is_primary_key), None)
+    if pk_col:
+        return pk_col
+
+    return None
 
 async def _get_all_table_rows_for_sync(table_id: int, auth_details: dict) -> List[Dict[str, Any]]:
     """
