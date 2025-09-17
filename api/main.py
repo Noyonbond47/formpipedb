@@ -1541,11 +1541,11 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
         )
 
     # Ensure the query is a data manipulation or select statement.
-    allowed_starts = ('SELECT', 'WITH')
+    allowed_starts = ('SELECT', 'WITH', 'INSERT', 'UPDATE', 'DELETE')
     if not query_no_comments.lstrip().upper().startswith(allowed_starts):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only read-only queries (SELECT, WITH) are allowed in the SQL Runner."
+            detail="Only SELECT, WITH, INSERT, UPDATE, and DELETE queries are allowed in the SQL Runner."
         )
 
     # 2. **Execution**: The query is deemed safe for execution.
