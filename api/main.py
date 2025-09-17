@@ -850,16 +850,36 @@ async def create_table_row(table_id: int, auth_details: dict = Depends(get_curre
     """
     Creates a new, empty row for a table.
     """
+    from datetime import datetime, timezone
+
     try:
         supabase = auth_details["client"]
         user = auth_details["user"]
+        
+        # --- FIX: Pre-populate data based on calendar sync config ---
+        new_data = {}
+        # Check if the table has an active calendar sync configuration.
+        sync_config_res = supabase.table("calendar_sync_configs").select("is_enabled, column_mapping").eq("table_id", table_id).maybe_single().execute()
+
+        if sync_config_res.data and sync_config_res.data.get("is_enabled"):
+            mapping = sync_config_res.data.get("column_mapping", {})
+            start_time_col = mapping.get("start_time_column")
+            
+            # If a start time column is mapped, pre-populate it with the current time.
+            if start_time_col:
+                # Format to 'YYYY-MM-DDTHH:MM:SS' which is compatible with both the DB and HTML datetime-local inputs.
+                now_iso = datetime.now(timezone.utc).isoformat()
+                new_data[start_time_col] = now_iso
+
         new_row_data = {
             "user_id": user.id,
             "table_id": table_id,
-            "data": {} # Start with empty data
+            "data": new_data
         }
         response = supabase.table("table_rows").insert(new_row_data, returning="representation").execute()
-        return response.data[0]
+        created_row = response.data[0]
+
+        return created_row
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create row: {str(e)}")
 
@@ -870,13 +890,54 @@ async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict 
     """
     try:
         supabase = auth_details["client"]
-        response = supabase.table("table_rows").update({"data": row_data.data}, returning="representation").eq("id", row_id).execute()
-        if not response.data:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Row not found or access denied.")
+        user = auth_details["user"]
 
-        # Re-fetch the row to include any meta updates from the trigger
-        final_response = supabase.table("table_rows").select("*").eq("id", row_id).single().execute()
-        return final_response.data
+        # First, update the row data as requested.
+        response = supabase.table("table_rows").update({"data": row_data.data}, returning="representation").eq("id", row_id).single().execute()
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Row not found or access denied.") # pragma: no cover
+        
+        updated_row = response.data
+        table_id = updated_row['table_id']
+
+        # --- FIX: Manually trigger calendar sync logic ---
+        # Check if the table has an active calendar sync configuration.
+        sync_config_res = supabase.table("calendar_sync_configs").select("is_enabled, column_mapping").eq("table_id", table_id).maybe_single().execute()
+
+        if sync_config_res.data and sync_config_res.data.get("is_enabled"):
+            mapping_data = sync_config_res.data["column_mapping"]
+            mapping = RowToCalendarRequest(**mapping_data)
+            
+            # Determine the title column to use
+            title_col_name = mapping.title_column
+            if not title_col_name:
+                table_schema_dict = await get_single_table(table_id, auth_details)
+                table_schema = TableResponse(**table_schema_dict)
+                title_col_name = _find_best_title_column(table_schema.columns)
+
+            if title_col_name:
+                new_row_data = updated_row['data']
+                title = new_row_data.get(title_col_name)
+                start_time = new_row_data.get(mapping.start_time_column)
+
+                # Only proceed if the essential fields have data.
+                if title and start_time:
+                    event_payload = {
+                        "user_id": user.id,
+                        "source_table_id": table_id,
+                        "source_row_id": row_id,
+                        "title": str(title),
+                        "start_time": str(start_time),
+                        "end_time": str(new_row_data.get(mapping.end_time_column)) if mapping.end_time_column and new_row_data.get(mapping.end_time_column) else None,
+                        "description": str(new_row_data.get(mapping.description_column)) if mapping.description_column and new_row_data.get(mapping.description_column) else None,
+                    }
+                    # Upsert the event. This creates it if it doesn't exist or updates it if it does.
+                    supabase.table("calendar_events").upsert(
+                        event_payload, 
+                        on_conflict="source_table_id, source_row_id"
+                    ).execute()
+
+        return updated_row
 
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update row: {str(e)}")
@@ -888,9 +949,17 @@ async def delete_table_row(row_id: int, auth_details: dict = Depends(get_current
     """
     try:
         supabase = auth_details["client"]
+
+        # --- FIX: Delete associated calendar event before deleting the row ---
+        # This is a "best-effort" operation. If the row isn't synced, this does nothing.
+        # We do this before deleting the row itself.
+        supabase.table("calendar_events").delete().eq("source_row_id", row_id).execute()
+
+        # Now, delete the row itself.
         response = supabase.table("table_rows").delete(returning="representation").eq("id", row_id).execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Row not found or you do not have permission to delete it.")
+
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete row: {str(e)}")
 
