@@ -93,9 +93,15 @@
                 window.location.href = '/app';
             } else if (data.user && !data.session) {
                 // User signed up but needs to confirm their email.
+                // --- FIX: Programmatic DOM creation to avoid innerHTML and CSP issues ---
                 signupForm.style.display = 'none';
                 document.querySelector('.text-center h1').textContent = 'Check your email!';
-                document.querySelector('.text-center p').innerHTML = `We've sent a confirmation link to <strong>${email}</strong>. Please click the link to complete your registration.`;
+                const successP = document.querySelector('.text-center p');
+                successP.textContent = "We've sent a confirmation link to ";
+                const emailStrong = document.createElement('strong');
+                emailStrong.textContent = email;
+                successP.appendChild(emailStrong);
+                successP.append(". Please click the link to complete your registration.");
             } else {
                 errorMessage.textContent = "An unexpected issue occurred. Please try again.";
             }

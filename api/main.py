@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request, Header, HTTPException, status, Depends, Qu
 from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from datetime import datetime
 from typing import List, Optional, Any, Dict
 from pydantic import BaseModel, Field, ConfigDict
 from supabase import create_client, Client
@@ -162,13 +163,13 @@ class SqlTableCreateRequest(BaseModel):
 class CalendarEventResponse(BaseModel):
     id: int
     title: str
-    start_time: str
-    end_time: Optional[str] = None
+    start_time: datetime
+    end_time: Optional[datetime] = None
     description: Optional[str] = None
     is_completed: bool
     source_table_id: Optional[int] = None
     source_row_id: Optional[int] = None
-    created_at: str
+    created_at: datetime
 
 class CalendarEventWithDetailsResponse(CalendarEventResponse):
     source_table_name: Optional[str] = None
