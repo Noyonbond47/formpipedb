@@ -898,11 +898,11 @@ async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict 
         user = auth_details["user"]
 
         # First, update the row data as requested.
-        response = supabase.table("table_rows").update({"data": row_data.data}, returning="representation").eq("id", row_id).single().execute()
+        response = supabase.table("table_rows").update({"data": row_data.data}, returning="representation").eq("id", row_id).execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Row not found or access denied.") # pragma: no cover
         
-        updated_row = response.data
+        updated_row = response.data[0]
         table_id = updated_row['table_id']
 
         # --- FIX: Manually trigger calendar sync logic ---
