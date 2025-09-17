@@ -877,6 +877,9 @@ async def create_table_row(table_id: int, auth_details: dict = Depends(get_curre
             "data": new_data
         }
         response = supabase.table("table_rows").insert(new_row_data, returning="representation").execute()
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to create row. This may be due to a database policy violation.")
+
         created_row = response.data[0]
 
         return created_row
