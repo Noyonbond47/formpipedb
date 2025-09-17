@@ -857,7 +857,7 @@ async def create_table_row(table_id: int, auth_details: dict = Depends(get_curre
         user = auth_details["user"]
         
         # --- FIX: Pre-populate data based on calendar sync config ---
-        new_data = {}
+        new_data = {} # FIX: Ensure this is a new dictionary for every request
         # Check if the table has an active calendar sync configuration.
         sync_config_res = supabase.table("calendar_sync_configs").select("is_enabled, column_mapping").eq("table_id", table_id).maybe_single().execute()
 
@@ -939,7 +939,7 @@ async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict 
                     # Upsert the event. This creates it if it doesn't exist or updates it if it does.
                     supabase.table("calendar_events").upsert(
                         event_payload, 
-                        on_conflict="source_table_id, source_row_id"
+                        on_conflict="user_id, source_table_id, source_row_id"
                     ).execute()
 
         return updated_row
@@ -969,6 +969,8 @@ async def delete_table_row(row_id: int, auth_details: dict = Depends(get_current
 
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete row: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred during row deletion: {str(e)}")
 
 async def _delete_item(supabase: Client, table_name: str, item_id: int, item_type_name: str):
     """Generic helper to delete an item from a table by ID, with RLS ensuring ownership."""
