@@ -1285,8 +1285,8 @@ document.addEventListener('DOMContentLoaded', () => {
         div.className = 'column-row grid grid-cols-12 gap-2 items-center border-t pt-2';
         div.innerHTML = `
             <div class="col-span-12 grid grid-cols-12 gap-2 items-center">
-                <input type="text" data-key="name" placeholder="column_name" required class="col-span-4 p-2 border rounded-md" ${isPk ? 'value="id" readonly' : ''}>
-                <select data-key="type" class="col-span-3 p-2 border rounded-md bg-white" ${isPk ? 'disabled' : ''}>
+                <input type="text" data-key="name" placeholder="column_name" required class="col-span-3 p-2 border rounded-md" ${isPk ? 'value="id" readonly' : ''}>
+                <select data-key="type" class="col-span-2 p-2 border rounded-md bg-white" ${isPk ? 'disabled' : ''}>
                     ${isPk ? '<option value="serial" selected>SERIAL (PK)</option>' : `
                     <option value="text" selected>TEXT</option>
                     <option value="integer">INTEGER</option>
@@ -1296,7 +1296,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <option value="jsonb">JSONB</option>
                     `}
                 </select>
-                <div class="col-span-4 flex items-center justify-around text-xs">
+                <div class="col-span-3 flex items-center justify-around text-xs">
                     <label class="flex flex-col items-center"><input data-key="is_not_null" type="checkbox" class="h-4 w-4 rounded" ${isPk ? 'checked disabled' : ''}><span>Not Null</span></label>
                     <label class="flex flex-col items-center"><input data-key="is_unique" type="checkbox" class="h-4 w-4 rounded" ${isPk ? 'checked disabled' : ''}><span>Unique</span></label>
                 </div>
@@ -1311,8 +1311,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <select data-key="fk_column_name" class="fk-column-select p-1 border rounded-md bg-white text-xs" disabled><option value="">-- Select Column --</option></select>
                 </div>
             </div>
-            <div class="col-span-1 flex justify-end">
-                ${!isPk ? '<button type="button" class="remove-column-btn text-red-500 hover:text-red-700">&times;</button>' : ''}
+            <div class="col-span-4 flex justify-end">
+                ${!isPk ? '<button type="button" class="remove-column-btn bg-red-100 text-red-700 px-2 py-1 text-xs rounded-md hover:bg-red-200">Delete</button>' : ''}
             </div>
             <input type="hidden" data-key="is_primary_key" value="${isPk}">
         `;
@@ -2109,6 +2109,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, true); // Use capture phase to handle event delegation properly
 
+    // Listen for changes on foreign key dropdowns in the data grid
+    dataTbody.addEventListener('change', (e) => {
+        if (e.target.classList.contains('fk-select')) {
+            handleUpdateRow(e.target);
+        }
+    });
+
     dataTbody.addEventListener('keydown', (e) => {
         // When the user presses Enter in an editable cell, treat it as a confirmation.
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -2136,11 +2143,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
-    addColumnToModalBtn.addEventListener('click', () => {
-        document.getElementById('new-columns-list').appendChild(createColumnRow());
-    });
-
-    // Add validation listeners for the create table modal
     createTableModal.addEventListener('input', (e) => {
         if (e.target.matches('#new-table-name, [data-key="name"]')) {
             // This handles typing in the table name or any column name
