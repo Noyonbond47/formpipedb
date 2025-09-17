@@ -909,7 +909,7 @@ async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict 
         # Check if the table has an active calendar sync configuration.
         sync_config_res = supabase.table("calendar_sync_configs").select("is_enabled, column_mapping").eq("table_id", table_id).maybe_single().execute()
 
-        if sync_config_res.data and sync_config_res.data.get("is_enabled"):
+        if sync_config_res and sync_config_res.data and sync_config_res.data.get("is_enabled"):
             mapping_data = sync_config_res.data["column_mapping"]
             mapping = RowToCalendarRequest(**mapping_data)
             
@@ -946,6 +946,8 @@ async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict 
 
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update row: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred during row update: {str(e)}")
 
 @app.delete("/api/v1/rows/{row_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_table_row(row_id: int, auth_details: dict = Depends(get_current_user_details)):
