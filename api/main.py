@@ -945,11 +945,14 @@ async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict 
             table_schema = TableResponse(**table_schema_res)
             
             # Find a good column to represent the "row name" for the event title
+            pk_col_name = next((col.name for col in table_schema.columns if col.is_primary_key), 'id')
             row_name_col = _find_best_title_column(table_schema.columns)
             
             new_row_data = updated_row['data']
             start_time = new_row_data.get(mapping.start_time_column)
-            row_name = new_row_data.get(row_name_col, f"Row {updated_row['id']}") if row_name_col else f"Row {updated_row['id']}"
+            # Use the actual PK value from the data blob for the row name fallback.
+            row_pk_value = new_row_data.get(pk_col_name, updated_row['id'])
+            row_name = new_row_data.get(row_name_col, f"Row {row_pk_value}") if row_name_col else f"Row {row_pk_value}"
             event_title = f"{table_name} - {row_name}"
 
             # Only proceed if the essential start time field has data.
@@ -1237,13 +1240,15 @@ async def create_or_update_calendar_sync_config(table_id: int, config_data: Cale
             table_schema_res = await get_single_table(table_id, auth_details)
             table_name = table_schema_res['name']
             table_schema = TableResponse(**table_schema_res)
+            pk_col_name = next((col.name for col in table_schema.columns if col.is_primary_key), 'id')
             row_name_col = _find_best_title_column(table_schema.columns)
             
             for row in all_rows:
                 row_data = row['data']
                 start_time = row_data.get(mapping.start_time_column)
                 
-                row_name = row_data.get(row_name_col, f"Row {row['id']}") if row_name_col else f"Row {row['id']}"
+                row_pk_value = row_data.get(pk_col_name, row['id'])
+                row_name = row_data.get(row_name_col, f"Row {row_pk_value}") if row_name_col else f"Row {row_pk_value}"
                 event_title = f"{table_name} - {row_name}"
 
                 # Skip rows that are missing essential data for a calendar event.
