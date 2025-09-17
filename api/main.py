@@ -1556,53 +1556,6 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
             await delete_user_database(new_db_id, auth_details)
         raise HTTPException(status_code=400, detail=f"Failed to import SQL script: {str(e)}. The new database has been rolled back.")
 
-@app.post("/api/v1/databases/{database_id}/execute-query")
-async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Executes a custom SQL query from the user via a secure RPC function.
-    Supports data manipulation (SELECT, INSERT, UPDATE, DELETE) and CTEs.
-    Blocks schema-modifying statements (CREATE, ALTER, DROP).
-    """
-    supabase = auth_details["client"]
-    processed_query = query_data.query.strip()
-
-    # 1. **Security Check**: Prevent schema modification.
-    # Remove comments to prevent bypassing checks.
-    query_no_comments = re.sub(r'--.*', '', processed_query)
-    
-    # Block keywords that modify schema or permissions.
-    forbidden_keywords = r'\b(CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE)\b'
-    if re.search(forbidden_keywords, query_no_comments, re.IGNORECASE):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Schema-modifying statements (CREATE, ALTER, DROP, etc.) are not allowed in the SQL Runner. Please use the 'Structure' tab or 'Import' features."
-        )
-
-    # Ensure the query is a data manipulation or select statement.
-    allowed_starts = ('SELECT', 'WITH', 'INSERT', 'UPDATE', 'DELETE')
-    if not query_no_comments.lstrip().upper().startswith(allowed_starts):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only SELECT, WITH, INSERT, UPDATE, and DELETE queries are allowed in the SQL Runner."
-        )
-
-    # 2. **Execution**: The query is deemed safe for execution.
-    # The `execute_dynamic_query` RPC function is designed to handle this.
-    try:
-        response = supabase.rpc('execute_dynamic_query', {
-            'p_query_text': processed_query,
-            'p_database_id': database_id
-        }).execute()
-        # The RPC function returns a properly formatted JSON object directly.
-        # The supabase-python client wraps the single JSONB response in a list.
-        # We need to extract the first element to return the object itself.
-        if response.data and isinstance(response.data, list) and len(response.data) > 0:
-            return response.data[0]
-        return response.data # Fallback for other cases
-
-    except APIError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Query failed: {e.message}")
-
 @app.post("/api/v1/contact")
 async def handle_contact_form(form_data: ContactForm):
     """
