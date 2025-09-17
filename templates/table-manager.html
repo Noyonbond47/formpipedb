@@ -1285,6 +1285,9 @@ document.addEventListener('DOMContentLoaded', () => {
         let url = `/api/v1/databases/${state.dbId}/tables`;
         let method = 'POST';
 
+        submitCreateTableBtn.disabled = true;
+        submitCreateTableBtn.textContent = 'Creating...';
+
         if (activeTab === 'gui') {
             const tableName = document.getElementById('new-table-name').value.trim();
             const columnRows = document.querySelectorAll('#new-columns-list .column-row');
@@ -1328,6 +1331,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             showError(error.message);
+        } finally {
+            submitCreateTableBtn.disabled = false;
+            submitCreateTableBtn.textContent = 'Create Table';
         }
     }
 
@@ -1639,22 +1645,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderQueryResults(data, error) {
         queryResultsContainer.innerHTML = '';
-        
+
         // For debugging: log exactly what the frontend receives.
         console.log("Received data from /execute-query:", data);
         console.log("Received error string:", error);
-    
+
         // Robustness: Handle cases where the backend sends a 200 OK with an error object.
         if (data && data.error) {
             error = data.error;
         }
-    
+
         if (error) {
             let errorHtml = `
                 <div class="p-4 border-b bg-red-50 text-red-700 font-semibold">Query Error</div>
                 <div class="p-4 font-mono text-sm text-red-600 whitespace-pre-wrap">${error}</div>
             `;
-    
+
             // Add specific troubleshooting advice for "relation does not exist"
             if (error.includes("does not exist")) {
                 errorHtml += `
@@ -1672,12 +1678,11 @@ document.addEventListener('DOMContentLoaded', () => {
             queryResultsContainer.innerHTML = errorHtml;
             return;
         }
-    
-        // Handle SELECT results
-        if (data !== null && data !== undefined) {
+
+        // Handle SELECT results (which are always arrays from the RPC)
+        if (Array.isArray(data)) {
             const rows = data;
-            if (Array.isArray(rows) && rows.length > 0) {
-                // Success with data
+            if (rows.length > 0) {
                 const headers = Object.keys(rows[0]);
                 const table = document.createElement('table');
                 table.className = 'min-w-full text-sm';
@@ -1699,17 +1704,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
                 queryResultsContainer.appendChild(table);
             } else {
-                // Success with no rows (e.g., from a SELECT with no results, or a non-SELECT query)
+                // Success with no rows (e.g., from a SELECT with no results)
                 queryResultsContainer.innerHTML = `<div class="p-4 text-gray-500">Query executed successfully and returned no rows.</div>`;
             }
-            return;
+        } else if (data === null) {
+            // Handle non-SELECT queries (INSERT, UPDATE, DELETE) which return null on success
+            queryResultsContainer.innerHTML = `<div class="p-4 text-gray-500">Query executed successfully.</div>`;
+        } else {
+            // Fallback for any other unexpected response from the server
+            queryResultsContainer.innerHTML = `
+                <div class="p-4 border-b bg-red-50 text-red-700 font-semibold">Unexpected Response</div>
+                <div class="p-4 font-mono text-sm text-red-600 whitespace-pre-wrap">The server returned an unexpected response. Check the browser's developer console for details. Data: ${JSON.stringify(data, null, 2)}</div>
+            `;
         }
-    
-        // Fallback for any other unexpected response from the server
-        queryResultsContainer.innerHTML = `
-            <div class="p-4 border-b bg-red-50 text-red-700 font-semibold">Unexpected Response</div>
-            <div class="p-4 font-mono text-sm text-red-600 whitespace-pre-wrap">The server returned an unexpected response. Check the browser's developer console for details. Data: ${JSON.stringify(data, null, 2)}</div>
-        `;
     }
 
     function getSqlHintSchema(tables) {

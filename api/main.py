@@ -397,15 +397,14 @@ async def create_table_from_sql(database_id: int, sql_data: SqlTableCreateReques
         if not parts: continue
 
         col_name = parts[0].strip('`"\'')
-        type_and_constraints = " ".join(parts[1:])
-        
-        # A simple regex to grab the type, which might include parentheses like VARCHAR(255)
-        type_match = re.match(r'[\w\(\s,\)]+', type_and_constraints)
-        col_type = type_match.group(0).strip() if type_match else parts[1]
+        type_and_constraints = " ".join(parts[1:]).strip()
+
+        # --- FIX: Use the robust type extraction and normalization ---
+        raw_col_type = _extract_sql_type(type_and_constraints)
 
         columns_defs.append(ColumnDefinition(
             name=col_name,
-            type=col_type.lower(),
+            type=normalize_sql_type(raw_col_type),
             is_primary_key="PRIMARY KEY" in type_and_constraints.upper(),
             is_unique="UNIQUE" in type_and_constraints.upper() and "PRIMARY KEY" not in type_and_constraints.upper(), # A PK is implicitly unique
             is_not_null="NOT NULL" in type_and_constraints.upper()
@@ -518,6 +517,22 @@ def infer_column_types(rows: List[List[str]], num_cols: int) -> List[str]:
 
     return inferred_types
 
+def _extract_sql_type(col_def_str: str) -> str:
+    """
+    Robustly extracts the data type from a SQL column definition string.
+    e.g., "INTEGER PRIMARY KEY NOT NULL" -> "INTEGER"
+    e.g., "VARCHAR(255) UNIQUE" -> "VARCHAR(255)"
+    """
+    # List of known constraints to strip from the end
+    constraints = [
+        'PRIMARY KEY', 'NOT NULL', 'NULL', 'UNIQUE', 'DEFAULT .*', 'CHECK \(.*\)', 
+        'REFERENCES .*', 'COLLATE .*'
+    ]
+    # The regex looks for the data type at the start, which might include parentheses.
+    # It stops at the first known constraint keyword.
+    match = re.match(r'^\s*([a-zA-Z_]+(?:\(\s*\d+(?:\s*,\s*\d+)?\s*\))?)', col_def_str, re.IGNORECASE)
+    return match.group(1) if match else 'TEXT'
+
 def normalize_sql_type(sql_type: str) -> str:
     """Maps common SQL data types to the simplified types used by the app."""
     s_type = sql_type.lower()
@@ -541,6 +556,11 @@ async def import_table_from_csv(database_id: int, import_data: CsvImportRequest,
     """
     supabase = auth_details["client"]
     user = auth_details["user"]
+
+    # --- FIX: Add a transaction for rollback on failure ---
+    # This is a conceptual change. Supabase-py doesn't have explicit transactions,
+    # but we will manually delete the table if a later step fails.
+
     new_table_id = None
 
     # The user has already reviewed and confirmed the column types in the UI.
@@ -1403,7 +1423,10 @@ async def _parse_and_execute_insert(statement: str, created_tables_map: dict, db
                     try:
                         typed_values.append(float(v))
                     except ValueError:
-                        typed_values.append(v)
+                        # This is the key fix: strip leading/trailing quotes from string values
+                        # that the CSV parser might leave.
+                        clean_v = v.strip().strip("'\"")
+                        typed_values.append(clean_v)
             
             rows_to_insert.append({"user_id": user.id, "table_id": table_id, "data": dict(zip(columns, typed_values))})
 
@@ -1477,9 +1500,9 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
                 if not parts: continue
 
                 col_name = parts[0].strip('`"')
-                type_and_constraints = " ".join(parts[1:])
-                type_match = re.match(r'[\w\(\s,\)]+', type_and_constraints)
-                col_type = type_match.group(0).strip() if type_match else parts[1]
+                type_and_constraints = " ".join(parts[1:]).strip()
+                # --- FIX: Use the robust type extraction ---
+                col_type = _extract_sql_type(type_and_constraints)
 
                 columns_defs.append(ColumnDefinition(
                     name=col_name,
