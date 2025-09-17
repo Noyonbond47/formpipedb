@@ -632,11 +632,16 @@ document.addEventListener('DOMContentLoaded', () => {
     async function getErrorFromResponse(response) {
         const errorText = await response.text();
         try {
-            // Try to parse the text as JSON.
             const err = JSON.parse(errorText);
-            return err.detail || JSON.stringify(err);
+            // If err.detail exists, it could be a string or an object/array (e.g., from Pydantic validation).
+            // We want to stringify it if it's not already a string for better error display.
+            if (err.detail) {
+                return typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail, null, 2);
+            }
+            // Fallback for other JSON error shapes.
+            return JSON.stringify(err, null, 2);
         } catch (e) {
-            // If parsing fails, it's not JSON. Return the raw text.
+            // Not a JSON response.
             return `Server returned status ${response.status}. Response: ${errorText.substring(0, 500)}`;
         }
     }
@@ -1371,8 +1376,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(payload),
             });
             if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.detail || 'Failed to create table');
+                const errorDetail = await getErrorFromResponse(response);
+                throw new Error(errorDetail);
             }
             closeModal(createTableModal);
             const newTable = await response.json();
@@ -1629,8 +1634,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.detail || 'Failed to update table structure');
+                const errorDetail = await getErrorFromResponse(response);
+                throw new Error(errorDetail);
             }
 
             const updatedTable = await response.json();
