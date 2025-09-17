@@ -868,12 +868,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         let createStatement = `CREATE TABLE "${table.name}" (\n`;
         const columnDefs = table.columns.map(col => {
-            let colDef = `  "${col.name}" ${col.type.toUpperCase()}`;
-            if (col.is_primary_key) colDef += " PRIMARY KEY";
-            if (col.is_not_null) colDef += " NOT NULL";
-            if (col.is_unique) colDef += " UNIQUE";
-            return colDef;
+            let parts = [`  "${col.name}"`, col.type.toUpperCase()];
+            // Use a Set to prevent duplicate constraints, which is the root of the issue.
+            const constraints = new Set();
+            if (col.is_primary_key) constraints.add("PRIMARY KEY");
+            if (col.is_not_null) constraints.add("NOT NULL");
+            if (col.is_unique) constraints.add("UNIQUE");
+            
+            parts.push(...constraints);
+            return parts.join(' ');
         });
+
         createStatement += columnDefs.join(',\n');
         createStatement += "\n);";
         codeElement.textContent = createStatement;
@@ -1640,10 +1645,31 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("Received error string:", error);
 
         if (error) {
-            queryResultsContainer.innerHTML = `
-                <div class="p-4 border-b bg-red-50 text-red-700 font-semibold">Error</div>
+            let errorHtml = `
+                <div class="p-4 border-b bg-red-50 text-red-700 font-semibold">Query Error</div>
                 <div class="p-4 font-mono text-sm text-red-600 whitespace-pre-wrap">${error}</div>
             `;
+
+            // Add specific troubleshooting advice for "relation does not exist"
+            if (error.includes("does not exist")) {
+                errorHtml += `
+                    <div class="mt-4 p-4 border-t bg-amber-50">
+                        <h4 class="font-semibold text-amber-800">Troubleshooting "relation does not exist"</h4>
+                        <p class="text-sm text-amber-700 mt-2">
+                            You've provided a SQL dump that shows the table exists. However, the database is reporting that it doesn't. This almost always means the query is running in the wrong context (i.e., not against your <code class="bg-amber-100 p-1 rounded font-mono text-xs">${state.dbName}</code> database).
+                        </p>
+                        <p class="text-sm text-amber-700 mt-2">
+                            The most likely cause is an issue with the backend function responsible for executing queries. If you are the administrator, please check the following:
+                        </p>
+                        <ol class="list-decimal list-inside text-sm text-amber-700 mt-2 space-y-1">
+                            <li>In your Supabase project, go to the <strong>SQL Editor</strong>.</li>
+                            <li>In the left sidebar, click on <strong>Database Functions</strong> and find the function that executes these queries (it might be named <code class="bg-amber-100 p-1 rounded font-mono text-xs">execute_dynamic_query</code>).</li>
+                            <li>Ensure this function correctly sets the <code class="bg-amber-100 p-1 rounded font-mono text-xs">search_path</code> to the schema associated with this database before running the user's query. An old or incorrect version of this function is the most common cause for this problem.</li>
+                        </ol>
+                    </div>
+                `;
+            }
+            queryResultsContainer.innerHTML = errorHtml;
             return;
         }
 
