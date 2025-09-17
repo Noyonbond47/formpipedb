@@ -2427,6 +2427,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             },
             events: async (fetchInfo, successCallback, failureCallback) => {
+                // FIX: Do not attempt to fetch events until the database ID is known.
+                if (!state.dbId) {
+                    successCallback([]); // Return an empty array of events.
+                    return;
+                }
+
                 const token = await getAuthToken();
                 if (!token) return failureCallback(new Error('Not authenticated'));
 
