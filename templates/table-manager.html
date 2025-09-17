@@ -1644,6 +1644,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Handle success message from non-SELECT queries (though they are blocked by API now, this is for robustness)
         if (data && data.status === 'success') {
+        // The RPC function returns a JSON object. If it contains a 'result' key, that's our data.
+        // Otherwise, it might be a success/status message from an INSERT/UPDATE.
+        const rows = data && Array.isArray(data.result) ? data.result : null;
+
+        if (data && data.status === 'success' && !rows) {
             queryResultsContainer.innerHTML = `
                 <div class="p-4 border-b bg-green-50 text-green-700 font-semibold">Success</div>
                 <div class="p-4 text-gray-600">${data.message}</div>
@@ -1653,6 +1658,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Handle empty result set from SELECT
         if (!Array.isArray(data) || data.length === 0) {
+        if (!rows || rows.length === 0) {
             queryResultsContainer.innerHTML = `
                 <div class="p-4 border-b font-semibold">Success</div>
                 <div class="p-4 text-gray-500">Query executed successfully, but returned no rows.</div>
@@ -1661,6 +1667,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const headers = Object.keys(data[0]);
+        const headers = Object.keys(rows[0]);
         const table = document.createElement('table');
         table.className = 'min-w-full text-sm';
         table.innerHTML = `
@@ -1669,6 +1676,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </thead>
             <tbody class="divide-y">
                 ${data.map(row => `<tr>${headers.map(h => {
+                ${rows.map(row => `<tr>${headers.map(h => {
                     let cellValue = row[h];
                     if (cellValue === null) {
                         cellValue = '<span class="text-gray-400">NULL</span>';
