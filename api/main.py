@@ -944,35 +944,30 @@ async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict 
         if sync_config_res and sync_config_res.data and sync_config_res.data.get("is_enabled"):
             mapping_data = sync_config_res.data["column_mapping"]
             mapping = RowToCalendarRequest(**mapping_data)
+
+            # For automated sync, the event title should be the table name.
+            table_schema_dict = await get_single_table(table_id, auth_details)
+            table_name = table_schema_dict['name']
             
-            # Determine the title column to use
-            title_col_name = mapping.title_column
-            if not title_col_name:
-                table_schema_dict = await get_single_table(table_id, auth_details)
-                table_schema = TableResponse(**table_schema_dict)
-                title_col_name = _find_best_title_column(table_schema.columns)
+            new_row_data = updated_row['data']
+            start_time = new_row_data.get(mapping.start_time_column)
 
-            if title_col_name:
-                new_row_data = updated_row['data']
-                title = new_row_data.get(title_col_name)
-                start_time = new_row_data.get(mapping.start_time_column)
-
-                # Only proceed if the essential fields have data.
-                if title and start_time:
-                    event_payload = {
-                        "user_id": user.id,
-                        "source_table_id": table_id,
-                        "source_row_id": row_id,
-                        "title": str(title),
-                        "start_time": str(start_time),
-                        "end_time": str(new_row_data.get(mapping.end_time_column)) if mapping.end_time_column and new_row_data.get(mapping.end_time_column) else None,
-                        "description": str(new_row_data.get(mapping.description_column)) if mapping.description_column and new_row_data.get(mapping.description_column) else None,
-                    }
-                    # Upsert the event. This creates it if it doesn't exist or updates it if it does.
-                    supabase.table("calendar_events").upsert(
-                        event_payload, 
-                        on_conflict="user_id, source_table_id, source_row_id"
-                    ).execute()
+            # Only proceed if the essential start time field has data.
+            if table_name and start_time:
+                event_payload = {
+                    "user_id": user.id,
+                    "source_table_id": table_id,
+                    "source_row_id": row_id,
+                    "title": table_name, # Use table name as the event title
+                    "start_time": str(start_time),
+                    "end_time": str(new_row_data.get(mapping.end_time_column)) if mapping.end_time_column and new_row_data.get(mapping.end_time_column) else None,
+                    "description": str(new_row_data.get(mapping.description_column)) if mapping.description_column and new_row_data.get(mapping.description_column) else None,
+                }
+                # Upsert the event. This creates it if it doesn't exist or updates it if it does.
+                supabase.table("calendar_events").upsert(
+                    event_payload, 
+                    on_conflict="user_id, source_table_id, source_row_id"
+                ).execute()
 
         return await get_single_row(row_id, auth_details)
 
@@ -1236,28 +1231,21 @@ async def create_or_update_calendar_sync_config(table_id: int, config_data: Cale
             events_to_upsert = []
             mapping = config_data.column_mapping
 
-            # Determine the title column once, outside the loop.
-            title_col_name = mapping.title_column
-            if not title_col_name:
-                table_schema_dict = await get_single_table(table_id, auth_details)
-                table_schema = TableResponse(**table_schema_dict)
-                title_col_name = _find_best_title_column(table_schema.columns)
-            
-            if not title_col_name:
-                raise HTTPException(status_code=400, detail="Could not automatically determine a title column for backfill.")
+            # For automated sync, the event title should be the table name.
+            table_schema_dict = await get_single_table(table_id, auth_details)
+            table_name = table_schema_dict['name']
             
             for row in all_rows:
                 row_data = row['data']
-                title = row_data.get(title_col_name)
                 start_time = row_data.get(mapping.start_time_column)
 
                 # Skip rows that are missing essential data for a calendar event.
-                if not title or not start_time:
+                if not table_name or not start_time:
                     continue
 
                 events_to_upsert.append({
                     "user_id": user.id, "source_table_id": table_id, "source_row_id": row['id'], # Use the top-level 'id'
-                    "title": str(title), "start_time": str(start_time),
+                    "title": table_name, "start_time": str(start_time),
                     "end_time": str(row_data.get(mapping.end_time_column)) if mapping.end_time_column and row_data.get(mapping.end_time_column) else None,
                     "description": str(row_data.get(mapping.description_column)) if mapping.description_column and row_data.get(mapping.description_column) else None,
                 })

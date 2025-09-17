@@ -1487,24 +1487,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const errorDetail = await getErrorFromResponse(response);
                 throw new Error(errorDetail);
             }
-            const newRow = await response.json();
-
-            // 2. Render the new row using the correct logic
-            const columns = state.selectedTable.columns.sort((a, b) => a.is_primary_key ? -1 : 1);
-            const newRowHtml = renderRow(newRow, columns);
-
-            // 3. Prepend to the table and focus
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = newRowHtml;
-            const newTr = tempDiv.firstElementChild; // Use firstElementChild to skip whitespace nodes
-
-            if (newTr) {
-                newTr.classList.add('bg-blue-50'); // Highlight
-                dataTbody.prepend(newTr);
-                newTr.querySelector('.editable-cell-input')?.focus();
-
-                setTimeout(() => newTr.classList.remove('bg-blue-50'), 2000);
-            }
+            
+            // Instead of optimistically adding the row, just re-fetch the data.
+            // This ensures pagination and all server-generated values are correct.
+            // We'll go to page 1 to show the newly created item.
+            await fetchAndRenderData(state.selectedTable.id, 1, searchInput.value.trim());
 
         } catch (error) {
             showError(error.message || 'Failed to add row. Please check the console for details.', error);
