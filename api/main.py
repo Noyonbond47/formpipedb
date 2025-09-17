@@ -1548,6 +1548,29 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
             detail="Only SELECT, WITH, INSERT, UPDATE, and DELETE queries are allowed in the SQL Runner."
         )
 
+    # 2. **Pre-processing**: Normalize table names to be case-insensitive.
+    # Fetch all table names for the current database to perform a case-insensitive replace.
+    try:
+        tables_dicts = await get_database_tables(database_id, auth_details)
+        # Create a mapping of lowercase table name to its original (correctly cased) name
+        # which is also lowercase from our creation logic.
+        table_name_map = {t['name'].lower(): t['name'] for t in tables_dicts}
+
+        def replace_table_name(match):
+            # The regex captures the part before the table name, the quote, the name, and the quote.
+            pre, quote, table_name, post_quote = match.groups()
+            
+            # If we find a case-insensitive match in our map, replace it with the correct name.
+            correct_name = table_name_map.get(table_name.lower())
+            if correct_name:
+                return f'{pre}"{correct_name}"{post_quote}'
+            return match.group(0) # Otherwise, return the original match
+
+        processed_query = re.sub(r'(FROM|JOIN|UPDATE|INTO)\s+([`"]?)([\w\d_]+)([`"]?)', replace_table_name, processed_query, flags=re.IGNORECASE)
+    except Exception:
+        # If table name normalization fails, proceed with the original query.
+        pass
+
     # 2. **Execution**: The query is deemed safe for execution.
     # The `execute_dynamic_query` RPC function is designed to handle this.
     try:
