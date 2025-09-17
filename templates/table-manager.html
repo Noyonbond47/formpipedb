@@ -510,6 +510,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dbId: null,
         dbName: '{{ db_name }}',
         tables: [],
+        fkDataCache: {},
         selectedTable: null,
         pagination: {
             currentPage: 1,
@@ -581,6 +582,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const eventDetailsModal = document.getElementById('event-details-modal');
 
 
+    let dataFetchController = new AbortController();
     let selectedDateElement = null; // To track the highlighted day cell
 
     const importRowsCsvFile = document.getElementById('import-rows-csv-file');
@@ -620,6 +622,23 @@ document.addEventListener('DOMContentLoaded', () => {
             return null;
         }
         return session.access_token;
+    }
+
+    /**
+     * Safely extracts a detailed error message from a fetch response.
+     * @param {Response} response - The fetch Response object.
+     * @returns {Promise<string>} A detailed error message.
+     */
+    async function getErrorFromResponse(response) {
+        const errorText = await response.text();
+        try {
+            // Try to parse the text as JSON.
+            const err = JSON.parse(errorText);
+            return err.detail || JSON.stringify(err);
+        } catch (e) {
+            // If parsing fails, it's not JSON. Return the raw text.
+            return `Server returned status ${response.status}. Response: ${errorText.substring(0, 500)}`;
+        }
     }
 
     /**
@@ -702,12 +721,52 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    async function cacheForeignKeyData(table) {
+        if (!table || !table.columns) return;
+
+        // Reset cache for the new table context
+        state.fkDataCache = {};
+
+        const fkColumns = table.columns.filter(c => c.foreign_key);
+        for (const col of fkColumns) {
+            const fkInfo = col.foreign_key;
+            const referencedTableId = fkInfo.table_id;
+
+            if (state.fkDataCache[referencedTableId]) continue;
+
+            try {
+                const response = await fetchWithAuth(`/api/v1/tables/${referencedTableId}/all-rows`);
+                if (!response.ok) throw new Error(`Failed to fetch data for FK table ${referencedTableId}`);
+                const rows = await response.json();
+                
+                const referencedTable = state.tables.find(t => t.id === referencedTableId);
+                if (!referencedTable) throw new Error(`Could not find metadata for referenced table ${referencedTableId}`);
+                
+                const pkColumn = referencedTable.columns.find(c => c.is_primary_key);
+                if (!pkColumn) throw new Error(`Referenced table ${referencedTableId} has no primary key.`);
+
+                state.fkDataCache[referencedTableId] = {
+                    rows: rows,
+                    pkColumn: pkColumn.name,
+                    displayColumn: fkInfo.column_name
+                };
+            } catch (error) {
+                console.error(`Error caching FK data for table ${referencedTableId}:`, error);
+                state.fkDataCache[referencedTableId] = { rows: [], error: error.message };
+            }
+        }
+    }
+
     function handleTableSelect(e) {
         if (e.target.tagName === 'A') {
             e.preventDefault();
             const tableId = e.target.dataset.tableId;
             state.selectedTable = state.tables.find(t => t.id == tableId);
             if (!state.selectedTable) return;
+
+            // Clear previous FK cache and populate for the new table
+            // This needs to be done before fetchAndRenderData
+            cacheForeignKeyData(state.selectedTable);
 
             tableList.querySelectorAll('a').forEach(a => a.classList.remove('bg-blue-100', 'text-blue-700', 'font-semibold'));
             e.target.classList.add('bg-blue-100', 'text-blue-700', 'font-semibold');
@@ -761,6 +820,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function fetchAndRenderData(tableId, page = 1, searchTerm = '') {
+        // Abort any ongoing fetch for this data to prevent race conditions
+        dataFetchController.abort();
+        dataFetchController = new AbortController();
+        const signal = dataFetchController.signal;
+
+
         state.pagination.currentPage = page;
         const offset = (page - 1) * state.pagination.limit;
 
@@ -775,8 +840,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const searchParam = searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : '';
 
         try {
-            const response = await fetchWithAuth(`/api/v1/tables/${tableId}/rows?limit=${state.pagination.limit}&offset=${offset}${searchParam}`);
-            if (!response.ok) throw new Error('Failed to fetch rows');
+            const response = await fetchWithAuth(`/api/v1/tables/${tableId}/rows?limit=${state.pagination.limit}&offset=${offset}${searchParam}`, { signal });
+            if (!response.ok) throw new Error(await getErrorFromResponse(response));
             const result = await response.json();
             const rows = result.data;
             state.pagination.totalRows = result.total;
@@ -804,8 +869,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     `;
                     columns.forEach(col => {
                         const cellValue = row.data ? (row.data[col.name] ?? '') : '';
-                        const contentEditable = !col.is_primary_key ? 'contenteditable="true"' : '';
-                        rowHtml += `<td class="p-3 font-mono text-sm editable-cell" data-column-name="${col.name}" ${contentEditable}>${cellValue}</td>`;
+                        
+                        if (col.foreign_key) {
+                            const fkInfo = col.foreign_key;
+                            const cacheEntry = state.fkDataCache[fkInfo.table_id];
+                            
+                            if (cacheEntry && !cacheEntry.error) {
+                                const options = cacheEntry.rows.map(fkRow => {
+                                    const optionValue = fkRow.data[cacheEntry.pkColumn] ?? fkRow.id;
+                                    const optionText = fkRow.data[cacheEntry.displayColumn] ?? `(ID: ${optionValue})`;
+                                    const isSelected = optionValue == cellValue ? 'selected' : '';
+                                    return `<option value="${optionValue}" ${isSelected}>${optionText}</option>`;
+                                }).join('');
+
+                                rowHtml += `<td class="p-1" data-column-name="${col.name}"><select class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 fk-select"><option value="">-- Select --</option>${options}</select></td>`;
+                            } else {
+                                // Fallback for failed cache or error
+                                rowHtml += `<td class="p-3 font-mono text-sm text-red-500" data-column-name="${col.name}">FK Error</td>`;
+                            }
+                        } else {
+                            const contentEditable = !col.is_primary_key ? 'contenteditable="true"' : '';
+                            const placeholder = col.is_primary_key ? `(${cellValue})` : cellValue;
+                            rowHtml += `<td class="p-3 font-mono text-sm editable-cell" data-column-name="${col.name}" ${contentEditable}>${placeholder}</td>`;
+                        }
                     });
                     rowHtml += '</tr>';
                     return rowHtml;
@@ -817,8 +903,12 @@ document.addEventListener('DOMContentLoaded', () => {
             tbody.innerHTML = bodyHtml;
             renderPagination();
         } catch (error) {
+            if (error.name === 'AbortError') {
+                console.log('Data fetch aborted by new request.'); // This is an expected outcome, not an error.
+                return;
+            }
             console.error(error);
-            tbody.innerHTML = `<tr><td colspan="99" class="p-4 text-center text-red-500">Error loading data.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="99" class="p-4 text-center text-red-500">Error loading data: ${error.message}</td></tr>`;
         } finally {
             // Hide loading overlay
             loader.classList.add('hidden');
@@ -833,7 +923,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         let createStatement = `CREATE TABLE "${table.name}" (\n`;
         const columnDefs = table.columns.map(col => {
-            let parts = [`  "${col.name}"`, col.type.toUpperCase()];
+            let parts = [`  "${col.name}"`, (col.type || 'TEXT').toUpperCase()];
             // Use a Set to prevent duplicate constraints, which is the root of the issue.
             const constraints = new Set();
             if (col.is_primary_key) constraints.add("PRIMARY KEY");
@@ -869,26 +959,16 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetchWithAuth(`/api/v1/tables/${table.id}/calendar-sync`);
             
-            if (!response.ok) {
-                const errorText = await response.text(); // Read the body ONCE as text.
-                let errorDetail;
-                try {
-                    // Try to parse the text as JSON.
-                    const err = JSON.parse(errorText);
-                    errorDetail = err.detail || JSON.stringify(err);
-                } catch (e) {
-                    // If parsing fails, it's not JSON. Use the raw text.
-                    errorDetail = `Server returned status ${response.status}. Response body (may be truncated): ${errorText.substring(0, 500)}`;
-                }
-                throw new Error(errorDetail);
-            }
+            if (!response.ok) throw new Error(await getErrorFromResponse(response));
             
             // The API returns 200 OK with a null body if no config is found.
             // response.json() handles this correctly and will resolve to null.
             const config = await response.json();
             renderCalendarSyncForm(config, table);
         } catch (error) {
-            console.error("Error in fetchAndRenderCalendarSync:", error);
+            // Don't log to console if it's a 404, which is a valid state (no config found)
+            // The API now returns 200 with null body for this case, so this check is less critical but good practice.
+            if (!error.message.includes("404")) console.error("Error in fetchAndRenderCalendarSync:", error);
             container.innerHTML = `
                 <div class="bg-red-50 border border-red-200 text-red-800 text-sm p-4 rounded-lg">
                     <p class="font-bold">Error loading calendar settings.</p>
@@ -1255,13 +1335,25 @@ document.addEventListener('DOMContentLoaded', () => {
             const columnRows = document.querySelectorAll('#new-columns-list .column-row');
             
             const columns = Array.from(columnRows).map(row => {
+                const isFk = row.querySelector('[data-key="is_foreign_key"]').checked;
+                let fk = null;
+                if (isFk) {
+                    const tableId = row.querySelector('[data-key="fk_table_id"]').value;
+                    const columnName = row.querySelector('[data-key="fk_column_name"]').value;
+                    if (tableId && columnName) {
+                        fk = {
+                            table_id: parseInt(tableId, 10),
+                            column_name: columnName
+                        };
+                    }
+                }
                 return {
                     name: row.querySelector('[data-key="name"]').value,
                     type: row.querySelector('[data-key="type"]').value,
                     is_primary_key: row.querySelector('[data-key="is_primary_key"]').value === 'true',
                     is_not_null: row.querySelector('[data-key="is_not_null"]').checked,
                     is_unique: row.querySelector('[data-key="is_unique"]').checked,
-                    foreign_key: null // FKs from GUI are complex, deferring to SQL for now
+                    foreign_key: fk
                 };
             });
             payload = { name: tableName, columns };
@@ -1292,7 +1384,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 newTableLink.click();
             }
         } catch (error) {
-            showError(error.message);
+            showError(error.message, error);
         } finally {
             submitCreateTableBtn.disabled = false;
             submitCreateTableBtn.textContent = 'Create Table';
@@ -1452,11 +1544,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const rowData = {};
         // IMPORTANT: Only gather data from cells that are actually editable.
         // This correctly excludes the primary key from the data payload.
-        tr.querySelectorAll('td.editable-cell[contenteditable="true"]').forEach(cell => {
+        tr.querySelectorAll('td[data-column-name]').forEach(cell => {
             const colName = cell.dataset.columnName;
+            const fkSelect = cell.querySelector('.fk-select');
+
             // Exclude the user-visible PK from the update payload
             if (colName !== pkColName) {
-                rowData[colName] = cell.innerText;
+                if (fkSelect) {
+                    rowData[colName] = fkSelect.value;
+                } else if (cell.hasAttribute('contenteditable')) {
+                    rowData[colName] = cell.innerText;
+                }
             }
         });
 
