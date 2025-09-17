@@ -1548,34 +1548,6 @@ async def execute_custom_query(database_id: int, query_data: QueryRequest, auth_
             detail="Only SELECT, WITH, INSERT, UPDATE, and DELETE queries are allowed in the SQL Runner."
         )
 
-    # 2. **Pre-processing**: Normalize table names to be case-insensitive.
-    # Fetch all table names for the current database to perform a case-insensitive replace.
-    try:
-        # Fetch all table names for the current database. Our table creation logic ensures they are lowercase.
-        tables_dicts = await get_database_tables(database_id, auth_details) 
-        # Create a set of all valid lowercase table names for quick lookup.
-        valid_table_names = {t['name'].lower() for t in tables_dicts}
-
-        def replace_table_name(match):
-            # The regex captures:
-            # 1: The keyword (FROM, JOIN, etc.)
-            # 2: Any quote before the table name
-            # 3: The table name itself
-            # 4: Any quote after the table name
-            keyword, pre_quote, table_name, post_quote = match.groups()
-            
-            # Check if the lowercase version of the queried table name exists in our valid table names.
-            if table_name.lower() in valid_table_names:
-                # Always return the keyword, a space, and the correct lowercase name double-quoted.
-                # This ensures case-insensitivity is handled correctly by PostgreSQL.
-                return f'{keyword} "{table_name.lower()}"'
-            return match.group(0) # Otherwise, return the original match
-
-        processed_query = re.sub(r'(FROM|JOIN|UPDATE|INTO)\s+([`"]?)([\w\d_]+)([`"]?)(?=\s|;|$)', replace_table_name, processed_query, flags=re.IGNORECASE)
-    except Exception:
-        # If table name normalization fails, proceed with the original query.
-        pass
-
     # 2. **Execution**: The query is deemed safe for execution.
     # The `execute_dynamic_query` RPC function is designed to handle this.
     try:
