@@ -1027,11 +1027,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const isEnabled = config ? config.is_enabled : false;
 
         const columns = table.columns.filter(c => !c.is_primary_key);
+        const textLikeColumns = columns.filter(c => ['text', 'integer', 'real'].includes(c.type));
         const dateLikeColumns = columns.filter(c => ['timestamp', 'text', 'date', 'real', 'integer'].includes(c.type));
 
         const fields = [
+            { id: 'title_column', label: 'Event Title', required: true, options: textLikeColumns },
             { id: 'start_time_column', label: 'Start Date/Time', required: true, options: dateLikeColumns },
             { id: 'end_time_column', label: 'End Date/Time', required: false, options: dateLikeColumns },
+            { id: 'description_column', label: 'Description', required: false, options: textLikeColumns },
         ];
 
         mappingContainer.innerHTML = fields.map(field => `
@@ -1044,10 +1047,16 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `).join('');
 
-        // Add a listener to enable the save button only when the required field is filled
+        // Add a listener to enable the save button only when the required fields are filled
+        const titleSelect = form.querySelector('#sync-title_column');
         const startSelect = form.querySelector('#sync-start_time_column');
         const saveBtn = form.querySelector('button[type="submit"]');
-        startSelect.addEventListener('change', () => { saveBtn.disabled = !startSelect.value; });
+        
+        const validateSyncForm = () => {
+            saveBtn.disabled = !titleSelect.value || !startSelect.value;
+        };
+        titleSelect.addEventListener('change', validateSyncForm);
+        startSelect.addEventListener('change', validateSyncForm);
 
         enabledToggle.checked = isEnabled;
         if (config) deleteBtn.classList.remove('hidden');
@@ -1055,9 +1064,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const select = form.querySelector(`[data-mapping-key="${key}"]`);
             if (select) select.value = value;
         }
-
-        // Initial check for the save button state
-        saveBtn.disabled = !startSelect.value;
+        
+        validateSyncForm(); // Initial check for the save button state
 
         form.addEventListener('submit', handleSaveCalendarSync);
         deleteBtn.addEventListener('click', handleDeleteCalendarSync);

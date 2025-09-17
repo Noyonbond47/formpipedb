@@ -1149,7 +1149,10 @@ async def _get_all_table_rows_for_sync(table_id: int, auth_details: dict) -> Lis
         return []
 
     # 2. Inject user-visible PK, similar to get_all_table_rows
-    return [ {**row, "data": {**row.get("data", {}), pk_col_name: i + 1}} for i, row in enumerate(response.data) ] if pk_col_name else response.data
+    if pk_col_name:
+        return [ {**row, "data": {**row.get("data", {}), pk_col_name: i + 1}} for i, row in enumerate(response.data) ]
+    
+    return response.data # Return raw data if no PK is defined
 
 @app.delete("/api/v1/tables/{table_id}/calendar-sync", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_calendar_sync_config(table_id: int, auth_details: dict = Depends(get_current_user_details)):
