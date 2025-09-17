@@ -529,7 +529,7 @@ def _extract_sql_type(col_def_str: str) -> str:
     """
     # List of known constraints to strip from the end
     constraints = [
-        'PRIMARY KEY', 'NOT NULL', 'NULL', 'UNIQUE', 'DEFAULT .*', 'CHECK \(.*\)', 
+        'PRIMARY KEY', 'NOT NULL', 'NULL', 'UNIQUE', 'DEFAULT .*', r'CHECK \(.*\)', 
         'REFERENCES .*', 'COLLATE .*'
     ]
     # The regex looks for the data type at the start, which might include parentheses.

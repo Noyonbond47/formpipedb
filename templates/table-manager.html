@@ -1491,12 +1491,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // 3. Prepend to the table and focus
             const tempDiv = document.createElement('div');
             tempDiv.innerHTML = newRowHtml;
-            const newTr = tempDiv.firstChild;
-            newTr.classList.add('bg-blue-50'); // Highlight
-            dataTbody.prepend(newTr);
-            newTr.querySelector('.editable-cell-input')?.focus();
+            const newTr = tempDiv.firstElementChild; // Use firstElementChild to skip whitespace nodes
 
-            setTimeout(() => newTr.classList.remove('bg-blue-50'), 2000);
+            if (newTr) {
+                newTr.classList.add('bg-blue-50'); // Highlight
+                dataTbody.prepend(newTr);
+                newTr.querySelector('.editable-cell-input')?.focus();
+
+                setTimeout(() => newTr.classList.remove('bg-blue-50'), 2000);
+            }
 
         } catch (error) {
             showError(`Error: ${error.message}`);
