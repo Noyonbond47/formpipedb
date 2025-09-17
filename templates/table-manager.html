@@ -2519,24 +2519,42 @@ document.addEventListener('DOMContentLoaded', () => {
             const timeFormat = { hour: 'numeric', minute: '2-digit', hour12: true };
             const timeText = event.allDay ? 'All-day' : event.start.toLocaleTimeString([], timeFormat);
 
-            let detailsHtml = '';
+            const titleEl = document.createElement('p');
+            titleEl.className = 'font-semibold text-gray-800';
+            titleEl.textContent = event.title;
+
+            const timeEl = document.createElement('p');
+            timeEl.className = 'text-xs font-medium text-gray-500';
+            timeEl.textContent = timeText;
+
+            eventEl.appendChild(titleEl);
+            eventEl.appendChild(timeEl);
+
             const props = event.extendedProps;
             if (props.source_row_data) {
-                detailsHtml += '<div class="mt-2 pt-2 border-t border-gray-200 space-y-1 font-mono text-xs">';
+                const detailsContainer = document.createElement('div');
+                detailsContainer.className = 'mt-2 pt-2 border-t border-gray-200 space-y-1 font-mono text-xs';
                 for (const [key, value] of Object.entries(props.source_row_data)) {
                     if (value !== null && value !== undefined && value !== '') {
-                        detailsHtml += `<div><span class="text-gray-500">${key}:</span> <span class="text-black font-semibold">${value}</span></div>`;
+                        const detailItem = document.createElement('div');
+                        const keySpan = document.createElement('span');
+                        keySpan.className = 'text-gray-500';
+                        keySpan.textContent = `${key}: `;
+                        const valueSpan = document.createElement('span');
+                        valueSpan.className = 'text-black font-semibold';
+                        valueSpan.textContent = value;
+                        detailItem.appendChild(keySpan);
+                        detailItem.appendChild(valueSpan);
+                        detailsContainer.appendChild(detailItem);
                     }
                 }
-                detailsHtml += '</div>';
+                eventEl.appendChild(detailsContainer);
             } else if (props.description) {
-                detailsHtml = `<p class="text-sm text-gray-600 mt-1">${props.description}</p>`;
+                const descEl = document.createElement('p');
+                descEl.className = 'text-sm text-gray-600 mt-1';
+                descEl.textContent = props.description;
+                eventEl.appendChild(descEl);
             }
-
-            eventEl.innerHTML = `
-                <p class="font-semibold text-gray-800">${event.title}</p>
-                <p class="text-xs font-medium text-gray-500">${timeText}</p>
-                ${detailsHtml}`;
 
             eventEl.addEventListener('click', () => {
                 const fullEvent = calendar.getEventById(event.id);
