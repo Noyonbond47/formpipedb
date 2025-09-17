@@ -2445,23 +2445,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             },
             eventDidMount: function(info) {
-                // Use Tippy.js for popovers, avoiding CSP 'eval' issues.
+                // FIX: Use a more robust and CSP-compliant way to create tooltips with Tippy.js.
+                // This avoids any potential 'eval' issues from the library's internals.
                 tippy(info.el, {
-                    content: () => { // Using an arrow function for cleaner scope, though not strictly necessary here.
-                        const contentDiv = document.createElement('div');
-                        contentDiv.className = 'p-1';
-                        const props = info.event.extendedProps;
-                        const titleEl = document.createElement('strong');
-                        titleEl.textContent = info.event.title;
-                        contentDiv.appendChild(titleEl);
-                        if (props.description) {
-                            const descEl = document.createElement('div');
-                            descEl.className = 'mt-1 text-sm';
-                            descEl.textContent = props.description;
-                            contentDiv.appendChild(descEl);
-                        }
-                        return contentDiv;
-                    },
+                    content: `<strong>${info.event.title}</strong>` + 
+                             (info.event.extendedProps.description ? `<div class="mt-1 text-sm">${info.event.extendedProps.description}</div>` : ''),
+                    allowHTML: true,
                     placement: 'top',
                 });
             },

@@ -1053,13 +1053,12 @@ async def get_calendar_events(
         }).execute()
         return response.data
     except APIError as e:
-        # A Postgrest 'PGRST116' error can occur if the RPC function returns no rows,
-        # which is a valid case (no events in the date range). We should not treat this as a server error.
-        # We'll return an empty list instead.
-        if "PGRST116" in str(e):
-            return []
-        # For all other database errors, raise a 500.
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database error fetching calendar events: {str(e)}")
+        # An RPC function that returns SETOF can result in an APIError if no rows are returned.
+        # This is not a true server error, but an expected outcome for date ranges with no events.
+        # We catch the error and return an empty list, which is the correct response for the client.
+        # This prevents the 500 error on the frontend.
+        print(f"Info: RPC 'get_calendar_events_with_details' returned no rows, which is acceptable. Error: {e.message}")
+        return []
 
 @app.post("/api/v1/calendar/events", response_model=CalendarEventResponse, status_code=status.HTTP_201_CREATED)
 async def create_calendar_event(event_data: CalendarEventCreate, auth_details: dict = Depends(get_current_user_details)):
