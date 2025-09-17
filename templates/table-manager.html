@@ -1679,9 +1679,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Handle SELECT results
-        if (data && Array.isArray(data)) {
+        if (data) { // The RPC function returns a JSON object, which might be an array or an error object.
             const rows = data;
-            if (rows.length > 0) {
+            if (Array.isArray(rows) && rows.length > 0) {
                 // Success with data
                 const headers = Object.keys(rows[0]);
                 const table = document.createElement('table');
@@ -1704,7 +1704,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
                 queryResultsContainer.appendChild(table);
             } else {
-                // Success with no rows
+                // Success with no rows (RPC returns null which becomes an empty array, or just an empty array)
                 queryResultsContainer.innerHTML = `<div class="p-4 text-gray-500">Query executed successfully and returned no rows.</div>`;
             }
             return;
