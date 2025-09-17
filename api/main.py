@@ -1127,15 +1127,26 @@ async def create_or_update_calendar_sync_config(table_id: int, config_data: Cale
 
 async def _get_all_table_rows_for_sync(table_id: int, auth_details: dict) -> List[Dict[str, Any]]:
     """
-    Internal helper to fetch all rows for a table without any modification.
-    This is used for backend processes like calendar backfill that need raw, unmodified data.
+    Internal helper to fetch all rows for a table, WITH the user-visible PK injected.
+    This is used for backend processes like calendar backfill that need raw, unmodified data but with the correct PK.
     It bypasses the response_model processing of the main API endpoint.
     """
     supabase = auth_details["client"]
+
+    # 1. Get table schema to find PK
+    table_schema_res = await get_single_table(table_id, auth_details)
+    table_schema = TableResponse(**table_schema_res)
+    pk_col_name = next((col.name for col in table_schema.columns if col.is_primary_key), None)
+
     # RLS on table_rows ensures user can only access rows they own.
     # We fetch the raw data directly.
     response = supabase.table("table_rows").select("id, data").eq("table_id", table_id).order("id").execute()
-    return response.data if response.data else []
+    
+    if not response.data:
+        return []
+
+    # 2. Inject user-visible PK, similar to get_all_table_rows
+    return [ {**row, "data": {**row.get("data", {}), pk_col_name: i + 1}} for i, row in enumerate(response.data) ] if pk_col_name else response.data
 
 @app.delete("/api/v1/tables/{table_id}/calendar-sync", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_calendar_sync_config(table_id: int, auth_details: dict = Depends(get_current_user_details)):

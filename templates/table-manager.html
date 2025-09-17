@@ -819,7 +819,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="p-3 text-center">${col.is_unique ? checkmark : ''}</td>
                 <td class="p-3 font-mono text-xs">${col.foreign_key ? `-> ${state.tables.find(t => t.id === col.foreign_key.table_id)?.name}.${col.foreign_key.column_name}` : ''}</td>
                 <td class="p-3 text-center">
-                    ${!col.is_primary_key && !col.foreign_key ? `
+                    ${!col.is_primary_key ? `
                         <div class="flex items-center justify-center gap-2">
                             <button data-column-index="${index}" class="edit-column-btn text-gray-500 hover:text-blue-600" title="Edit Column"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L14.732 3.732z"></path></svg></button>
                             <button data-column-index="${index}" class="delete-column-btn text-gray-500 hover:text-red-600" title="Delete Column"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
@@ -900,16 +900,34 @@ document.addEventListener('DOMContentLoaded', () => {
                                 rowHtml += `<td class="p-3 font-mono text-sm text-red-500" data-column-name="${col.name}">FK Error</td>`;
                             }
                         } else {
-                            const contentEditable = !col.is_primary_key ? 'contenteditable="true"' : '';
-                            const placeholder = col.is_primary_key ? `(${cellValue})` : cellValue;
-                            rowHtml += `<td class="p-3 font-mono text-sm editable-cell" data-column-name="${col.name}" ${contentEditable}>${placeholder}</td>`;
+                            let cellContent = '';
+                            if (col.is_primary_key) {
+                                cellContent = `(${cellValue})`;
+                            } else if (col.type === 'boolean') {
+                                const isTrue = ['true', 't', '1', true].includes(String(cellValue).toLowerCase());
+                                const isFalse = ['false', 'f', '0', false].includes(String(cellValue).toLowerCase());
+                                cellContent = `
+                                    <select class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 boolean-select">
+                                        <option value="" ${!isTrue && !isFalse ? 'selected' : ''}>--</option>
+                                        <option value="true" ${isTrue ? 'selected' : ''}>True</option>
+                                        <option value="false" ${isFalse ? 'selected' : ''}>False</option>
+                                    </select>
+                                `;
+                            } else if (col.type === 'timestamp') {
+                                const dateValue = cellValue ? new Date(cellValue).toISOString().split('T')[0] : '';
+                                cellContent = `<input type="date" value="${dateValue}" class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 timestamp-input">`;
+                            } else {
+                                const inputType = (col.type === 'integer' || col.type === 'real') ? 'number' : 'text';
+                                cellContent = `<input type="${inputType}" value="${cellValue}" class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 editable-cell-input">`;
+                            }
+                            rowHtml += `<td class="p-1" data-column-name="${col.name}">${cellContent}</td>`;
                         }
                     });
                     rowHtml += '</tr>';
                     return rowHtml;
                 }).join('');
             }
-
+            
             // Swap content in one operation
             thead.innerHTML = headerHtml;
             tbody.innerHTML = bodyHtml;
@@ -1566,23 +1584,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const rowId = tr.dataset.rowId;
         if (!rowId) return;
 
-        const pkColName = state.selectedTable.columns.find(c => c.is_primary_key)?.name;
         const rowData = {};
-        // IMPORTANT: Only gather data from cells that are actually editable.
-        // This correctly excludes the primary key from the data payload.
         tr.querySelectorAll('td[data-column-name]').forEach(cell => {
             const colName = cell.dataset.columnName;
             const fkSelect = cell.querySelector('.fk-select');
+            const boolSelect = cell.querySelector('.boolean-select');
+            const dateInput = cell.querySelector('.timestamp-input');
+            const regularInput = cell.querySelector('.editable-cell-input');
 
-            // Exclude the user-visible PK from the update payload
-            if (colName !== pkColName) {
-                if (fkSelect) {
-                    rowData[colName] = fkSelect.value;
-                } else if (cell.hasAttribute('contenteditable')) {
-                    rowData[colName] = cell.innerText;
-                }
+            if (fkSelect) {
+                rowData[colName] = fkSelect.value;
+            } else if (boolSelect) {
+                rowData[colName] = boolSelect.value;
+            } else if (dateInput) {
+                rowData[colName] = dateInput.value;
+            } else if (regularInput) {
+                rowData[colName] = regularInput.value;
             }
         });
+
+        // If the cell that triggered the update is an input, give it feedback
+        const inputElement = cellElement.querySelector('input, select');
+        const feedbackElement = inputElement || cellElement;
+
 
         const payload = { data: rowData };
 
@@ -1597,10 +1621,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(err.detail || 'Failed to update row');
             }
             // Visual feedback for success
-            cellElement.style.transition = 'background-color 0.5s';
-            cellElement.style.backgroundColor = '#dcfce7'; // Tailwind green-100
+            feedbackElement.style.transition = 'background-color 0.5s';
+            feedbackElement.style.backgroundColor = '#dcfce7'; // Tailwind green-100
             setTimeout(() => {
-                cellElement.style.backgroundColor = '';
+                feedbackElement.style.backgroundColor = '';
             }, 1500);
         } catch (error) {
             showError(`Error saving data: ${error.message}`, error);
@@ -1679,6 +1703,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('edit-column-type').value = column.type;
         document.getElementById('edit-is-not-null').checked = column.is_not_null;
         document.getElementById('edit-is-unique').checked = column.is_unique;
+        document.getElementById('edit-column-type').disabled = !!column.foreign_key;
         openModal(editColumnModal);
     }
 
@@ -2103,25 +2128,20 @@ document.addEventListener('DOMContentLoaded', () => {
         calendar.render();
     });
 
-    dataTbody.addEventListener('blur', (e) => {
-        if (e.target.classList.contains('editable-cell') && e.target.hasAttribute('contenteditable')) {
-            handleUpdateRow(e.target);
-        }
-    }, true); // Use capture phase to handle event delegation properly
-
-    // Listen for changes on foreign key dropdowns in the data grid
+    // Centralized listener for all data grid cell updates
     dataTbody.addEventListener('change', (e) => {
-        if (e.target.classList.contains('fk-select')) {
-            handleUpdateRow(e.target);
+        const target = e.target;
+        if (target.matches('.fk-select, .boolean-select, .timestamp-input, .editable-cell-input')) {
+            handleUpdateRow(target.closest('td'));
         }
     });
 
-    dataTbody.addEventListener('keydown', (e) => {
-        // When the user presses Enter in an editable cell, treat it as a confirmation.
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault(); // Prevents adding a new line in the cell.
-            const cell = e.target;
-            cell.blur(); // Trigger the blur event, which calls the save function.
+    dataTbody.addEventListener('blur', (e) => {
+        const target = e.target;
+        // The 'change' event covers selects and date inputs well.
+        // 'blur' is a good fallback for text/number inputs.
+        if (target.matches('.editable-cell-input')) {
+            handleUpdateRow(target.closest('td'));
         }
     });
 
