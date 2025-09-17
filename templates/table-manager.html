@@ -856,10 +856,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const tbody = document.getElementById('data-tbody');
         const loader = document.getElementById('data-table-loader');
         const columns = state.selectedTable.columns.sort((a, b) => a.is_primary_key ? -1 : 1);
-        
+
         // Show loading overlay
         loader.classList.remove('hidden');
-        
+
         const searchParam = searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : '';
 
         try {
@@ -869,21 +869,30 @@ document.addEventListener('DOMContentLoaded', () => {
             const rows = result.data;
             state.pagination.totalRows = result.total;
 
-            // Build new content off-DOM
-            let headerHtml = '<tr><th class="p-3 w-24">Actions</th>';
-            columns.forEach(col => { headerHtml += `<th class="p-3 text-left font-semibold">${col.name}</th>`; });
-            headerHtml += '</tr>';
+            // --- FIX: Programmatic DOM creation to avoid innerHTML and CSP issues ---
+            // Clear existing content
+            thead.innerHTML = '';
+            tbody.innerHTML = '';
 
-            let bodyHtml = '';
+            // Build and append header
+            const headerRow = document.createElement('tr');
+            headerRow.innerHTML = '<th class="p-3 w-24">Actions</th>';
+            columns.forEach(col => {
+                const th = document.createElement('th');
+                th.className = 'p-3 text-left font-semibold';
+                th.textContent = col.name;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+
+            // Build and append body rows
             if (rows.length === 0) {
-                bodyHtml = `<tr><td colspan="${columns.length + 1}" class="p-8 text-center text-gray-500">No data in this table.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="${columns.length + 1}" class="p-8 text-center text-gray-500">No data in this table.</td></tr>`;
             } else {
-                bodyHtml = rows.map(row => renderRow(row, columns)).join('');
+                rows.forEach(row => {
+                    tbody.appendChild(renderRow(row, columns));
+                });
             }
-            
-            // Swap content in one operation
-            thead.innerHTML = headerHtml;
-            tbody.innerHTML = bodyHtml;
             renderPagination();
         } catch (error) {
             if (error.name === 'AbortError') {
@@ -899,63 +908,85 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderRow(row, columns) {
-        let rowHtml = `<tr data-row-id="${row.id}">`;
-        rowHtml += `
-            <td class="p-3 text-center flex items-center justify-center gap-3">
-                <button data-row-id="${row.id}" class="send-to-calendar-btn text-gray-400 hover:text-yellow-600" title="Send to Calendar">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                </button>
-                <button data-row-id="${row.id}" class="delete-row-btn text-gray-400 hover:text-red-600" title="Delete Row">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                </button>
-            </td>
+        const tr = document.createElement('tr');
+        tr.dataset.rowId = row.id;
+
+        // Actions Cell
+        const actionsTd = document.createElement('td');
+        actionsTd.className = 'p-3 text-center flex items-center justify-center gap-3';
+        actionsTd.innerHTML = `
+            <button data-row-id="${row.id}" class="send-to-calendar-btn text-gray-400 hover:text-yellow-600" title="Send to Calendar">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            </button>
+            <button data-row-id="${row.id}" class="delete-row-btn text-gray-400 hover:text-red-600" title="Delete Row">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            </button>
         `;
+        tr.appendChild(actionsTd);
+
+        // Data Cells
         columns.forEach(col => {
+            const td = document.createElement('td');
+            td.className = 'p-1';
+            td.dataset.columnName = col.name;
+
             const cellValue = row.data ? (row.data[col.name] ?? '') : '';
-            
+
             if (col.foreign_key) {
                 const fkInfo = col.foreign_key;
                 const cacheEntry = state.fkDataCache[fkInfo.table_id];
-                
+
                 if (cacheEntry && !cacheEntry.error) {
-                    const options = cacheEntry.rows.map(fkRow => {
+                    const select = document.createElement('select');
+                    select.className = 'w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 fk-select';
+                    select.innerHTML = '<option value="">-- Select --</option>';
+                    cacheEntry.rows.forEach(fkRow => {
                         const optionValue = fkRow.data[cacheEntry.pkColumn] ?? fkRow.id;
                         const optionText = fkRow.data[cacheEntry.displayColumn] ?? `(ID: ${optionValue})`;
-                        const isSelected = optionValue == cellValue ? 'selected' : '';
-                        return `<option value="${optionValue}" ${isSelected}>${optionText}</option>`;
-                    }).join('');
-
-                    rowHtml += `<td class="p-1" data-column-name="${col.name}"><select class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 fk-select"><option value="">-- Select --</option>${options}</select></td>`;
+                        const option = new Option(optionText, optionValue);
+                        if (optionValue == cellValue) option.selected = true;
+                        select.add(option);
+                    });
+                    td.appendChild(select);
                 } else {
-                    // Fallback for failed cache or error
-                    rowHtml += `<td class="p-3 font-mono text-sm text-red-500" data-column-name="${col.name}">FK Error</td>`;
+                    td.className = 'p-3 font-mono text-sm text-red-500';
+                    td.textContent = 'FK Error';
                 }
             } else {
-                let cellContent = '';
                 if (col.is_primary_key) {
-                    cellContent = `(${cellValue})`;
+                    td.textContent = `(${cellValue})`;
+                    td.className = 'p-3'; // Adjust class for non-input cell
                 } else if (col.type === 'boolean') {
+                    const select = document.createElement('select');
+                    select.className = 'w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 boolean-select';
                     const isTrue = ['true', 't', '1', true].includes(String(cellValue).toLowerCase());
                     const isFalse = ['false', 'f', '0', false].includes(String(cellValue).toLowerCase());
-                    cellContent = `
-                        <select class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 boolean-select">
-                            <option value="" ${!isTrue && !isFalse ? 'selected' : ''}>--</option>
-                            <option value="true" ${isTrue ? 'selected' : ''}>True</option>
-                            <option value="false" ${isFalse ? 'selected' : ''}>False</option>
-                        </select>
+                    select.innerHTML = `
+                        <option value="" ${!isTrue && !isFalse ? 'selected' : ''}>--</option>
+                        <option value="true" ${isTrue ? 'selected' : ''}>True</option>
+                        <option value="false" ${isFalse ? 'selected' : ''}>False</option>
                     `;
+                    td.appendChild(select);
                 } else if (col.type === 'timestamp') {
+                    const input = document.createElement('input');
+                    input.type = 'date';
                     const dateValue = cellValue ? new Date(cellValue).toISOString().split('T')[0] : '';
-                    cellContent = `<input type="date" value="${dateValue}" class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 timestamp-input">`;
+                    input.value = dateValue;
+                    input.className = 'w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 timestamp-input';
+                    td.appendChild(input);
                 } else {
+                    const input = document.createElement('input');
                     const inputType = (col.type === 'integer' || col.type === 'real') ? 'number' : 'text';
-                    cellContent = `<input type="${inputType}" value="${cellValue}" class="w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 editable-cell-input">`;
+                    input.type = inputType;
+                    input.value = cellValue;
+                    input.className = 'w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 editable-cell-input';
+                    td.appendChild(input);
                 }
-                rowHtml += `<td class="p-1" data-column-name="${col.name}">${cellContent}</td>`;
             }
+            tr.appendChild(td);
         });
-        rowHtml += '</tr>';
-        return rowHtml;
+
+        return tr;
     }
 
     function renderTableSql(table) {
