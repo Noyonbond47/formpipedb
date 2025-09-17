@@ -2416,13 +2416,21 @@ document.addEventListener('DOMContentLoaded', () => {
             eventDidMount: function(info) {
                 // Use Tippy.js for popovers, avoiding CSP 'eval' issues.
                 tippy(info.el, {
-                    content: function() {
+                    content: () => { // Using an arrow function for cleaner scope, though not strictly necessary here.
+                        const contentDiv = document.createElement('div');
+                        contentDiv.className = 'p-1';
                         const props = info.event.extendedProps;
-                        const title = `<strong>${info.event.title}</strong>`;
-                        const desc = props.description ? `<div class="mt-1 text-sm">${props.description}</div>` : '';
-                        return `<div class="p-1">${title}${desc}</div>`;
+                        const titleEl = document.createElement('strong');
+                        titleEl.textContent = info.event.title;
+                        contentDiv.appendChild(titleEl);
+                        if (props.description) {
+                            const descEl = document.createElement('div');
+                            descEl.className = 'mt-1 text-sm';
+                            descEl.textContent = props.description;
+                            contentDiv.appendChild(descEl);
+                        }
+                        return contentDiv;
                     },
-                    allowHTML: true,
                     placement: 'top',
                 });
             },
