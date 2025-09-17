@@ -1644,6 +1644,11 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("Received data from /execute-query:", data);
         console.log("Received error string:", error);
 
+        // Robustness: Handle cases where the backend sends a 200 OK with an error object.
+        if (data && data.error) {
+            error = data.error;
+        }
+
         if (error) {
             let errorHtml = `
                 <div class="p-4 border-b bg-red-50 text-red-700 font-semibold">Query Error</div>
@@ -2424,7 +2429,6 @@ document.addEventListener('DOMContentLoaded', () => {
             },
             dayMaxEvents: true, // This is the key for handling multiple events!
             eventClick: (info) => {
-                // When an existing event is clicked, open the details modal
                 openEventDetailsModal(info.event);
             },
             dateClick: (info) => {
@@ -2444,6 +2448,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     showError('Failed to update event time.');
                     info.revert(); // Revert the change on failure
                 }
+            },
+            eventDidMount: function(info) {
+                // Use Tippy.js for popovers, avoiding CSP 'eval' issues.
+                tippy(info.el, {
+                    content: function() {
+                        const props = info.event.extendedProps;
+                        const title = `<strong>${info.event.title}</strong>`;
+                        const desc = props.description ? `<div class="mt-1 text-sm">${props.description}</div>` : '';
+                        return `<div class="p-1">${title}${desc}</div>`;
+                    },
+                    allowHTML: true,
+                    placement: 'top',
+                });
             },
             events: async (fetchInfo, successCallback, failureCallback) => {
                 const token = await getAuthToken();
