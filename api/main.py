@@ -518,6 +518,21 @@ def infer_column_types(rows: List[List[str]], num_cols: int) -> List[str]:
 
     return inferred_types
 
+def normalize_sql_type(sql_type: str) -> str:
+    """Maps common SQL data types to the simplified types used by the app."""
+    s_type = sql_type.lower()
+    if 'int' in s_type:
+        return 'integer'
+    if 'char' in s_type or 'text' in s_type:
+        return 'text'
+    if 'real' in s_type or 'float' in s_type or 'double' in s_type or 'numeric' in s_type or 'decimal' in s_type:
+        return 'real'
+    if 'bool' in s_type:
+        return 'boolean'
+    if 'time' in s_type or 'date' in s_type:
+        return 'timestamp'
+    return 'text' # Default to text if no match
+
 @app.post("/api/v1/databases/{database_id}/import-csv", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
 async def import_table_from_csv(database_id: int, import_data: CsvImportRequest, auth_details: dict = Depends(get_current_user_details)):
     """
@@ -1468,7 +1483,7 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
 
                 columns_defs.append(ColumnDefinition(
                     name=col_name,
-                    type=col_type.lower(),
+                    type=normalize_sql_type(col_type),
                     is_primary_key="PRIMARY KEY" in type_and_constraints.upper(),
                     is_unique="UNIQUE" in type_and_constraints.upper(),
                     is_not_null="NOT NULL" in type_and_constraints.upper()

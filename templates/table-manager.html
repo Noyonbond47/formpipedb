@@ -1643,43 +1643,38 @@ document.addEventListener('DOMContentLoaded', () => {
         // For debugging: log exactly what the frontend receives.
         console.log("Received data from /execute-query:", data);
         console.log("Received error string:", error);
-
+    
         // Robustness: Handle cases where the backend sends a 200 OK with an error object.
         if (data && data.error) {
             error = data.error;
         }
-
+    
         if (error) {
             let errorHtml = `
                 <div class="p-4 border-b bg-red-50 text-red-700 font-semibold">Query Error</div>
                 <div class="p-4 font-mono text-sm text-red-600 whitespace-pre-wrap">${error}</div>
             `;
-
+    
             // Add specific troubleshooting advice for "relation does not exist"
             if (error.includes("does not exist")) {
                 errorHtml += `
                     <div class="mt-4 p-4 border-t bg-amber-50">
                         <h4 class="font-semibold text-amber-800">Troubleshooting "relation does not exist"</h4>
                         <p class="text-sm text-amber-700 mt-2">
-                            You've provided a SQL dump that shows the table exists. However, the database is reporting that it doesn't. This almost always means the query is running in the wrong context (i.e., not against your <code class="bg-amber-100 p-1 rounded font-mono text-xs">${state.dbName}</code> database).
+                            This error usually means the underlying SQL view for your table could not be created, often due to an unsupported data type in your original <code class="bg-amber-100 p-1 rounded font-mono text-xs">CREATE TABLE</code> script (e.g., using <code class="bg-amber-100 p-1 rounded font-mono text-xs">VARCHAR(255)</code> instead of <code class="bg-amber-100 p-1 rounded font-mono text-xs">TEXT</code>).
                         </p>
                         <p class="text-sm text-amber-700 mt-2">
-                            The most likely cause is an issue with the backend function responsible for executing queries. If you are the administrator, please check the following:
+                            The system has been updated to better handle these types. Please try deleting this database and re-importing your SQL script.
                         </p>
-                        <ol class="list-decimal list-inside text-sm text-amber-700 mt-2 space-y-1">
-                            <li>In your Supabase project, go to the <strong>SQL Editor</strong>.</li>
-                            <li>In the left sidebar, click on <strong>Database Functions</strong> and find the function that executes these queries (it might be named <code class="bg-amber-100 p-1 rounded font-mono text-xs">execute_dynamic_query</code>).</li>
-                            <li>Ensure this function correctly sets the <code class="bg-amber-100 p-1 rounded font-mono text-xs">search_path</code> to the schema associated with this database before running the user's query. An old or incorrect version of this function is the most common cause for this problem.</li>
-                        </ol>
                     </div>
                 `;
             }
             queryResultsContainer.innerHTML = errorHtml;
             return;
         }
-
+    
         // Handle SELECT results
-        if (data) { // The RPC function returns a JSON object, which might be an array or an error object.
+        if (data !== null && data !== undefined) {
             const rows = data;
             if (Array.isArray(rows) && rows.length > 0) {
                 // Success with data
@@ -1704,12 +1699,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
                 queryResultsContainer.appendChild(table);
             } else {
-                // Success with no rows (RPC returns null which becomes an empty array, or just an empty array)
+                // Success with no rows (e.g., from a SELECT with no results, or a non-SELECT query)
                 queryResultsContainer.innerHTML = `<div class="p-4 text-gray-500">Query executed successfully and returned no rows.</div>`;
             }
             return;
         }
-
+    
         // Fallback for any other unexpected response from the server
         queryResultsContainer.innerHTML = `
             <div class="p-4 border-b bg-red-50 text-red-700 font-semibold">Unexpected Response</div>
