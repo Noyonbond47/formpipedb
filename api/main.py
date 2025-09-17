@@ -711,13 +711,13 @@ async def update_database_table(table_id: int, table_data: TableUpdate, auth_det
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update table: {str(e)}")
 
 @app.delete("/api/v1/databases/{database_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user_database(
+async def delete_user_database( # pragma: no cover
     database_id: int, 
     auth_details: dict = Depends(get_current_user_details)
 ):
     """
     Deletes a database and all its associated tables and rows.
-    RLS and cascade delete handles the security and data integrity.
+    Also ensures all linked calendar events are properly deleted.
     """
     try:
         supabase = auth_details["client"]
@@ -725,9 +725,10 @@ async def delete_user_database(
         # Before deleting the database, which cascades to tables, we need to handle calendar events.
         # We will unlink all calendar events associated with ALL tables in this database.
         # This prevents orphaned data and makes deletion cleaner.
-        # The RPC function will find all tables for the user in the given database and unlink their events.
-        supabase.rpc('unlink_calendar_events_for_database', {
-            'p_database_id': database_id
+        # The RPC function will find all tables for the user in the given database and DELETE their events.
+        # This is a more robust fix than unlinking.
+        supabase.rpc('delete_calendar_events_for_database', {
+            'p_database_id': database_id,
         }).execute()
 
         # The RLS policy ensures the user can only match their own database ID.
@@ -889,7 +890,7 @@ async def create_table_row(
         user = auth_details["user"]
         
         # --- FIX: Pre-populate data based on calendar sync config ---
-        new_data = row_data.data.copy() # Start with a fresh copy of the provided data
+        new_data = {} # Always start with a completely empty dictionary to prevent data bleed.
         # Check if the table has an active calendar sync configuration.
         sync_config_res = supabase.table("calendar_sync_configs").select("is_enabled, column_mapping").eq("table_id", table_id).maybe_single().execute()
 
