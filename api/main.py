@@ -1211,7 +1211,7 @@ async def create_or_update_calendar_sync_config(table_id: int, config_data: Cale
             if events_to_upsert:
                 supabase.table("calendar_events").upsert(
                     events_to_upsert, 
-                    on_conflict="source_table_id, source_row_id"
+                    on_conflict="user_id, source_table_id, source_row_id"
                 ).execute()
 
         return saved_config
