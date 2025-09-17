@@ -862,8 +862,8 @@ async def create_table_row(table_id: int, auth_details: dict = Depends(get_curre
         sync_config_res = supabase.table("calendar_sync_configs").select("is_enabled, column_mapping").eq("table_id", table_id).maybe_single().execute()
 
         if sync_config_res.data and sync_config_res.data.get("is_enabled"):
-            mapping = sync_config_res.data.get("column_mapping", {})
-            start_time_col = mapping.get("start_time_column")
+            mapping = sync_config_res.data.get("column_mapping") or {}
+            start_time_col = mapping.get("start_time_column") # This is now safe
             
             # If a start time column is mapped, pre-populate it with the current time.
             if start_time_col:
