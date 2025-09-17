@@ -239,7 +239,7 @@
         </div>
         <div class="p-6 mt-auto border-t bg-gray-50 flex justify-end gap-4">
             <button id="cancel-create-table-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
-            <button id="submit-create-table-btn" type="button" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Create Table</button>
+            <button id="submit-create-table-btn" type="button" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed" disabled>Create Table</button>
         </div>
     </form>
 </div>
@@ -633,15 +633,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const errorText = await response.text();
         try {
             const err = JSON.parse(errorText);
-            // If err.detail exists, it could be a string or an object/array (e.g., from Pydantic validation).
-            // We want to stringify it if it's not already a string for better error display.
             if (err.detail) {
-                return typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail, null, 2);
+                if (typeof err.detail === 'string') {
+                    return err.detail; // It's a simple string error from the backend.
+                }
+                // Handle Pydantic validation errors which come as an array of objects.
+                if (Array.isArray(err.detail)) {
+                    const messages = err.detail.map(d => {
+                        const field = d.loc ? d.loc.slice(1).join(' -> ') : 'Field'; // e.g., body -> name becomes "name"
+                        return `${field}: ${d.msg}`;
+                    });
+                    return `Validation Error: ${messages.join('; ')}`;
+                }
+                return JSON.stringify(err.detail, null, 2);
             }
-            // Fallback for other JSON error shapes.
             return JSON.stringify(err, null, 2);
         } catch (e) {
-            // Not a JSON response.
             return `Server returned status ${response.status}. Response: ${errorText.substring(0, 500)}`;
         }
     }
@@ -806,18 +813,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const checkmark = `<span class="text-green-600 font-bold">&#10003;</span>`;
             tr.innerHTML = `
                 <td class="p-3 font-mono">${col.name}</td>
-                <td class="p-3 font-mono text-purple-600 uppercase">${col.type}</td>
+                <td class="p-3 font-mono text-purple-600 uppercase">${col.type === 'serial' ? 'SERIAL (PK)' : col.type}</td>
                 <td class="p-3 text-center">${col.is_not_null ? checkmark : ''}</td>
                 <td class="p-3 text-center">${col.is_primary_key ? checkmark : ''}</td>
                 <td class="p-3 text-center">${col.is_unique ? checkmark : ''}</td>
-                <td class="p-3 font-mono text-xs">${col.foreign_key ? `-> ${col.foreign_key.table_id}.${col.foreign_key.column_name}` : ''}</td>
+                <td class="p-3 font-mono text-xs">${col.foreign_key ? `-> ${state.tables.find(t => t.id === col.foreign_key.table_id)?.name}.${col.foreign_key.column_name}` : ''}</td>
                 <td class="p-3 text-center">
-                    <div class="flex items-center justify-center gap-2">
-                    ${!col.is_primary_key ? `                        
-                        <button data-column-index="${index}" class="edit-column-btn text-gray-500 hover:text-blue-600" title="Edit Column"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L14.732 3.732z"></path></svg></button>
-                        <button data-column-index="${index}" class="delete-column-btn text-gray-500 hover:text-red-600" title="Delete Column"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
+                    ${!col.is_primary_key && !col.foreign_key ? `
+                        <div class="flex items-center justify-center gap-2">
+                            <button data-column-index="${index}" class="edit-column-btn text-gray-500 hover:text-blue-600" title="Edit Column"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L14.732 3.732z"></path></svg></button>
+                            <button data-column-index="${index}" class="delete-column-btn text-gray-500 hover:text-red-600" title="Delete Column"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
+                        </div>
                     ` : ''}
-                    </div>
                 </td>
             `;
             tbody.appendChild(tr);
@@ -1312,11 +1319,25 @@ document.addEventListener('DOMContentLoaded', () => {
         return div;
     }
 
+    function validateCreateTableForm() {
+        const tableName = document.getElementById('new-table-name').value.trim();
+        let allColumnsNamed = true;
+        document.querySelectorAll('#new-columns-list .column-row').forEach(row => {
+            const colName = row.querySelector('[data-key="name"]').value.trim();
+            if (!colName) {
+                allColumnsNamed = false;
+            }
+        });
+        const isValid = tableName && allColumnsNamed;
+        submitCreateTableBtn.disabled = !isValid;
+    }
+
     function resetCreateTableModal() {
         document.getElementById('new-table-name').value = '';
         const columnsList = document.getElementById('new-columns-list');
         columnsList.innerHTML = '';
         columnsList.appendChild(createColumnRow(true)); // Add default PK
+        validateCreateTableForm(); // Set initial button state
     }
 
     // This is a more robust way to handle the submit button click, especially when
@@ -1719,13 +1740,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     cancelImportCsvBtn.addEventListener('click', () => closeModal(importCsvModal));
 
+    function checkImportCsvNextButtonState() {
+        const file = importCsvFile.files[0];
+        const tableName = importTableName.value.trim();
+        importCsvNextBtn.disabled = !file || !tableName;
+    }
+
     importCsvFile.addEventListener('change', () => {
         const file = importCsvFile.files[0];
-        importCsvNextBtn.disabled = !file;
         if (file) {
             importTableName.value = file.name.replace(/\.csv$/i, '').replace(/[^a-z0-9_]+/gi, '_').toLowerCase();
         }
+        checkImportCsvNextButtonState();
     });
+    importTableName.addEventListener('input', checkImportCsvNextButtonState);
 
     importCsvNextBtn.addEventListener('click', async () => {
         const file = importCsvFile.files[0];
@@ -1747,10 +1775,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ csv_content: csvContent })
                 });
-                if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.detail || 'Failed to preview CSV.');
-                }
+                if (!response.ok) throw new Error(await getErrorFromResponse(response));
                 const previewData = await response.json();
                 
                 // Populate review table
@@ -1836,8 +1861,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify(payload),
                 });
                 if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.detail || 'Failed to import CSV.');
+                const errorDetail = await getErrorFromResponse(response);
+                throw new Error(errorDetail);
                 }
                 closeModal(importCsvModal);
                 const newTable = await response.json();
@@ -1926,10 +1951,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ csv_content: csvContent, column_mapping: columnMapping })
                 });
-                if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.detail || 'Failed to import rows.');
-                }
+                if (!response.ok) throw new Error(await getErrorFromResponse(response));
                 const result = await response.json();
                 closeModal(importRowsModal);
                 
@@ -2118,6 +2140,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('new-columns-list').appendChild(createColumnRow());
     });
 
+    // Add validation listeners for the create table modal
+    createTableModal.addEventListener('input', (e) => {
+        if (e.target.matches('#new-table-name, [data-key="name"]')) {
+            // This handles typing in the table name or any column name
+            validateCreateTableForm();
+        }
+    });
     document.getElementById('new-columns-list').addEventListener('change', (e) => {
         // FK checkbox toggle
         if (e.target.classList.contains('fk-checkbox')) {
@@ -2146,8 +2175,20 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('new-columns-list').addEventListener('click', (e) => {
         if (e.target.classList.contains('remove-column-btn')) {
             e.target.closest('.column-row').remove();
+            // Re-validate when a column is removed
+            validateCreateTableForm();
         }
     });
+
+    
+    addColumnToModalBtn.addEventListener('click', () => {
+        document.getElementById('new-columns-list').appendChild(createColumnRow());
+        validateCreateTableForm(); // Re-validate when a new column is added
+    });
+
+    // Add validation listeners for the create table modal
+
+
 
     function openCreateEventModal(dateStr) {
         if (state.tables.length === 0) {
