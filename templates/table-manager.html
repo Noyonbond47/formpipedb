@@ -294,8 +294,14 @@
 <div id="delete-table-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
         <h3 class="text-lg font-semibold mb-4">Confirm Table Deletion</h3>
-        <p>Are you sure you want to delete the table "<strong id="modal-table-name"></strong>"? This will permanently delete all of its data. This action cannot be undone.</p>
-        <div class="mt-6 flex justify-end gap-4">
+        <p class="text-gray-700">Are you sure you want to delete the table "<strong id="modal-table-name"></strong>"? This will permanently delete all of its data. This action cannot be undone.</p>
+        <div class="mt-4 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+            <label class="flex items-center text-sm">
+                <input id="keep-calendar-events-checkbox" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2">
+                <span class="font-medium text-gray-800">Keep associated calendar events (unlink them from this table).</span>
+            </label>
+        </div>
+        <div class="mt-8 flex justify-end gap-4">
             <button id="cancel-delete-table-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
             <button id="confirm-delete-table-btn" class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700">Delete</button>
         </div>
@@ -1450,11 +1456,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function handleDeleteTable() {
         if (!state.selectedTable) return;
+        const keepEvents = document.getElementById('keep-calendar-events-checkbox').checked;
+        const url = `/api/v1/tables/${state.selectedTable.id}?keep_calendar_events=${keepEvents}`;
         try {
-            const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}`, { method: 'DELETE' });
+            const response = await fetchWithAuth(url, { method: 'DELETE' });
             if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.detail || 'Failed to delete table');
+                const errorDetail = await getErrorFromResponse(response);
+                throw new Error(errorDetail);
             }
             // Success
             closeModal(deleteTableModal);
@@ -1465,7 +1473,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.selectedTable = null;
             await fetchDbIdAndTables(); // Refresh list
         } catch (error) {
-            showError(error.message, error);
+            showError(error.message || 'Failed to delete table.', error);
         }
     }
 
@@ -1506,15 +1514,15 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const response = await fetchWithAuth(`/api/v1/rows/${rowId}`, { method: 'DELETE' });
                 if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.detail || 'Failed to delete row');
+                    const errorDetail = await getErrorFromResponse(response);
+                    throw new Error(errorDetail);
                 }
-                // On success, just remove the row from the UI for a faster feel
-                document.querySelector(`button.delete-row-btn[data-row-id="${rowId}"]`).closest('tr').remove();
-                state.pagination.totalRows -= 1;
-                renderPagination();
+                // On success, refresh the data grid to show the change.
+                // This is more robust than just removing the row from the UI,
+                // as it correctly handles pagination.
+                await fetchAndRenderData(state.selectedTable.id, state.pagination.currentPage, searchInput.value.trim());
             } catch (error) {
-                showError(error.message, error);
+                showError(error.message || 'Failed to delete row.', error);
             }
         }
     }
@@ -2422,11 +2430,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const token = await getAuthToken();
                 if (!token) return failureCallback(new Error('Not authenticated'));
 
-                const start = fetchInfo.start.toISOString().split('T')[0];
-                const end = fetchInfo.end.toISOString().split('T')[0];
+                const start = fetchInfo.startStr.split('T')[0];
+                const end = fetchInfo.endStr.split('T')[0];
 
                 try {
-                    const response = await fetch(`/api/v1/calendar/events?start_date=${start}&end_date=${end}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                    const response = await fetch(`/api/v1/calendar/events?start_date=${start}&end_date=${end}&db_id=${state.dbId}`, { headers: { 'Authorization': `Bearer ${token}` } });
                     if (!response.ok) throw new Error('Failed to fetch events');
                     const apiEvents = await response.json();
                     const calendarEvents = apiEvents.map(event => ({
@@ -2497,12 +2505,25 @@ document.addEventListener('DOMContentLoaded', () => {
             const timeFormat = { hour: 'numeric', minute: '2-digit', hour12: true };
             const timeText = event.allDay ? 'All-day' : event.start.toLocaleTimeString([], timeFormat);
 
+            let detailsHtml = '';
+            const props = event.extendedProps;
+            if (props.source_row_data) {
+                detailsHtml += '<div class="mt-2 pt-2 border-t border-gray-200 space-y-1 font-mono text-xs">';
+                for (const [key, value] of Object.entries(props.source_row_data)) {
+                    if (value !== null && value !== undefined && value !== '') {
+                        detailsHtml += `<div><span class="text-gray-500">${key}:</span> <span class="text-black font-semibold">${value}</span></div>`;
+                    }
+                }
+                detailsHtml += '</div>';
+            } else if (props.description) {
+                detailsHtml = `<p class="text-sm text-gray-600 mt-1">${props.description}</p>`;
+            }
+
             eventEl.innerHTML = `
-                <div class="flex justify-between items-center">
-                    <p class="font-semibold text-gray-800">${event.title}</p>
-                    <p class="text-xs font-medium text-gray-500">${timeText}</p>
-                </div>
-                ${event.extendedProps.description ? `<p class="text-sm text-gray-600 mt-1 truncate">${event.extendedProps.description}</p>` : ''}`;
+                <p class="font-semibold text-gray-800">${event.title}</p>
+                <p class="text-xs font-medium text-gray-500">${timeText}</p>
+                ${detailsHtml}`;
+
             eventEl.addEventListener('click', () => {
                 const fullEvent = calendar.getEventById(event.id);
                 if (fullEvent) openEventDetailsModal(fullEvent);

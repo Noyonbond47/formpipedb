@@ -895,14 +895,7 @@ async def create_table_row(
         sync_config_res = supabase.table("calendar_sync_configs").select("is_enabled, column_mapping").eq("table_id", table_id).maybe_single().execute()
 
         if sync_config_res and sync_config_res.data and sync_config_res.data.get("is_enabled"):
-            mapping = sync_config_res.data.get("column_mapping") or {}
-            start_time_col = mapping.get("start_time_column") # This is now safe
-            
-            # If a start time column is mapped, pre-populate it with the current time.
-            if start_time_col:
-                # Format to 'YYYY-MM-DDTHH:MM:SS' which is compatible with both the DB and HTML datetime-local inputs.
-                now_iso = datetime.now(timezone.utc).isoformat()
-                new_data[start_time_col] = now_iso
+            pass # This block is now empty to prevent auto-populating the date.
 
         new_row_data = {
             "user_id": user.id,
@@ -947,19 +940,25 @@ async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict 
             mapping = RowToCalendarRequest(**mapping_data)
 
             # For automated sync, the event title should be the table name.
-            table_schema_dict = await get_single_table(table_id, auth_details)
-            table_name = table_schema_dict['name']
+            table_schema_res = await get_single_table(table_id, auth_details)
+            table_name = table_schema_res['name']
+            table_schema = TableResponse(**table_schema_res)
+            
+            # Find a good column to represent the "row name" for the event title
+            row_name_col = _find_best_title_column(table_schema.columns)
             
             new_row_data = updated_row['data']
             start_time = new_row_data.get(mapping.start_time_column)
+            row_name = new_row_data.get(row_name_col, f"Row {updated_row['id']}") if row_name_col else f"Row {updated_row['id']}"
+            event_title = f"{table_name} - {row_name}"
 
             # Only proceed if the essential start time field has data.
-            if table_name and start_time:
+            if event_title and start_time:
                 event_payload = {
                     "user_id": user.id,
                     "source_table_id": table_id,
                     "source_row_id": row_id,
-                    "title": table_name, # Use table name as the event title
+                    "title": event_title,
                     "start_time": str(start_time),
                     "end_time": str(new_row_data.get(mapping.end_time_column)) if mapping.end_time_column and new_row_data.get(mapping.end_time_column) else None,
                     "description": str(new_row_data.get(mapping.description_column)) if mapping.description_column and new_row_data.get(mapping.description_column) else None,
@@ -1031,6 +1030,7 @@ async def _delete_item(supabase: Client, table_name: str, item_id: int, item_typ
 async def get_calendar_events(
     start_date: str, # ISO 8601 format: YYYY-MM-DD
     end_date: str,   # ISO 8601 format: YYYY-MM-DD
+    db_id: int,      # The database ID to filter by
     auth_details: dict = Depends(get_current_user_details)
 ):
     """
@@ -1043,8 +1043,9 @@ async def get_calendar_events(
         # to return a much richer dataset for the calendar UI.
         # You will need to add this function to your Supabase SQL Editor.
         response = supabase.rpc('get_calendar_events_with_details', {
-            'p_start_date': start_date,
-            'p_end_date': end_date
+            'p_start_date': start_date, 
+            'p_end_date': end_date,
+            'p_db_id': db_id
         }).execute()
         return response.data
     except APIError as e:
@@ -1233,20 +1234,25 @@ async def create_or_update_calendar_sync_config(table_id: int, config_data: Cale
             mapping = config_data.column_mapping
 
             # For automated sync, the event title should be the table name.
-            table_schema_dict = await get_single_table(table_id, auth_details)
-            table_name = table_schema_dict['name']
+            table_schema_res = await get_single_table(table_id, auth_details)
+            table_name = table_schema_res['name']
+            table_schema = TableResponse(**table_schema_res)
+            row_name_col = _find_best_title_column(table_schema.columns)
             
             for row in all_rows:
                 row_data = row['data']
                 start_time = row_data.get(mapping.start_time_column)
+                
+                row_name = row_data.get(row_name_col, f"Row {row['id']}") if row_name_col else f"Row {row['id']}"
+                event_title = f"{table_name} - {row_name}"
 
                 # Skip rows that are missing essential data for a calendar event.
-                if not table_name or not start_time:
+                if not event_title or not start_time:
                     continue
 
                 events_to_upsert.append({
                     "user_id": user.id, "source_table_id": table_id, "source_row_id": row['id'], # Use the top-level 'id'
-                    "title": table_name, "start_time": str(start_time),
+                    "title": event_title, "start_time": str(start_time),
                     "end_time": str(row_data.get(mapping.end_time_column)) if mapping.end_time_column and row_data.get(mapping.end_time_column) else None,
                     "description": str(row_data.get(mapping.description_column)) if mapping.description_column and row_data.get(mapping.description_column) else None,
                 })
