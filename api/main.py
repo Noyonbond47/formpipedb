@@ -711,13 +711,25 @@ async def update_database_table(table_id: int, table_data: TableUpdate, auth_det
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update table: {str(e)}")
 
 @app.delete("/api/v1/databases/{database_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user_database(database_id: int, auth_details: dict = Depends(get_current_user_details)):
+async def delete_user_database(
+    database_id: int, 
+    auth_details: dict = Depends(get_current_user_details)
+):
     """
     Deletes a database and all its associated tables and rows.
     RLS and cascade delete handles the security and data integrity.
     """
     try:
         supabase = auth_details["client"]
+
+        # Before deleting the database, which cascades to tables, we need to handle calendar events.
+        # We will unlink all calendar events associated with ALL tables in this database.
+        # This prevents orphaned data and makes deletion cleaner.
+        # The RPC function will find all tables for the user in the given database and unlink their events.
+        supabase.rpc('unlink_calendar_events_for_database', {
+            'p_database_id': database_id
+        }).execute()
+
         # The RLS policy ensures the user can only match their own database ID.
         # The 'returning="representation"' ensures data is returned to check if a row was actually deleted.
         response = supabase.table("user_databases").delete(returning="representation").eq("id", database_id).execute()
@@ -729,12 +741,28 @@ async def delete_user_database(database_id: int, auth_details: dict = Depends(ge
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete database: {str(e)}")
 
 @app.delete("/api/v1/tables/{table_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_database_table(table_id: int, auth_details: dict = Depends(get_current_user_details)):
+async def delete_database_table(
+    table_id: int, 
+    auth_details: dict = Depends(get_current_user_details),
+    keep_calendar_events: bool = Query(False, description="If true, unlinks calendar events instead of deleting them.")
+):
     """
     Deletes a table and all its associated rows.
+    Can optionally preserve associated calendar events by unlinking them.
     """
     try:
         supabase = auth_details["client"]
+
+        if keep_calendar_events:
+            # Unlink events: Set source_table_id and source_row_id to NULL for all events from this table.
+            # This preserves them as standalone calendar events.
+            supabase.table("calendar_events").update({
+                "source_table_id": None,
+                "source_row_id": None
+            }).eq("source_table_id", table_id).execute()
+
+        # Now delete the table. If keep_calendar_events was false, the database's
+        # ON DELETE CASCADE will automatically delete the linked calendar events.
         response = supabase.table("user_tables").delete(returning="representation").eq("id", table_id).execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found or you do not have permission to delete it.")
@@ -846,7 +874,11 @@ async def get_all_table_rows(table_id: int, auth_details: dict = Depends(get_cur
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @app.post("/api/v1/tables/{table_id}/rows", response_model=RowResponse, status_code=status.HTTP_201_CREATED)
-async def create_table_row(table_id: int, auth_details: dict = Depends(get_current_user_details)):
+async def create_table_row(
+    table_id: int, 
+    row_data: RowCreate, # This parameter was missing
+    auth_details: dict = Depends(get_current_user_details)
+):
     """
     Creates a new, empty row for a table.
     """
@@ -857,7 +889,7 @@ async def create_table_row(table_id: int, auth_details: dict = Depends(get_curre
         user = auth_details["user"]
         
         # --- FIX: Pre-populate data based on calendar sync config ---
-        new_data = {} # FIX: Ensure this is a new dictionary for every request
+        new_data = row_data.data.copy() # Start with a fresh copy of the provided data
         # Check if the table has an active calendar sync configuration.
         sync_config_res = supabase.table("calendar_sync_configs").select("is_enabled, column_mapping").eq("table_id", table_id).maybe_single().execute()
 
@@ -942,7 +974,7 @@ async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict 
                         on_conflict="user_id, source_table_id, source_row_id"
                     ).execute()
 
-        return updated_row
+        return await get_single_row(row_id, auth_details)
 
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update row: {str(e)}")
@@ -971,6 +1003,21 @@ async def delete_table_row(row_id: int, auth_details: dict = Depends(get_current
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete row: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred during row deletion: {str(e)}")
+
+@app.get("/api/v1/rows/{row_id}", response_model=RowResponse)
+async def get_single_row(row_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Fetches a single row by its ID. RLS ensures the user has access.
+    """
+    try:
+        supabase = auth_details["client"]
+        response = supabase.table("table_rows").select("*").eq("id", row_id).single().execute()
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Row not found or access denied.")
+        return response.data
+    except APIError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not fetch row: {str(e)}")
+
 
 async def _delete_item(supabase: Client, table_name: str, item_id: int, item_type_name: str):
     """Generic helper to delete an item from a table by ID, with RLS ensuring ownership."""
