@@ -24,9 +24,12 @@
             <input type="email" id="confirm_email" placeholder="Confirm Email" required class="w-full px-4 py-2 text-gray-700 bg-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
             <input type="password" id="password" placeholder="Password" required class="w-full px-4 py-2 text-gray-700 bg-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
             <input type="password" id="confirm_password" placeholder="Confirm Password" required class="w-full px-4 py-2 text-gray-700 bg-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <div class="flex justify-center">
-                <div class="h-captcha" data-sitekey="{{ hcaptcha_site_key }}"></div>
+            
+            <!-- This is the hCaptcha widget that was missing from the display -->
+            <div id="hcaptcha-container" class="flex justify-center pt-2">
+                <!-- The h-captcha div will be inserted here by JavaScript -->
             </div>
+
             <div class="flex items-center">
                 <input type="checkbox" id="terms_agree" name="terms_agree" required>
                 <label for="terms_agree" class="ml-2 text-sm text-gray-600">I agree to the 
@@ -41,12 +44,21 @@
     <script>
         const supabaseUrl = '{{ supabase_url }}';
         const supabaseAnonKey = '{{ supabase_anon_key }}';
+        const hcaptchaSiteKey = '{{ hcaptcha_site_key }}';
         const errorMessage = document.getElementById('error-message');
 
         // Important: Check if the credentials are provided
-        if (!supabaseUrl || !supabaseAnonKey) {
-            console.error("Supabase URL or Anon Key is missing. Make sure environment variables are set in Vercel.");
+        if (!supabaseUrl || !supabaseAnonKey || !hcaptchaSiteKey) {
+            console.error("Supabase or hCaptcha credentials missing. Make sure SUPABASE_URL, SUPABASE_ANON_KEY, and HCAPTCHA_SITE_KEY environment variables are set in Vercel.");
             errorMessage.textContent = 'Configuration error. Please contact support.';
+        } else {
+            // --- FIX: Programmatically create the hCaptcha widget ---
+            // This ensures it only tries to render if the site key is present.
+            const captchaContainer = document.getElementById('hcaptcha-container');
+            const captchaDiv = document.createElement('div');
+            captchaDiv.className = 'h-captcha';
+            captchaDiv.dataset.sitekey = hcaptchaSiteKey;
+            captchaContainer.appendChild(captchaDiv);
         }
 
         const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
