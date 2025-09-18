@@ -730,7 +730,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (col.is_primary_key) {
                     const input = document.createElement('input');
                     input.type = 'text';
-                    input.value = cellValue;
+                    if (isNew && col.is_auto_increment) {
+                        input.value = '(auto)';
+                        input.placeholder = '(auto)';
+                    } else {
+                        input.value = cellValue;
+                    }
                     input.className = 'w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 editable-cell-input';
                     input.readOnly = col.is_auto_increment;
                     input.classList.toggle('bg-gray-100', col.is_auto_increment);
@@ -1165,7 +1170,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(errorDetail);
             }
 
-            // On success, re-fetch the current page to get the saved data and correct pagination
+            // On success, re-fetch the current page AND re-cache FK data in case it changed.
+            await cacheForeignKeyData(state.selectedTable);
             await fetchAndRenderData(state.selectedTable.id, state.pagination.currentPage, searchInput.value.trim());
 
         } catch (error) {
