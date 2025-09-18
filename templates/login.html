@@ -27,7 +27,9 @@
                 </div>
             </div>
             <div class="flex justify-center pt-2">
-                <div class="h-captcha" data-sitekey="{{ hcaptcha_site_key }}"></div>
+                <div id="hcaptcha-container">
+                    <!-- The h-captcha div will be inserted here by JavaScript -->
+                </div>
             </div>
             <button type="submit" class="w-full py-3 font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">Log In</button>
         </form>
@@ -37,10 +39,27 @@
     <script>
         const supabaseUrl = '{{ supabase_url }}';
         const supabaseAnonKey = '{{ supabase_anon_key }}';
+        const hcaptchaSiteKey = '{{ hcaptcha_site_key }}';
+        const errorMessage = document.getElementById('error-message');
 
-        if (!supabaseUrl || !supabaseAnonKey) {
-            console.error("Supabase URL or Anon Key is missing. Make sure environment variables are set in Vercel.");
-            document.getElementById('error-message').textContent = 'Configuration error. Please contact support.';
+        // --- Add a variable to hold the hCaptcha widget ID for resetting ---
+        let hcaptchaWidgetId = null;
+
+        // Important: Check if the credentials are provided
+        if (!supabaseUrl || !supabaseAnonKey || !hcaptchaSiteKey) {
+            console.error("Supabase or hCaptcha credentials missing. Make sure SUPABASE_URL, SUPABASE_ANON_KEY, and HCAPTCHA_SITE_KEY environment variables are set in Vercel.");
+            errorMessage.textContent = 'Configuration error. Please contact support.';
+        } else {
+            // --- Programmatically create the hCaptcha widget ---
+            const captchaContainer = document.getElementById('hcaptcha-container');
+            const captchaDiv = document.createElement('div');
+            captchaDiv.className = 'h-captcha';
+            captchaDiv.dataset.sitekey = hcaptchaSiteKey;
+            // Add a callback to get the widget ID when it renders
+            captchaDiv.dataset.callback = 'onCaptchaRender';
+            captchaContainer.appendChild(captchaDiv);
+
+            window.onCaptchaRender = (token) => { hcaptchaWidgetId = hcaptcha.getWidgetId(); };
         }
 
         const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
@@ -48,6 +67,7 @@
         const loginForm = document.getElementById('login-form');
         loginForm.addEventListener('submit', async (event) => {
             event.preventDefault();
+            errorMessage.textContent = ''; // Clear previous errors
 
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
@@ -56,7 +76,8 @@
             const formData = new FormData(loginForm);
             const captchaToken = formData.get('h-captcha-response');
             if (!captchaToken) {
-                document.getElementById('error-message').textContent = 'Please complete the captcha.';
+                errorMessage.textContent = 'Please complete the captcha.';
+                if (hcaptchaWidgetId) hcaptcha.reset(hcaptchaWidgetId);
                 return;
             }
 
@@ -69,7 +90,9 @@
             });
 
             if (error) {
-                document.getElementById('error-message').textContent = error.message;
+                errorMessage.textContent = error.message;
+                // --- Reset the CAPTCHA on any submission error ---
+                if (hcaptchaWidgetId) hcaptcha.reset(hcaptchaWidgetId);
             } else {
                 // Store the token for other pages to use
                 localStorage.setItem('supabase_token', data.session.access_token);

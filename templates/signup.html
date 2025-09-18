@@ -47,6 +47,9 @@
         const hcaptchaSiteKey = '{{ hcaptcha_site_key }}';
         const errorMessage = document.getElementById('error-message');
 
+        // --- FIX: Add a variable to hold the hCaptcha widget ID for resetting ---
+        let hcaptchaWidgetId = null;
+
         // Important: Check if the credentials are provided
         if (!supabaseUrl || !supabaseAnonKey || !hcaptchaSiteKey) {
             console.error("Supabase or hCaptcha credentials missing. Make sure SUPABASE_URL, SUPABASE_ANON_KEY, and HCAPTCHA_SITE_KEY environment variables are set in Vercel.");
@@ -58,7 +61,11 @@
             const captchaDiv = document.createElement('div');
             captchaDiv.className = 'h-captcha';
             captchaDiv.dataset.sitekey = hcaptchaSiteKey;
+            // Add a callback to get the widget ID when it renders
+            captchaDiv.dataset.callback = 'onCaptchaRender';
             captchaContainer.appendChild(captchaDiv);
+
+            window.onCaptchaRender = (token) => { hcaptchaWidgetId = hcaptcha.getWidgetId(); };
         }
 
         const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
@@ -80,17 +87,20 @@
             const captchaToken = formData.get('h-captcha-response');
             if (!captchaToken) {
                 errorMessage.textContent = 'Please complete the captcha.';
+                if (hcaptchaWidgetId) hcaptcha.reset(hcaptchaWidgetId);
                 return;
             }
 
             // --- Client-side validation ---
             if (email !== confirmEmail) {
                 errorMessage.textContent = 'Emails do not match.';
+                if (hcaptchaWidgetId) hcaptcha.reset(hcaptchaWidgetId);
                 return;
             }
 
             if (password !== confirmPassword) {
                 errorMessage.textContent = 'Passwords do not match.';
+                if (hcaptchaWidgetId) hcaptcha.reset(hcaptchaWidgetId);
                 return;
             }
 
@@ -115,6 +125,8 @@
 
             if (error) {
                 errorMessage.textContent = error.message;
+                // --- FIX: Reset the CAPTCHA on any submission error ---
+                if (hcaptchaWidgetId) hcaptcha.reset(hcaptchaWidgetId);
             } else if (data.user && data.session) {
                 // User is signed in, likely because email confirmation is disabled.
                 localStorage.setItem('supabase_token', data.session.access_token);
