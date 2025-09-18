@@ -972,8 +972,13 @@ async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict 
             mapping = RowToCalendarRequest(**mapping_data)
 
             # For automated sync, the event title should be the table name.
-            table_schema_res = await get_single_table(table_id, auth_details)
-            table_name = table_schema_res['name']
+            try:
+                table_schema_res = await get_single_table(table_id, auth_details)
+                table_name = table_schema_res['name']
+            except HTTPException as e:
+                # This can happen if the row being updated belongs to a table not in the current DB context.
+                # In this case, we just skip the calendar sync for this row.
+                return await get_single_row(row_id, auth_details)
             table_schema = TableResponse(**table_schema_res)
             
             # Find a good column to represent the "row name" for the event title

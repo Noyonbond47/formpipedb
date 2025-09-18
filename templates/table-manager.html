@@ -1119,14 +1119,20 @@ document.addEventListener('DOMContentLoaded', () => {
             body: JSON.stringify(payload)
         });
 
-        if (response.ok) fetchAndRenderCalendarSync(state.selectedTable);
+        if (response.ok) {
+            fetchAndRenderCalendarSync(state.selectedTable);
+            if (calendar) calendar.refetchEvents(); // Explicitly refresh calendar on sync change
+        }
         else showError('Failed to save sync settings.');
     }
 
     async function handleDeleteCalendarSync() {
         if (confirm('Are you sure you want to remove the calendar sync for this table?')) {
             const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/calendar-sync`, { method: 'DELETE' });
-            if (response.ok) fetchAndRenderCalendarSync(state.selectedTable);
+            if (response.ok) {
+                fetchAndRenderCalendarSync(state.selectedTable);
+                if (calendar) calendar.refetchEvents(); // Explicitly refresh calendar
+            }
             else showError('Failed to delete sync settings.');
         }
     }
@@ -1527,9 +1533,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(errorDetail);
             }
             
-            // Instead of optimistically adding the row, just re-fetch the data.
-            // This ensures pagination and all server-generated values are correct.
-            // We'll go to page 1 to show the newly created item.
+            // FIX: Explicitly refetch both the data grid and the calendar events.
+            if (calendar) calendar.refetchEvents();
             await fetchAndRenderData(state.selectedTable.id, 1, searchInput.value.trim());
 
         } catch (error) {
@@ -1552,6 +1557,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // This is more robust than just removing the row from the UI,
                 // as it correctly handles pagination.
                 await fetchAndRenderData(state.selectedTable.id, state.pagination.currentPage, searchInput.value.trim());
+                // FIX: Explicitly refresh calendar
+                if (calendar) calendar.refetchEvents();
             } catch (error) {
                 showError(error.message || 'Failed to delete row.', error);
             }
@@ -1652,6 +1659,9 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => {
                 feedbackElement.style.backgroundColor = '';
             }, 1500);
+
+            // FIX: Explicitly refresh calendar on successful row update
+            if (calendar) calendar.refetchEvents();
         } catch (error) {
             showError(`Error saving data: ${error.message}`, error);
             fetchAndRenderData(state.selectedTable.id); // Revert UI on failure
@@ -2584,22 +2594,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function initializeCalendarRealtime() {
-        if (!supabase) return;
-
-        const channel = supabase.channel('calendar-events-realtime')
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'calendar_events' }, // Listen to ALL changes
-                (payload) => {
-                    console.log(`Realtime: ${payload.eventType} on calendar_events detected, refreshing calendar.`, payload);
-                    if (calendar) {
-                        calendar.refetchEvents();
-                    }
-                }
-            ).subscribe();
-    }
-
     function formatDateTimeForInput(date) {
         if (!date) return '';
         // JavaScript's toISOString() is almost what we need, but it includes 'Z' for UTC.
@@ -2830,7 +2824,6 @@ document.addEventListener('DOMContentLoaded', () => {
     checkAndCollapseSidebar(); // Collapse on mobile on initial load
     // Initial Load
     initializeCalendar();
-    initializeCalendarRealtime();
     supabase.auth.onAuthStateChange((event, session) => {
         if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
             if (session) {
