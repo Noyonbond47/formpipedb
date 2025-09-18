@@ -304,7 +304,7 @@ const supabaseAnonKey = '{{ supabase_anon_key }}';
 const supabase = supabaseUrl && supabaseAnonKey ? window.supabase.createClient(supabaseUrl, supabaseAnonKey) : null;
 
 document.addEventListener('DOMContentLoaded', () => {
-    if (!supabase) {
+    if (!supabase) { // Ensure Supabase is configured
         document.body.innerHTML = '<div class="text-center p-8 text-red-600">Supabase client not configured. Please check your environment variables.</div>';
         return;
     }
@@ -317,7 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
         fkDataCache: {},
         selectedTable: null,
         pagination: {
-            currentPage: 1,
+            currentPage: 1, // This should match the default limit in the API
             limit: 50, // This should match the default limit in the API
             totalRows: 0
         }
@@ -326,6 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // DOM Elements
     const tableList = document.getElementById('table-list');
     const mainContent = document.getElementById('main-content');
+    const dataTableWrapper = document.getElementById('data-table-wrapper');
     const placeholderContent = document.getElementById('placeholder-content');
     const deleteTableBtn = document.getElementById('delete-table-btn');
     const tableTabButtons = document.querySelectorAll('.table-tab-btn');
@@ -353,6 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const viewDbSqlModal = document.getElementById('view-db-sql-modal');
     const closeDbSqlModalBtn = document.getElementById('close-db-sql-modal-btn');
     const importRowsBtn = document.getElementById('import-rows-btn');
+    const importRowsCsvFile = document.getElementById('import-rows-csv-file');
     const addRowBtn = document.getElementById('add-row-btn');
     const dataTbody = document.getElementById('data-tbody');
     const exportCsvBtn = document.getElementById('export-csv-btn');
@@ -373,13 +375,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeSummaryModalBtn = document.getElementById('close-summary-modal-btn');
     const sidebar = document.getElementById('sidebar');
     const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
-
+    
+    // Abort controller to cancel stale data fetch requests
+    let dataFetchController = new AbortController();
     let initialDataLoaded = false;
 
-    let dataFetchController = new AbortController();
-
-    const importRowsCsvFile = document.getElementById('import-rows-csv-file');
-
+    // --- UI & Error Handling ---
+    
     function showError(message, error = null) {
         const banner = document.getElementById('error-banner');
         const bannerMessage = document.getElementById('error-banner-message');
@@ -391,6 +393,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- API & Helpers ---
+
     /**
      * A wrapper for the native fetch function that automatically includes
      * the Supabase authentication token.
@@ -399,12 +403,12 @@ document.addEventListener('DOMContentLoaded', () => {
      * @returns {Promise<Response>} The fetch Response object.
      */
     async function fetchWithAuth(url, options = {}) {
-        const token = await getAuthToken();
-        if (!token) {
-            // getAuthToken handles redirection, but we must stop execution here by throwing.
-            throw new Error("Authentication token not available. Redirecting to login.");
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+            window.location.href = '/login'; // Redirect if no session
+            throw new Error("User not authenticated.");
         }
-
+        const token = session.access_token;
         const headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
         return fetch(url, { ...options, headers });
     }
@@ -412,9 +416,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function getAuthToken() {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error || !session || !session.user) {
-            console.error("Authentication error, redirecting to login.", error);
-            // Clear any potentially stale token and redirect.
-            localStorage.removeItem('supabase_token');
+            console.error("Authentication error, redirecting to login.", error); // Clear any potentially stale token and redirect.
             window.location.href = '/login';
             return null;
         }
@@ -458,6 +460,8 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    // --- Data Fetching and Rendering ---
+
     /**
      * Fetches the database ID and its tables. Includes a retry mechanism to handle
      * potential database replication lag immediately after creation.
@@ -468,14 +472,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                // Fetch the database and its tables in a single, atomic API call.
-                // This is more efficient and eliminates race conditions.
+                // Fetch the database and its tables in a single API call.
                 const dbResponse = await fetchWithAuth(`/api/v1/databases/by-name/${encodeURIComponent(state.dbName)}`);
 
                 if (dbResponse.status === 404 && attempt < maxRetries) {
                     console.log(`Attempt ${attempt}: Database not found, retrying in ${retryDelay}ms...`);
                     await new Promise(resolve => setTimeout(resolve, retryDelay));
-                    continue; // Go to the next iteration of the loop.
+                    continue;
                 }
 
                 if (!dbResponse.ok) {
@@ -484,8 +487,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const dbWithTables = await dbResponse.json();
                 if (!dbWithTables) throw new Error(`Database '${state.dbName}' could not be loaded.`);
-
-                // --- Success: Set state and exit the loop ---
+                
                 // The API response now includes the tables under the `user_tables` key.
                 state.dbId = dbWithTables.id;
                 state.tables = dbWithTables.user_tables || [];
@@ -506,8 +508,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tableList.innerHTML = `<p class="text-sm text-red-500 p-2">Error loading tables.</p>`;
             createTableBtn.disabled = true;
             createTableBtn.title = "Cannot create table: failed to load database details.";
-            placeholderContent.textContent = `Error: Could not load database '${state.dbName}'. It may not exist or you may not have access.`;
-            initialDataLoaded = false; // Allow a retry on the next auth event
+            placeholderContent.textContent = `Error: Could not load database '${state.dbName}'. It may not exist or you may not have access.`; // Allow a retry on the next auth event
         }
     }
 
@@ -519,7 +520,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         tables.forEach(table => {
             const tableLink = document.createElement('a');
-            tableLink.href = '#'; // Use flex for icon alignment
+            tableLink.href = '#';
             tableLink.className = 'flex items-center gap-3 p-2 rounded-md hover:bg-gray-100';
             tableLink.textContent = table.name;
             tableLink.dataset.tableId = table.id;
@@ -529,8 +530,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function cacheForeignKeyData(table) {
         if (!table || !table.columns) return;
-
-        // Reset cache for the new table context
+        
         state.fkDataCache = {};
 
         const fkColumns = table.columns.filter(c => c.foreign_key);
@@ -563,7 +563,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function handleTableSelect(e) {
+    async function handleTableSelect(e) {
         if (e.target.tagName === 'A') {
             e.preventDefault();
             const tableId = e.target.dataset.tableId;
@@ -573,18 +573,15 @@ document.addEventListener('DOMContentLoaded', () => {
             tableList.querySelectorAll('a').forEach(a => a.classList.remove('bg-blue-100', 'text-blue-700', 'font-semibold'));
             e.target.classList.add('bg-blue-100', 'text-blue-700', 'font-semibold');
             
-            // FIX: Await the FK caching before rendering data to prevent race conditions.
-            cacheForeignKeyData(state.selectedTable).then(() => {
-                fetchAndRenderData(state.selectedTable.id, 1);
-            });
+            // Await FK caching before rendering data to prevent race conditions.
+            await cacheForeignKeyData(state.selectedTable);
+            fetchAndRenderData(state.selectedTable.id, 1);
 
             mainContent.classList.remove('hidden');
             placeholderContent.classList.add('hidden');
             deleteTableBtn.disabled = false;
             tableTabContainer.classList.remove('hidden');
             document.querySelector('.table-tab-btn[data-tab="data"]').click();
-
-            // Reset to page 1 whenever a new table is selected
             renderStructure(state.selectedTable.columns);
             renderTableSql(state.selectedTable);
         }
@@ -592,7 +589,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderStructure(columns) {
         const tbody = document.getElementById('structure-tbody');
-        tbody.innerHTML = ''; // Clear existing
+        tbody.innerHTML = '';
         if (!columns || columns.length === 0) {
             tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-gray-500">This table has no columns defined.</td></tr>`;
             return;
@@ -622,7 +619,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function fetchAndRenderData(tableId, page = 1, searchTerm = '') {
-        // Abort any ongoing fetch for this data to prevent race conditions
+        // Abort any ongoing fetch to prevent race conditions
         dataFetchController.abort();
         dataFetchController = new AbortController();
         const signal = dataFetchController.signal;
@@ -635,8 +632,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tbody = document.getElementById('data-tbody');
         const loader = document.getElementById('data-table-loader');
         const columns = state.selectedTable.columns.sort((a, b) => a.is_primary_key ? -1 : 1);
-
-        // Show loading overlay
+        
         loader.classList.remove('hidden');
 
         const searchParam = searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : '';
@@ -648,12 +644,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const rows = result.data;
             state.pagination.totalRows = result.total;
 
-            // --- FIX: Programmatic DOM creation to avoid innerHTML and CSP issues ---
-            // Clear existing content
+            // Programmatic DOM creation to avoid innerHTML and potential CSP issues
             thead.innerHTML = '';
             tbody.innerHTML = '';
-
-            // Build and append header
+            
             const headerRow = document.createElement('tr');
             headerRow.innerHTML = '<th class="p-3 w-24">Actions</th>';
             columns.forEach(col => {
@@ -663,8 +657,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
-
-            // Build and append body rows
+            
             if (rows.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="${columns.length + 1}" class="p-8 text-center text-gray-500">No data in this table.</td></tr>`;
             } else {
@@ -674,14 +667,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             renderPagination();
         } catch (error) {
-            if (error.name === 'AbortError') {
-                console.log('Data fetch aborted by new request.'); // This is an expected outcome, not an error.
+            if (error.name === 'AbortError') { // This is an expected outcome, not an error.
+                console.log('Data fetch aborted by new request.');
                 return;
             }
             console.error(error);
             tbody.innerHTML = `<tr><td colspan="99" class="p-4 text-center text-red-500">Error loading data: ${error.message}</td></tr>`;
         } finally {
-            // Hide loading overlay
             loader.classList.add('hidden');
         }
     }
@@ -690,7 +682,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const tr = document.createElement('tr');
         tr.dataset.rowId = row.id;
 
-        // Actions Cell
         const actionsTd = document.createElement('td');
         actionsTd.className = 'p-3 text-center flex items-center justify-center gap-3';
         actionsTd.innerHTML = `
@@ -700,8 +691,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         tr.appendChild(actionsTd);
 
-        // Data Cells
-        columns.forEach(col => {
+        columns.forEach(col => { // Data Cells
             const td = document.createElement('td');
             td.className = 'p-1';
             td.dataset.columnName = col.name;
@@ -731,7 +721,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 if (col.is_primary_key) {
                     td.textContent = `(${cellValue})`;
-                    td.className = 'p-3'; // Adjust class for non-input cell
+                    td.className = 'p-3';
                 } else if (col.type === 'boolean') {
                     const select = document.createElement('select');
                     select.className = 'w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 boolean-select';
@@ -773,8 +763,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         let createStatement = `CREATE TABLE "${table.name}" (\n`;
         const columnDefs = table.columns.map(col => {
-            let parts = [`  "${col.name}"`, (col.type || 'TEXT').toUpperCase()];
-            // Use a Set to prevent duplicate constraints, which is the root of the issue.
+            let parts = [`  "${col.name}"`, (col.type || 'TEXT').toUpperCase()]; // Use a Set to prevent duplicate constraints.
             const constraints = new Set();
             if (col.is_primary_key) constraints.add("PRIMARY KEY");
             if (col.is_not_null) constraints.add("NOT NULL");
@@ -790,6 +779,8 @@ document.addEventListener('DOMContentLoaded', () => {
         hljs.highlightElement(codeElement);
     }
 
+    // --- UI Event Handlers (Tabs, Modals, Sidebar) ---
+
     tableTabButtons.forEach(button => {
         button.addEventListener('click', () => {
             const tab = button.dataset.tab;
@@ -802,19 +793,16 @@ document.addEventListener('DOMContentLoaded', () => {
             button.classList.remove('border-transparent', 'text-gray-500');
 
             document.querySelectorAll('.table-tab-content').forEach(content => {
-                // Hide all main tab contents
                 content.classList.add('hidden');
             });
 
-            // Show the selected one
             const activeContent = document.getElementById(`${tab}-tab-content`);
             if (activeContent) {
                 activeContent.classList.remove('hidden');
             }
-
         });
     });
-
+    
     // Event Listeners for Create Table Modal Tabs
     createTableTabButtonsInModal.forEach(button => {
         button.addEventListener('click', () => {
@@ -841,11 +829,9 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 validateCreateTableForm();
             }
-
         });
     });
-    // Modal Logic
-
+    
     function openModal(modal) {
         modal.classList.remove('hidden');
         setTimeout(() => modal.classList.remove('opacity-0'), 10);
@@ -868,9 +854,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('collapse-icon').classList.toggle('hidden', isCollapsed);
         document.getElementById('expand-icon').classList.toggle('hidden', !isCollapsed);
         
-        // Save preference to local storage
         localStorage.setItem('sidebarCollapsed', isCollapsed);
     }
+
+    // --- Create Table Logic ---
 
     function checkAndCollapseSidebar() {
         if (window.innerWidth < 768 && !sidebar.classList.contains('collapsed')) {
@@ -878,7 +865,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     function createColumnRow(isPk = false) {
-        const id = `col-${Date.now()}`;
         const tableOptions = state.tables.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
 
         const div = document.createElement('div');
@@ -945,15 +931,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const columnsList = document.getElementById('new-columns-list');
         columnsList.innerHTML = '';
         columnsList.appendChild(createColumnRow(true)); // Add default PK
-        validateCreateTableForm(); // Set initial button state
-
-        // Reset CSV tab as well
+        validateCreateTableForm();
+        
         resetCsvImportForm();
-
-        // Reset to the first tab
+        
         createTableTabButtonsInModal[0].click();
-
-        // Reset SQL tab
+        
         document.getElementById('create-table-sql-input').value = '';
     }
 
@@ -972,15 +955,12 @@ document.addEventListener('DOMContentLoaded', () => {
         submitCreateTableBtn.disabled = true;
         submitCreateTableBtn.textContent = 'Creating...';
 
-        if (activeTab === 'csv') {
-            // The CSV import has its own submit button and logic, so this one shouldn't be active.
-            // This is a safeguard.
+        if (activeTab === 'csv') { // The CSV import has its own submit button and logic.
             return;
         } else if (activeTab === 'gui') {
-            // Use the new, more robust endpoint that finds the database by name.
             url = `/api/v1/databases/by-name/${encodeURIComponent(state.dbName)}/tables`;
             const tableName = document.getElementById('new-table-name').value.trim();
-            const columnRows = document.querySelectorAll('#new-columns-list .column-row');
+            const columnRows = document.querySelectorAll('#new-columns-list .column-row'); // Use the new, more robust endpoint that finds the database by name.
             
             const columns = Array.from(columnRows).map(row => {
                 const isFk = row.querySelector('[data-key="is_foreign_key"]').checked;
@@ -1006,10 +986,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             payload = { name: tableName, columns };
 
-        } else { // activeTab === 'sql'
-            // This endpoint still requires an ID. Ensure it's available.
+        } else { // activeTab === 'sql' // This endpoint still requires an ID. Ensure it's available.
             if (!state.dbId) throw new Error("Database ID not loaded. Cannot create table from SQL.");
-            
+
             url = `/api/v1/databases/${state.dbId}/create-table-from-sql`; // This endpoint still requires an ID
             const sqlScript = document.getElementById('create-table-sql-input').value.trim();
             payload = { script: sqlScript };
@@ -1027,8 +1006,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             closeModal(createTableModal);
             const newTable = await response.json();
-            await fetchDbIdAndTables(); // Refresh table list
-            
+            await fetchDbIdAndTables();
             // Auto-select the newly created table
             const newTableLink = tableList.querySelector(`a[data-table-id="${newTable.id}"]`);
             if (newTableLink) {
@@ -1042,6 +1020,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- Table & Row Actions ---
+
     async function handleDeleteTable() {
         if (!state.selectedTable) return;
         const url = `/api/v1/tables/${state.selectedTable.id}`;
@@ -1051,14 +1031,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const errorDetail = await getErrorFromResponse(response);
                 throw new Error(errorDetail);
             }
-            // Success
             closeModal(deleteTableModal);
             mainContent.classList.add('hidden');
             placeholderContent.classList.remove('hidden');
             tableTabContainer.classList.add('hidden');
             deleteTableBtn.disabled = true;
             state.selectedTable = null;
-            await fetchDbIdAndTables(); // Refresh list
+            await fetchDbIdAndTables();
         } catch (error) {
             showError(error.message || 'Failed to delete table.', error);
         }
@@ -1069,20 +1048,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         addRowBtn.disabled = true;
         addRowBtn.textContent = 'Adding...';
-
-        // 1. Create the row in the database
+        
         try {
             const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/rows`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                // The backend now expects a `data` object, even if it's empty.
+                headers: { 'Content-Type': 'application/json' }, // The backend now expects a `data` object, even if it's empty.
                 body: JSON.stringify({ data: {} })
             });
             if (!response.ok) {
                 const errorDetail = await getErrorFromResponse(response);
                 throw new Error(errorDetail);
             }
-            
             // Refresh the data grid to show the new row at the top.
             await fetchAndRenderData(state.selectedTable.id, 1, searchInput.value.trim());
 
@@ -1102,9 +1078,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const errorDetail = await getErrorFromResponse(response);
                     throw new Error(errorDetail);
                 }
-                // On success, refresh the data grid to show the change.
-                // This is more robust than just removing the row from the UI,
-                // as it correctly handles pagination.
+                // On success, refresh the data grid. This is more robust than just removing the row from the UI.
                 await fetchAndRenderData(state.selectedTable.id, state.pagination.currentPage, searchInput.value.trim());
             } catch (error) {
                 showError(error.message || 'Failed to delete row.', error);
@@ -1128,12 +1102,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const columns = state.selectedTable.columns.map(c => c.name);
-            const csvRows = [columns.join(',')]; // Header row
-
+            const csvRows = [columns.join(',')];
             rows.forEach(row => {
                 const values = columns.map(colName => {
-                    const value = colName === 'id' ? row.id : (row.data ? (row.data[colName] ?? '') : '');
-                    // Basic CSV escaping: wrap in quotes if it contains a comma or quote
+                    const value = colName === 'id' ? row.id : (row.data ? (row.data[colName] ?? '') : ''); // Basic CSV escaping: wrap in quotes if it contains a comma or quote
                     const strValue = String(value);
                     if (strValue.includes(',') || strValue.includes('"')) {
                         return `"${strValue.replace(/"/g, '""')}"`;
@@ -1183,11 +1155,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // If the cell that triggered the update is an input, give it feedback
+        // If the cell that triggered the update is an input, give it visual feedback
         const inputElement = cellElement.querySelector('input, select');
         const feedbackElement = inputElement || cellElement;
-
-
         const payload = { data: rowData };
 
         try {
@@ -1200,7 +1170,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const err = await response.json();
                 throw new Error(err.detail || 'Failed to update row');
             }
-            // Visual feedback for success
+            
             feedbackElement.style.transition = 'background-color 0.5s';
             feedbackElement.style.backgroundColor = '#dcfce7'; // Tailwind green-100
             setTimeout(() => {
@@ -1208,7 +1178,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 1500);
 
         } catch (error) {
-            showError(`Error saving data: ${error.message}`, error); // Revert UI on failure
+            showError(`Error saving data: ${error.message}`, error);
             fetchAndRenderData(state.selectedTable.id); // Revert UI on failure
         }
     }
@@ -1218,12 +1188,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const paginationControls = document.getElementById('pagination-controls');
         paginationControls.innerHTML = '';
 
-        if (totalRows === 0) {
-            // Don't show pagination if there are no results
+        if (totalRows === 0) { // Don't show pagination if there are no results
             return;
         }
 
-        if (totalRows <= limit && currentPage === 1) return; // Also hide if only one page
+        if (totalRows <= limit && currentPage === 1) return;
 
         const totalPages = Math.ceil(totalRows / limit);
         const startRow = totalRows > 0 ? (currentPage - 1) * limit + 1 : 0;
@@ -1243,6 +1212,8 @@ document.addEventListener('DOMContentLoaded', () => {
         paginationControls.appendChild(info);
         paginationControls.appendChild(buttons);
     }
+
+    // --- Structure/Column Actions ---
 
     async function saveTableStructure() {
         if (!state.selectedTable) return false;
@@ -1269,10 +1240,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (tableIndex > -1) state.tables[tableIndex] = updatedTable;
             state.selectedTable = updatedTable;
             await fetchAndRenderData(state.selectedTable.id, 1, searchInput.value.trim());
-            renderStructure(state.selectedTable.columns);
-            return true; // Success
+            renderStructure(state.selectedTable.columns); // Success
+            return true;
         } catch (error) {
-            showError(`Error: ${error.message}`, error);
+            showError(`Error: ${error.message}`, error); // Failure
             await fetchDbIdAndTables(); // Re-fetch to revert optimistic changes
             return false; // Failure
         }
@@ -1301,6 +1272,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- Full DB SQL View ---
+
     async function handleViewDbSql() {
         if (!state.dbId) return;
         
@@ -1319,11 +1292,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Sidebar Toggle Event Listener
-    toggleSidebarBtn.addEventListener('click', toggleSidebar);
-    // Event Listeners
-    tableList.addEventListener('click', handleTableSelect);
-    addRowBtn.addEventListener('click', handleAddRow);
+    // --- Import/Export ---
+
     importRowsBtn.addEventListener('click', () => {
         if (!state.selectedTable) return;
         document.getElementById('import-rows-table-name').textContent = state.selectedTable.name;
@@ -1333,6 +1303,7 @@ document.addEventListener('DOMContentLoaded', () => {
         openModal(importRowsModal);
         closeModal(importSummaryModal);
     });
+
     function checkImportCsvNextButtonState() {
         const file = importCsvFile.files[0];
         const tableName = importTableName.value.trim();
@@ -1371,8 +1342,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!response.ok) throw new Error(await getErrorFromResponse(response));
                 const previewData = await response.json();
                 
-                // Populate review table
-                csvReviewTbody.innerHTML = '';
+                csvReviewTbody.innerHTML = ''; // Populate review table
                 let pk_found = false;
                 previewData.sanitized_headers.forEach((header, i) => {
                     const is_pk = header === 'id' && !pk_found;
@@ -1399,8 +1369,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     tr.querySelector('.csv-col-type-select').value = previewData.inferred_types[i];
                 });
 
-                // Switch to step 2
-                importStep1.classList.add('hidden');
+                importStep1.classList.add('hidden'); // Switch to step 2
                 importStep2.classList.remove('hidden');
                 importCsvNextBtn.classList.add('hidden');
                 importCsvSubmitBtn.classList.remove('hidden');
@@ -1417,9 +1386,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     importCsvSubmitBtn.addEventListener('click', async () => {
         const tableName = importTableName.value.trim();
-
-        // This logic is now triggered by its own button, not a form submit.
-        // Gather column definitions from the review step
+        
         const columns = [];
         csvReviewTbody.querySelectorAll('tr').forEach(tr => {
             const name = tr.children[1].textContent;
@@ -1429,8 +1396,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 name: name,
                 type: type,
                 is_primary_key: is_pk,
-                is_not_null: is_pk, // Default not null for PK
-                is_unique: is_pk, // Default unique for PK
+                is_not_null: is_pk,
+                is_unique: is_pk,
                 foreign_key: null
             });
         });
@@ -1504,8 +1471,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </select>
                 `;
                 mappingFields.appendChild(div);
-                // Auto-select if header matches column name
-                const matchingHeader = csvHeaders.find(h => h.toLowerCase().replace(/[\s_]+/g, '') === col.name.toLowerCase().replace(/[\s_]+/g, ''));
+                const matchingHeader = csvHeaders.find(h => h.toLowerCase().replace(/[\s_]+/g, '') === col.name.toLowerCase().replace(/[\s_]+/g, '')); // Auto-select if header matches column name
                 if (matchingHeader) {
                     div.querySelector('select').value = matchingHeader;
                 }
@@ -1549,8 +1515,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!response.ok) throw new Error(await getErrorFromResponse(response));
                 const result = await response.json();
                 closeModal(importRowsModal);
-                
-                // Show summary modal
+                // Show summary modal after import
                 const summaryContent = document.getElementById('import-summary-content');
                 summaryContent.innerHTML = `
                     <p><strong class="font-semibold text-green-600">${result.inserted_count}</strong> rows were successfully imported.</p>
@@ -1573,7 +1538,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 openModal(importSummaryModal);
 
                 if (result.inserted_count > 0) {
-                    await fetchAndRenderData(state.selectedTable.id, 1); // Refresh data view if anything was inserted
+                    await fetchAndRenderData(state.selectedTable.id, 1);
                 }
             } catch (error) {
                 showError(error.message);
@@ -1585,21 +1550,18 @@ document.addEventListener('DOMContentLoaded', () => {
         reader.readAsText(file);
     });
 
-    closeSummaryModalBtn.addEventListener('click', () => closeModal(importSummaryModal));
-
     function generateErrorCsv(errors) {
         if (!errors || errors.length === 0) return;
 
         const originalHeaders = Object.keys(errors[0].data);
         const csvHeaders = ['Row Number', 'Error', ...originalHeaders];
         
-        const csvRows = [csvHeaders.join(',')]; // Header row
-
+        const csvRows = [csvHeaders.join(',')];
         errors.forEach(err => {
             const values = [
                 err.row_number,
-                `"${err.error.replace(/"/g, '""')}"`, // Escape quotes in error message
-                ...originalHeaders.map(h => {
+                `"${err.error.replace(/"/g, '""')}"`, // Escape quotes
+                ...originalHeaders.map(h => { // in error message
                     const value = err.data[h] ?? '';
                     const strValue = String(value);
                     if (strValue.includes(',') || strValue.includes('"')) {
@@ -1620,7 +1582,15 @@ document.addEventListener('DOMContentLoaded', () => {
         a.click();
         URL.revokeObjectURL(url);
     }
-    
+
+    // --- Event Listeners Initialization ---
+
+    // Sidebar
+    toggleSidebarBtn.addEventListener('click', toggleSidebar);
+    tableList.addEventListener('click', handleTableSelect);
+
+    // Modals
+    closeSummaryModalBtn.addEventListener('click', () => closeModal(importSummaryModal));
     createTableBtn.addEventListener('click', () => {
         resetCreateTableModal();
         openModal(createTableModal);
@@ -1638,6 +1608,7 @@ document.addEventListener('DOMContentLoaded', () => {
     editColumnForm.addEventListener('submit', handleEditColumnSubmit);
     cancelEditColumnBtn.addEventListener('click', () => closeModal(editColumnModal));
 
+    // Structure Tab
     structureTbody.addEventListener('click', (e) => {
         const editBtn = e.target.closest('.edit-column-btn');
         const deleteBtn = e.target.closest('.delete-column-btn');
@@ -1656,6 +1627,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+
+    // Data Tab
+    addRowBtn.addEventListener('click', handleAddRow);
+    exportCsvBtn.addEventListener('click', handleExportCsv);
     dataTbody.addEventListener('click', (e) => {
         const deleteBtn = e.target.closest('.delete-row-btn');
         if (deleteBtn) {
@@ -1664,20 +1639,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    document.getElementById('copy-table-sql-btn').addEventListener('click', (e) => {
-        const code = document.getElementById('table-sql-code').textContent;
-        navigator.clipboard.writeText(code).then(() => {
-            e.target.textContent = 'Copied!';
-            setTimeout(() => e.target.textContent = 'Copy', 2000);
-        });
-    });
-    exportCsvBtn.addEventListener('click', handleExportCsv);
-
-    viewDbSqlBtn.addEventListener('click', handleViewDbSql);
-    viewDbSqlSidebarBtn.addEventListener('click', handleViewDbSql);
-    closeDbSqlModalBtn.addEventListener('click', () => closeModal(viewDbSqlModal));
-
-    // Centralized listener for all data grid cell updates
+    // Centralized listeners for all data grid cell updates
+    // 'change' is good for selects, date pickers
+    // 'blur' is a fallback for text inputs after focus is lost
+    // 'input' could be used for real-time updates but is often too "chatty"
     dataTbody.addEventListener('change', (e) => {
         const target = e.target;
         if (target.matches('.fk-select, .boolean-select, .timestamp-input, .editable-cell-input')) {
@@ -1687,8 +1652,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     dataTbody.addEventListener('blur', (e) => {
         const target = e.target;
-        // The 'change' event covers selects and date inputs well.
-        // 'blur' is a good fallback for text/number inputs.
         if (target.matches('.editable-cell-input')) {
             handleUpdateRow(target.closest('td'));
         }
@@ -1700,9 +1663,9 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchAndRenderData(state.selectedTable.id, 1, searchTerm);
         }
     });
-
     searchInput.addEventListener('input', debouncedSearch);
 
+    // Pagination
     document.getElementById('pagination-controls').addEventListener('click', (e) => {
         const target = e.target.closest('button');
         if (target && (target.classList.contains('prev-page-btn') || target.classList.contains('next-page-btn'))) {
@@ -1712,14 +1675,26 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+
+    // SQL Tab
+    document.getElementById('copy-table-sql-btn').addEventListener('click', (e) => {
+        const code = document.getElementById('table-sql-code').textContent;
+        navigator.clipboard.writeText(code).then(() => {
+            e.target.textContent = 'Copied!';
+            setTimeout(() => e.target.textContent = 'Copy', 2000);
+        });
+    });
+    viewDbSqlBtn.addEventListener('click', handleViewDbSql);
+    viewDbSqlSidebarBtn.addEventListener('click', handleViewDbSql);
+    closeDbSqlModalBtn.addEventListener('click', () => closeModal(viewDbSqlModal));
+
+    // Create Table Modal (GUI Tab)
     createTableModal.addEventListener('input', (e) => {
-        if (e.target.matches('#new-table-name, [data-key="name"]')) {
-            // This handles typing in the table name or any column name
+        if (e.target.matches('#new-table-name, [data-key="name"]')) { // This handles typing in the table name or any column name
             validateCreateTableForm();
         }
     });
     document.getElementById('new-columns-list').addEventListener('change', (e) => {
-        // FK checkbox toggle
         if (e.target.classList.contains('fk-checkbox')) {
             const container = e.target.closest('.column-row').querySelector('.fk-options-container');
             container.classList.toggle('hidden', !e.target.checked);
@@ -1745,600 +1720,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('new-columns-list').addEventListener('click', (e) => {
         if (e.target.classList.contains('remove-column-btn')) {
-            e.target.closest('.column-row').remove();
-            // Re-validate when a column is removed
+            e.target.closest('.column-row').remove(); // Re-validate when a column is removed
             validateCreateTableForm();
         }
     });
 
-    
     addColumnToModalBtn.addEventListener('click', () => {
         document.getElementById('new-columns-list').appendChild(createColumnRow());
         validateCreateTableForm(); // Re-validate when a new column is added
     });
 
-    // Add validation listeners for the create table modal
-
-
-
-    function openCreateEventModal(dateStr) {
-        if (state.tables.length === 0) {
-            showError("You must have at least one table in this database to create an event.");
-            return;
-        }
-
-        const form = document.getElementById('create-event-form');
-        form.reset();
-
-        const tableSelect = document.getElementById('event-source-table-select');
-        const rowSelect = document.getElementById('event-source-row-select');
-        const startTimeInput = document.getElementById('create-event-start-time');
-
-        // Populate table dropdown
-        tableSelect.innerHTML = '<option value="">-- Select a Table --</option>';
-        state.tables.forEach(table => {
-            tableSelect.innerHTML += `<option value="${table.id}">${table.name}</option>`;
-        });
-        rowSelect.innerHTML = '<option value="">-- Select a Table First --</option>';
-        rowSelect.disabled = true;
-
-        // Pre-fill date
-        startTimeInput.value = `${dateStr}T12:00`;
-
-        openModal(createEventModal);
-    }
-
-    document.getElementById('event-source-table-select').addEventListener('change', async (e) => {
-        const tableId = e.target.value;
-        const rowSelect = document.getElementById('event-source-row-select');
-        const titleInput = document.getElementById('create-event-title');
-
-        if (!tableId) {
-            rowSelect.innerHTML = '<option value="">-- Select a Table First --</option>';
-            rowSelect.disabled = true;
-            return;
-        }
-
-        rowSelect.disabled = true;
-        rowSelect.innerHTML = '<option value="">Loading rows...</option>';
-
-        try {
-            const response = await fetchWithAuth(`/api/v1/tables/${tableId}/all-rows`);
-            if (!response.ok) throw new Error('Failed to fetch rows for selection.');
-            const rows = await response.json();
-
-            const table = state.tables.find(t => t.id == tableId);
-            const displayColumn = table.columns.find(c => /name|title|subject|email/i.test(c.name)) || table.columns.find(c => c.is_primary_key);
-
-            rowSelect.innerHTML = '<option value="">-- Select a Row --</option>';
-            rows.forEach(row => {
-                const displayValue = row.data[displayColumn.name] || `Row ID: ${row.id}`;
-                rowSelect.innerHTML += `<option value="${row.id}" data-display-text="${displayValue}">${displayValue}</option>`;
-            });
-            rowSelect.disabled = false;
-
-        } catch (error) {
-            showError(error.message);
-            rowSelect.innerHTML = '<option value="">-- Error Loading Rows --</option>';
-        }
-    });
-
-    document.getElementById('event-source-row-select').addEventListener('change', (e) => {
-        const selectedOption = e.target.options[e.target.selectedIndex];
-        const titleInput = document.getElementById('create-event-title');
-        if (selectedOption && selectedOption.value) {
-            titleInput.value = selectedOption.dataset.displayText;
-        }
-    });
-
-    document.getElementById('create-event-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const form = e.target;
-        const submitBtn = form.querySelector('button[type="submit"]');
-
-        const payload = {
-            source_table_id: document.getElementById('event-source-table-select').value,
-            source_row_id: document.getElementById('event-source-row-select').value,
-            title: document.getElementById('create-event-title').value,
-            start_time: document.getElementById('create-event-start-time').value,
-        };
-
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Creating...';
-
-        try {
-            const response = await fetchWithAuth(`/api/v1/calendar/events`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.detail || 'Failed to create event.');
-            }
-
-            closeModal(createEventModal);
-            calendar.refetchEvents();
-        } catch (error) {
-            showError(error.message);
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Create Event';
-        }
-    });
-
-    function openSendToCalendarModal(rowId, defaultDate = null) {
-        if (!state.selectedTable) {
-            showError("Please select a table first.");
-            return;
-        }
-
-        document.getElementById('calendar-source-row-id').value = rowId;
-        const columns = state.selectedTable.columns.filter(c => !c.is_primary_key);
-        const dateLikeColumns = columns.filter(c => c.type === 'timestamp' || c.type === 'text'); // Be liberal with what can be a date
-
-        const selects = {
-            'calendar-title-col': columns,
-            'calendar-start-col': dateLikeColumns,
-            'calendar-end-col': dateLikeColumns,
-            'calendar-desc-col': columns
-        };
-
-        for (const [selectId, cols] of Object.entries(selects)) {
-            const select = document.getElementById(selectId);
-            select.innerHTML = '<option value="">-- Select Column --</option>';
-            cols.forEach(col => {
-                select.innerHTML += `<option value="${col.name}">${col.name}</option>`;
-            });
-        }
-        
-        // Auto-select common names
-        const titleSelect = document.getElementById('calendar-title-col');
-        const startSelect = document.getElementById('calendar-start-col');
-        
-        const autoTitle = columns.find(c => /title|name|subject|task/i.test(c.name));
-        if (autoTitle) titleSelect.value = autoTitle.name;
-
-        // If a default date is provided (from calendar click), use it.
-        if (defaultDate) {
-            // This part is tricky without a dedicated date input. We'll rely on mapping.
-        }
-        const autoStart = dateLikeColumns.find(c => /start|date|deadline|due/i.test(c.name)) || (dateLikeColumns.length > 0 ? dateLikeColumns[0] : null);
-        if (autoStart) startSelect.value = autoStart.name;
-
-        openModal(sendToCalendarModal);
-    }
-
-    document.getElementById('send-to-calendar-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const rowId = document.getElementById('calendar-source-row-id').value;
-        const payload = {
-            title_column: document.getElementById('calendar-title-col').value,
-            start_time_column: document.getElementById('calendar-start-col').value,
-            end_time_column: document.getElementById('calendar-end-col').value || null,
-            description_column: document.getElementById('calendar-desc-col').value || null,
-        };
-
-        try {
-            const response = await fetchWithAuth(`/api/v1/rows/${rowId}/send-to-calendar`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.detail || 'Failed to create event');
-            }
-            closeModal(sendToCalendarModal);
-            calendar.refetchEvents(); // Refresh calendar to show the new event
-        } catch (error) {
-            showError(error.message);
-        }
-    });
-
-    function initializeCalendar() {
-        const calendarEl = document.getElementById('calendar');
-        calendar = new FullCalendar.Calendar(calendarEl, {
-            initialView: 'dayGridMonth',
-            headerToolbar: {
-                left: 'prev,next today',
-                center: 'title',
-                right: 'dayGridMonth,timeGridWeek,listWeek'
-            },
-            dayMaxEvents: true, // This is the key for handling multiple events!
-            eventClick: (info) => {
-                openEventDetailsModal(info.event);
-            },
-            dateClick: (info) => {
-                handleDateClick(info);
-            },
-            editable: true,
-            eventDrop: async (info) => {
-                // Handle event drag-and-drop
-                const { event } = info;
-                try {
-                    await fetchWithAuth(`/api/v1/calendar/events/${event.id}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ start_time: event.start.toISOString(), end_time: event.end ? event.end.toISOString() : null })
-                    });
-                } catch (error) {
-                    showError('Failed to update event time.');
-                    info.revert(); // Revert the change on failure
-                }
-            },
-            eventDidMount: function(info) {
-                tippy(info.el, {
-                    content: `<strong>${info.event.title}</strong>` +
-                             (info.event.extendedProps.description ? `<div class="mt-1 text-sm">${info.event.extendedProps.description}</div>` : ''),
-                    allowHTML: true,
-                    placement: 'top',
-                });
-            },
-            events: async (fetchInfo, successCallback, failureCallback) => {
-                if (!state.dbId) {
-                    successCallback([]); // Return an empty array of events.
-                    return;
-                }
-
-                const start = fetchInfo.startStr.split('T')[0];
-                const end = fetchInfo.endStr.split('T')[0];
-
-                try {
-                    const response = await fetchWithAuth(`/api/v1/calendar/events?start_date=${start}&end_date=${end}&db_id=${state.dbId}`);
-                    if (!response.ok) throw new Error('Failed to fetch events');
-                    const apiEvents = await response.json();
-                    const calendarEvents = apiEvents.map(event => ({
-                        id: event.id, title: event.title, start: event.start_time, end: event.end_time,
-                        allDay: !event.start_time.includes('T'),
-                        extendedProps: { ...event }, // Pass the whole event object
-                        backgroundColor: event.is_completed ? '#10B981' : '#3B82F6',
-                        borderColor: event.is_completed ? '#059669' : '#2563EB',
-                    }));
-                    successCallback(calendarEvents);
-                } catch (error) {
-                    showError('Failed to load calendar events. Please check console for details.', error);
-                    failureCallback(error);
-                }
-            }
-        });
-    }
-
-    function handleDateClick(info) {
-        const eventsContainer = document.getElementById('selected-day-events-container');
-        eventsContainer.classList.remove('hidden');
-
-        // Remove highlight from previously selected date
-        if (selectedDateElement) {
-            selectedDateElement.style.backgroundColor = '';
-        }
-        // Add highlight to current date. Direct style is more reliable than a class.
-        info.dayEl.style.backgroundColor = '#dbeafe'; // Tailwind's blue-100
-        selectedDateElement = info.dayEl;
-
-        const allEvents = calendar.getEvents();
-        const clickedDate = info.date;
-
-        // Set the end of the clicked day for filtering
-        const endOfDay = new Date(clickedDate);
-        endOfDay.setDate(endOfDay.getDate() + 1);
-
-        const dayEvents = allEvents.filter(event => {
-            // An event is on this day if its range overlaps with the day's range.
-            const eventStart = event.start;
-            // If an event has no end, its range is just that single point in time.
-            const eventEnd = event.end || event.start;
-            return eventStart < endOfDay && eventEnd > clickedDate;
-        });
-
-        renderSelectedDayEvents(dayEvents, clickedDate);
-    }
-
-    function renderSelectedDayEvents(events, date) {
-        const header = document.getElementById('selected-day-header');
-        const list = document.getElementById('selected-day-events-list');
-        const addEventBtn = document.getElementById('add-event-for-selected-day-btn');
-
-        header.textContent = `Events for ${date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
-        addEventBtn.onclick = () => openCreateEventModal(date.toISOString().split('T')[0]);
-
-        if (events.length === 0) {
-            list.innerHTML = `<p class="text-gray-500 text-sm p-4 text-center">No events scheduled for this day.</p>`;
-            return;
-        }
-
-        list.innerHTML = '';
-        events.sort((a, b) => a.start - b.start).forEach(event => {
-            const eventEl = document.createElement('div');
-            eventEl.className = 'p-3 rounded-md hover:bg-gray-100 cursor-pointer border-l-4';
-            eventEl.style.borderColor = event.backgroundColor;
-
-            const timeFormat = { hour: 'numeric', minute: '2-digit', hour12: true };
-            const timeText = event.allDay ? 'All-day' : event.start.toLocaleTimeString([], timeFormat);
-
-            const titleEl = document.createElement('p');
-            titleEl.className = 'font-semibold text-gray-800';
-            titleEl.textContent = event.title;
-
-            const timeEl = document.createElement('p');
-            timeEl.className = 'text-xs font-medium text-gray-500';
-            timeEl.textContent = timeText;
-
-            eventEl.appendChild(titleEl);
-            eventEl.appendChild(timeEl);
-
-            const props = event.extendedProps;
-            if (props.source_row_data) {
-                const detailsContainer = document.createElement('div');
-                detailsContainer.className = 'mt-2 pt-2 border-t border-gray-200 space-y-1 font-mono text-xs';
-                for (const [key, value] of Object.entries(props.source_row_data)) {
-                    if (value !== null && value !== undefined && value !== '') {
-                        const detailItem = document.createElement('div');
-                        const keySpan = document.createElement('span');
-                        keySpan.className = 'text-gray-500';
-                        keySpan.textContent = `${key}: `;
-                        const valueSpan = document.createElement('span');
-                        valueSpan.className = 'text-black font-semibold';
-                        valueSpan.textContent = value;
-                        detailItem.appendChild(keySpan);
-                        detailItem.appendChild(valueSpan);
-                        detailsContainer.appendChild(detailItem);
-                    }
-                }
-                eventEl.appendChild(detailsContainer);
-            } else if (props.description) {
-                const descEl = document.createElement('p');
-                descEl.className = 'text-sm text-gray-600 mt-1';
-                descEl.textContent = props.description;
-                eventEl.appendChild(descEl);
-            }
-
-            eventEl.addEventListener('click', () => {
-                const fullEvent = calendar.getEventById(event.id);
-                if (fullEvent) openEventDetailsModal(fullEvent);
-            });
-            list.appendChild(eventEl);
-        });
-    }
-
-    function formatDateTimeForInput(date) {
-        if (!date) return '';
-        // The datetime-local input expects a string like 'YYYY-MM-DDTHH:mm' that represents
-        // the user's local time, without any timezone information.
-        // The `date` string from the server is in UTC (e.g., '...Z').
-        // Creating a new Date() object correctly parses this into a date object representing that point in time.
-        // We then need to subtract the timezone offset to get the correct local time representation for the input.
-        const d = new Date(date);
-        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-        return d.toISOString().slice(0, 16);
-    }
-
-    function openEventDetailsModal(event) {
-        const props = event.extendedProps;
-        document.getElementById('edit-event-id').value = props.id;
-        document.getElementById('edit-event-title').value = props.title;
-        document.getElementById('edit-event-start-time').value = formatDateTimeForInput(props.start_time);
-        document.getElementById('edit-event-end-time').value = formatDateTimeForInput(props.end_time);
-        document.getElementById('edit-event-description').value = props.description || '';
-        document.getElementById('edit-event-completed').checked = props.is_completed;
-
-        const sourceDataContainer = document.getElementById('event-source-data-container');
-        const sourceDataDetails = document.getElementById('event-source-data-details');
-
-        if (props.source_row_data) {
-            sourceDataContainer.classList.remove('hidden');
-            document.getElementById('event-source-table-name').textContent = props.source_table_name;
-            
-            const sourceTable = state.tables.find(t => t.id === props.source_table_id);
-            let detailsHtml = '';
-
-            if (sourceTable) {
-                sourceTable.columns.forEach(col => {
-                    const value = props.source_row_data[col.name];
-                    if (value === undefined || value === null) return;
-
-                    let displayValue = value;
-                    // If it's a foreign key, try to resolve it for a user-friendly display
-                    if (col.foreign_key) {
-                        const fkCache = state.fkDataCache[col.foreign_key.table_id];
-                        if (fkCache && fkCache.rows) {
-                            const fkRow = fkCache.rows.find(r => (r.data[fkCache.pkColumn] ?? r.id) == value);
-                            if (fkRow && fkRow.data[fkCache.displayColumn]) {
-                                displayValue = `${fkRow.data[fkCache.displayColumn] || value} <span class="text-gray-400">(FK to ${col.foreign_key.table_id})</span>`;
-                            }
-                        }
-                    }
-                    detailsHtml += `<div><span class="text-gray-500">${col.name}:</span> <span class="text-black font-semibold">${displayValue}</span></div>`;
-                });
-            }
-            sourceDataDetails.innerHTML = detailsHtml;
-        } else {
-            sourceDataContainer.classList.add('hidden');
-        }
-        openModal(eventDetailsModal);
-    }
-
-    document.getElementById('close-event-details-btn').addEventListener('click', () => closeModal(eventDetailsModal));
-    document.getElementById('cancel-edit-event-btn').addEventListener('click', () => closeModal(eventDetailsModal));
-
-    document.getElementById('event-details-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const eventId = document.getElementById('edit-event-id').value;
-        const payload = {
-            title: document.getElementById('edit-event-title').value,
-            start_time: document.getElementById('edit-event-start-time').value,
-            end_time: document.getElementById('edit-event-end-time').value || null,
-            description: document.getElementById('edit-event-description').value,
-            is_completed: document.getElementById('edit-event-completed').checked
-        };
-
-        try {
-            const response = await fetchWithAuth(`/api/v1/calendar/events/${eventId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.detail || 'Failed to update event.');
-            }
-            closeModal(eventDetailsModal);
-            calendar.refetchEvents();
-        } catch (error) {
-            showError(error.message);
-        }
-    });
-
-    document.getElementById('delete-event-btn').addEventListener('click', async () => {
-        const eventId = document.getElementById('edit-event-id').value;
-        if (confirm('Are you sure you want to delete this event? This action cannot be undone.')) {
-            try {
-                const response = await fetchWithAuth(`/api/v1/calendar/events/${eventId}`, { method: 'DELETE' });
-                if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.detail || 'Failed to delete event.');
-                }
-                closeModal(eventDetailsModal);
-                calendar.refetchEvents();
-            } catch (error) {
-                showError(error.message);
-            }
-        }
-    });
-
-
-    createWebhookBtn.addEventListener('click', async () => {
-        if (!state.selectedTable) return;
-        createWebhookBtn.disabled = true;
-        createWebhookBtn.textContent = 'Creating...';
-        try {
-            const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/webhooks`, { method: 'POST' });
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.detail || 'Failed to create webhook');
-            }
-            await fetchAndRenderWebhooks(state.selectedTable.id);
-        } catch (error) {
-            showError(error.message);
-        } finally {
-            createWebhookBtn.disabled = false;
-            createWebhookBtn.textContent = 'Create New Webhook';
-        }
-    });
-
-    webhooksListContainer.addEventListener('click', async (e) => {
-        const copyBtn = e.target.closest('.copy-webhook-url-btn');
-        if (copyBtn) {
-            navigator.clipboard.writeText(copyBtn.dataset.url).then(() => {
-                // Maybe add a "Copied!" tooltip later
-            });
-        }
-
-        const deleteBtn = e.target.closest('.delete-webhook-btn');
-        if (deleteBtn && confirm('Are you sure you want to delete this webhook?')) {
-            const webhookId = deleteBtn.dataset.webhookId;
-            const response = await fetchWithAuth(`/api/v1/webhooks/${webhookId}`, { method: 'DELETE' });
-            if (response.ok) {
-                deleteBtn.closest('[data-webhook-id]').remove();
-            } else {
-                showError('Failed to delete webhook.');
-            }
-        }
-
-        const refreshBtn = e.target.closest('.refresh-webhook-btn');
-        if (refreshBtn) {
-            await fetchAndRenderWebhooks(state.selectedTable.id);
-        }
-
-        const toggleBtn = e.target.closest('.toggle-webhook-status-btn');
-        if (toggleBtn) {
-            const webhookId = toggleBtn.dataset.webhookId;
-            const newStatus = toggleBtn.dataset.status;
-            const response = await fetchWithAuth(`/api/v1/webhooks/${webhookId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: newStatus })
-            });
-            if (response.ok) {
-                await fetchAndRenderWebhooks(state.selectedTable.id);
-            } else {
-                showError(`Failed to change status to ${newStatus}.`);
-            }
-        }
-
-        const testBtn = e.target.closest('.send-test-webhook-btn');
-        if (testBtn) {
-            const webhookUrl = testBtn.dataset.webhookUrl;
-            testBtn.disabled = true;
-            testBtn.textContent = 'Sending...';
-
-            const samplePayload = {
-                name: "Jane Doe",
-                email: "test@example.com",
-                company: "Acme Inc.",
-                message: "This is a test submission to help map fields."
-            };
-
-            try {
-                // This is a public endpoint, so no auth is needed.
-                const response = await fetch(webhookUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(samplePayload)
-                });
-
-                if (!response.ok) throw new Error('Failed to send test data.');
-                
-                // Success! Refresh the UI to show the mapping view.
-                setTimeout(() => fetchAndRenderWebhooks(state.selectedTable.id), 500);
-            } catch (error) {
-                showError(error.message);
-                testBtn.disabled = false;
-                testBtn.textContent = 'Send Test Data';
-            }
-        }
-    });
-
-    webhooksListContainer.addEventListener('submit', async (e) => {
-        if (e.target.classList.contains('webhook-mapping-form')) {
-            e.preventDefault();
-            const form = e.target;
-            const webhookId = form.closest('[data-webhook-id]').dataset.webhookId;
-            
-            const fieldMapping = {};
-            form.querySelectorAll('select[data-table-col]').forEach(select => {
-                if (select.value) {
-                    fieldMapping[select.dataset.tableCol] = select.value;
-                }
-            });
-
-            const payload = {
-                field_mapping: fieldMapping,
-                status: 'active'
-            };
-
-            const response = await fetchWithAuth(`/api/v1/webhooks/${webhookId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (response.ok) await fetchAndRenderWebhooks(state.selectedTable.id);
-        }
-    });
-
+    // --- App Initialization ---
+    
     // Check for saved sidebar state on load
     if (localStorage.getItem('sidebarCollapsed') === 'true') {
         toggleSidebar();
     }
     checkAndCollapseSidebar(); // Collapse on mobile on initial load
-    // Initial Load
-    initializeCalendar();
+    
     supabase.auth.onAuthStateChange((event, session) => {
         if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
             if (session) {
-                localStorage.setItem('supabase_token', session.access_token);
-                // Fetch data if it hasn't been loaded yet. This handles token refresh on initial load.
-                if (!initialDataLoaded) {
+                if (!initialDataLoaded) { // Fetch data if it hasn't been loaded yet.
                     fetchDbIdAndTables();
                 }
             } else {

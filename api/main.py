@@ -76,6 +76,33 @@ class TableResponse(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
+class CsvPreviewRequest(BaseModel):
+    csv_content: str
+
+class CsvPreviewResponse(BaseModel):
+    original_headers: List[str]
+    sanitized_headers: List[str]
+    inferred_types: List[str]
+
+class CsvImportRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    csv_content: str
+    # The user confirms the columns and types in the UI before sending
+    columns: List[ColumnDefinition]
+
+class CsvRowImportRequest(BaseModel):
+    csv_content: str
+    column_mapping: dict[str, str] # Maps table_column_name -> csv_header_name
+
+class RowImportError(BaseModel):
+    row_number: int
+    data: dict[str, Any]
+    error: str
+
+class CsvRowImportResponse(BaseModel):
+    inserted_count: int
+    failed_count: int
+    errors: List[RowImportError]
 
 # After all models are defined, resolve the forward reference in DatabaseResponse
 DatabaseResponse.model_rebuild()
@@ -92,40 +119,12 @@ class RowResponse(BaseModel):
 class RowCreate(BaseModel):
     data: dict[str, Any]
 
-class CsvPreviewRequest(BaseModel):
-    csv_content: str
-
-class CsvPreviewResponse(BaseModel):
-    original_headers: List[str]
-    sanitized_headers: List[str]
-    inferred_types: List[str]
-
-class CsvImportRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    csv_content: str
-    # The user confirms the columns and types in the UI before sending
-    columns: List[ColumnDefinition]
-
 class PaginatedRowResponse(BaseModel):
     total: int
     data: List[RowResponse]
 
 class QueryRequest(BaseModel):
     query: str
-
-class CsvRowImportRequest(BaseModel):
-    csv_content: str
-    column_mapping: dict[str, str] # Maps table_column_name -> csv_header_name
-
-class RowImportError(BaseModel):
-    row_number: int
-    data: dict[str, Any]
-    error: str
-
-class CsvRowImportResponse(BaseModel):
-    inserted_count: int
-    failed_count: int
-    errors: List[RowImportError]
 
 class SqlImportRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
@@ -213,7 +212,8 @@ async def get_single_database(database_id: int, auth_details: dict = Depends(get
     """
     try:
         supabase = auth_details["client"]
-        response = supabase.table("user_databases").select("*").eq("id", database_id).single().execute()
+        # Fetch the database and all its related tables (user_tables) at once.
+        response = supabase.table("user_databases").select("*, user_tables(*)").eq("id", database_id).single().execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Database not found")
         return response.data
@@ -228,7 +228,7 @@ async def get_database_by_name(db_name: str, auth_details: dict = Depends(get_cu
     try:
         supabase = auth_details["client"]
         # Use Supabase's ability to fetch related data in a single query.
-        # This fetches the database and all its related tables (user_tables) at once.
+        # This fetches the database and all its related tables (user_tables) at once. RLS on user_tables is also applied.
         response = supabase.table("user_databases").select("*, user_tables(*)").eq("name", db_name).single().execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Database with name '{db_name}' not found or access denied.")
@@ -290,6 +290,37 @@ async def create_database_table(database_id: int, table_data: TableCreate, auth_
         if "user_tables_database_id_name_key" in str(e):
                  raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A table with the name '{table_data.name}' already exists in this database.")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create table: {str(e)}")
+
+@app.post("/api/v1/databases/by-name/{db_name}/tables", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
+async def create_table_by_db_name(db_name: str, table_data: TableCreate, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Creates a new table within a specific database, identifying the database by its name.
+    This is more robust for UIs where the name is known but the ID might not have been fetched yet.
+    """
+    try:
+        supabase = auth_details["client"]
+        user = auth_details["user"]
+
+        # 1. Get the database ID from its name. RLS ensures the user owns it.
+        db_check = supabase.table("user_databases").select("id").eq("name", db_name).maybe_single().execute()
+        if not db_check.data:
+            raise HTTPException(status_code=404, detail=f"Database '{db_name}' not found or access denied.")
+        
+        database_id = db_check.data['id']
+
+        # 2. Use the existing create_database_table function with the fetched ID.
+        # This avoids duplicating logic. We need to pass the dictionary representation of the model.
+        return await create_database_table(database_id, table_data, auth_details)
+
+    except APIError as e:
+        if "user_tables_database_id_name_key" in str(e):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A table with the name '{table_data.name}' already exists in this database.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create table: {str(e)}")
+    except HTTPException as e:
+        # Re-raise HTTPExceptions from called functions
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(e)}")
 
 @app.post("/api/v1/databases/by-name/{db_name}/tables", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
 async def create_table_by_db_name(db_name: str, table_data: TableCreate, auth_details: dict = Depends(get_current_user_details)):
@@ -497,6 +528,133 @@ def infer_column_types(rows: List[List[str]], num_cols: int) -> List[str]:
                 inferred_types[i] = cell_type
 
     return inferred_types
+
+@app.post("/api/v1/databases/{database_id}/import-csv", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
+async def import_table_from_csv(database_id: int, import_data: CsvImportRequest, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Creates a new table and populates it from a CSV file string.
+    It infers column types and sanitizes headers.
+    """
+    supabase = auth_details["client"]
+    user = auth_details["user"]
+
+    # --- FIX: Add a transaction for rollback on failure ---
+    # This is a conceptual change. Supabase-py doesn't have explicit transactions,
+    # but we will manually delete the table if a later step fails.
+
+    new_table_id = None
+
+    # The user has already reviewed and confirmed the column types in the UI.
+    # We receive the final column definitions directly in the payload.
+    try:
+        table_create_payload = TableCreate(name=import_data.name, columns=import_data.columns)
+        created_table_dict = await create_database_table(database_id, table_create_payload, auth_details)
+        created_table = TableResponse(**created_table_dict)
+        new_table_id = created_table.id
+
+        # Now, insert the data
+        csv_file = io.StringIO(import_data.csv_content)
+        
+        # Use the sanitized headers from the confirmed columns payload
+        sanitized_headers = [col.name for col in import_data.columns]
+        column_types = {col.name: col.type for col in import_data.columns}
+
+        # Rewind and read all data for insertion
+        dict_reader = csv.DictReader(csv_file, fieldnames=sanitized_headers)
+        next(dict_reader) # Skip header row
+
+        rows_to_insert = []
+        for row_dict in dict_reader:
+            processed_row = {}
+            for i, header in enumerate(sanitized_headers):
+                val = row_dict.get(header)
+                col_type = column_types.get(header, 'text')
+                if val is not None and val != '':
+                    if col_type == 'integer':
+                        try: val = int(val)
+                        except (ValueError, TypeError): pass
+                    elif col_type == 'real':
+                        try: val = float(val)
+                        except (ValueError, TypeError): pass
+                processed_row[header] = val
+            rows_to_insert.append({"user_id": user.id, "table_id": new_table_id, "data": processed_row})
+
+        if rows_to_insert:
+            supabase.table("table_rows").insert(rows_to_insert).execute()
+
+        return created_table
+    except Exception as e:
+        if new_table_id:
+            # Rollback: attempt to delete the partially created table
+            try:
+                supabase.table("user_tables").delete().eq("id", new_table_id).eq("user_id", user.id).execute()
+            except Exception as delete_error:
+                print(f"CRITICAL: Failed to rollback and delete table {new_table_id} after import error. {delete_error}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to import CSV: {str(e)}")
+
+@app.post("/api/v1/tables/{table_id}/import-rows-from-csv", response_model=CsvRowImportResponse)
+async def import_rows_into_table(table_id: int, import_data: CsvRowImportRequest, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Imports rows from a CSV file into an existing table based on a user-defined column mapping.
+    """
+    supabase = auth_details["client"]
+    user = auth_details["user"]
+
+    try:
+        # 1. Get the schema of the target table to know the expected data types
+        table_schema_dict = await get_single_table(table_id, auth_details)
+        table_schema = TableResponse(**table_schema_dict)
+        table_column_types = {col.name: col.type for col in table_schema.columns}
+
+        # 2. Parse the CSV
+        csv_file = io.StringIO(import_data.csv_content)
+        dict_reader = csv.DictReader(csv_file)
+        
+        rows_to_insert = []
+        failed_rows = []
+
+        for i, row_dict in enumerate(dict_reader, start=2): # Row 1 is header, so data starts at line 2
+            processed_row_data = {}
+            has_error = False
+            error_reason = ""
+
+            # 3. Map CSV columns to table columns and cast types
+            for table_col, csv_header in import_data.column_mapping.items():
+                if csv_header not in row_dict:
+                    continue # Skip if the mapped CSV header doesn't exist in this row
+                
+                val = row_dict[csv_header]
+                original_val = val
+                target_type = table_column_types.get(table_col)
+
+                if val is not None and val != '':
+                    try:
+                        if target_type == 'integer': val = int(val)
+                        elif target_type == 'real': val = float(val)
+                        elif target_type == 'boolean': val = val.lower() in {'true', 't', 'yes', 'y', '1'}
+                        # Timestamps and text are kept as strings for insertion
+                    except (ValueError, TypeError):
+                        has_error = True
+                        error_reason = f"Column '{table_col}': Invalid value '{original_val}' for type '{target_type}'."
+                        break # Stop processing this row on first error
+                
+                processed_row_data[table_col] = val
+            
+            if has_error:
+                failed_rows.append(RowImportError(row_number=i, data=row_dict, error=error_reason))
+            elif processed_row_data:
+                rows_to_insert.append({"user_id": user.id, "table_id": table_id, "data": processed_row_data})
+
+        if rows_to_insert:
+            supabase.table("table_rows").insert(rows_to_insert).execute()
+
+        return CsvRowImportResponse(
+            inserted_count=len(rows_to_insert),
+            failed_count=len(failed_rows),
+            errors=failed_rows
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to import rows: {str(e)}")
 
 def _extract_sql_type(col_def_str: str) -> str:
     """
@@ -806,6 +964,39 @@ async def get_all_table_rows(table_id: int, auth_details: dict = Depends(get_cur
         table_schema_dict = await get_single_table(table_id, auth_details)
         # When calling an endpoint function directly, it returns a dict, not a Pydantic model.
         # We must convert it to a model to use attribute access.
+        table_schema_obj = TableResponse(**table_schema_dict)
+        pk_col_name = next((col.name for col in table_schema_obj.columns if col.is_primary_key), None)
+
+        # RLS on table_rows ensures user can only access rows they own.
+        response = supabase.table("table_rows").select("*").eq("table_id", table_id).order("id").execute()
+
+        # 2. Process results to inject the user-visible PK
+        processed_rows = []
+        if pk_col_name:
+            for i, row in enumerate(response.data):
+                user_visible_id = i + 1
+                if row.get("data") is not None:
+                    row["data"][pk_col_name] = user_visible_id
+                else:
+                    row["data"] = {pk_col_name: user_visible_id}
+                processed_rows.append(row)
+        else:
+            processed_rows = response.data
+
+        return processed_rows
+    except APIError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@app.get("/api/v1/tables/{table_id}/all-rows", response_model=List[RowResponse])
+async def get_all_table_rows(table_id: int, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Fetches ALL data rows for a specific table, bypassing pagination.
+    Used for features like CSV export and caching foreign key data.
+    """
+    try:
+        supabase = auth_details["client"]
+        # 1. Get the table schema to find the user-defined primary key column name
+        table_schema_dict = await get_single_table(table_id, auth_details)
         table_schema_obj = TableResponse(**table_schema_dict)
         pk_col_name = next((col.name for col in table_schema_obj.columns if col.is_primary_key), None)
 
