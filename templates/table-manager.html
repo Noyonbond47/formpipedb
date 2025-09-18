@@ -461,15 +461,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const currentDb = databases.find(db => db.name === state.dbName);
             
             if (!currentDb) throw new Error(`Database '${state.dbName}' not found.`);
-            state.dbId = currentDb.id;
 
             // 2. Fetch tables for the found database ID
-            const tablesResponse = await fetchWithAuth(`/api/v1/databases/${state.dbId}/tables`);
+            const tablesResponse = await fetchWithAuth(`/api/v1/databases/${currentDb.id}/tables`);
             if (!tablesResponse.ok) throw new Error('Could not fetch tables.');
+            
+            // --- FIX: Only set state after all initial data is successfully fetched ---
+            state.dbId = currentDb.id;
             state.tables = await tablesResponse.json();
             renderTables(state.tables);
 
         } catch (error) {
+            // --- FIX: Update the sidebar to show an error and disable creation ---
+            tableList.innerHTML = `<p class="text-sm text-red-500 p-2">Error loading tables.</p>`;
+            createTableBtn.disabled = true;
+            createTableBtn.title = "Cannot create table: failed to load database details.";
             console.error(error);
             placeholderContent.textContent = `Error: ${error.message}`;
         }
