@@ -407,8 +407,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function getAuthToken() {
         const { data: { session }, error } = await supabase.auth.getSession();
-        if (error || !session) {
+        if (error || !session || !session.user) {
             console.error("Authentication error, redirecting to login.", error);
+            // Clear any potentially stale token and redirect.
+            localStorage.removeItem('supabase_token');
             window.location.href = '/login';
             return null;
         }

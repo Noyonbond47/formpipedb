@@ -295,8 +295,17 @@
                 if (!dbToDeleteId) return;
                 try {
                     const response = await fetchWithAuth(`/api/v1/databases/${dbToDeleteId}`, { method: 'DELETE' });
-                    // Regardless of whether it was a 204 (success) or 404 (already gone),
-                    // we just want to refresh the list from the user's perspective.
+                    // A 204 No Content means success. Any other status is an error.
+                    if (response.status !== 204) {
+                        // Try to get a detailed error message from the API response body.
+                        let errorDetail = `Failed to delete database. Status: ${response.status}`;
+                        try {
+                            const err = await response.json();
+                            errorDetail = err.detail || errorDetail;
+                        } catch (e) { /* Ignore if body is not JSON */ }
+                        throw new Error(errorDetail);
+                    }
+                    // On success, refresh the list and close the modal.
                     fetchDatabases();
                     closeModal(deleteModal);
                 } catch (error) {
