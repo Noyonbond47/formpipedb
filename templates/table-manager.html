@@ -1122,8 +1122,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (response.ok) {
             fetchAndRenderCalendarSync(state.selectedTable);
             if (calendar) calendar.refetchEvents(); // Explicitly refresh calendar on sync change
-        }
-        else showError('Failed to save sync settings.');
+            } else {
+                showError('Failed to save sync settings.');
+            }
     }
 
     async function handleDeleteCalendarSync() {
@@ -1132,8 +1133,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok) {
                 fetchAndRenderCalendarSync(state.selectedTable);
                 if (calendar) calendar.refetchEvents(); // Explicitly refresh calendar
+            } else {
+                showError('Failed to delete sync settings.');
             }
-            else showError('Failed to delete sync settings.');
         }
     }
 
@@ -1663,7 +1665,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // FIX: Explicitly refresh calendar on successful row update
             if (calendar) calendar.refetchEvents();
         } catch (error) {
-            showError(`Error saving data: ${error.message}`, error);
+            showError(`Error saving data: ${error.message}`, error); // Revert UI on failure
             fetchAndRenderData(state.selectedTable.id); // Revert UI on failure
         }
     }
@@ -2455,30 +2457,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             },
             eventDidMount: function(info) {
-                // FIX: Use a more robust and CSP-compliant way to create tooltips with Tippy.js.
-                // This avoids any potential 'eval' issues from the library's internals.
                 tippy(info.el, {
-                    content: `<strong>${info.event.title}</strong>` + 
+                    content: `<strong>${info.event.title}</strong>` +
                              (info.event.extendedProps.description ? `<div class="mt-1 text-sm">${info.event.extendedProps.description}</div>` : ''),
                     allowHTML: true,
                     placement: 'top',
                 });
             },
             events: async (fetchInfo, successCallback, failureCallback) => {
-                // FIX: Do not attempt to fetch events until the database ID is known.
                 if (!state.dbId) {
                     successCallback([]); // Return an empty array of events.
                     return;
                 }
 
-                const token = await getAuthToken();
-                if (!token) return failureCallback(new Error('Not authenticated'));
-
                 const start = fetchInfo.startStr.split('T')[0];
                 const end = fetchInfo.endStr.split('T')[0];
 
                 try {
-                    const response = await fetch(`/api/v1/calendar/events?start_date=${start}&end_date=${end}&db_id=${state.dbId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                    const response = await fetchWithAuth(`/api/v1/calendar/events?start_date=${start}&end_date=${end}&db_id=${state.dbId}`);
                     if (!response.ok) throw new Error('Failed to fetch events');
                     const apiEvents = await response.json();
                     const calendarEvents = apiEvents.map(event => ({
@@ -2596,12 +2592,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function formatDateTimeForInput(date) {
         if (!date) return '';
-        // JavaScript's toISOString() is almost what we need, but it includes 'Z' for UTC.
-        // The datetime-local input doesn't want the Z.
-        // We also need to adjust for the local timezone offset to display the correct local time.
+        // The datetime-local input expects a format like 'YYYY-MM-DDTHH:mm'.
+        // We need to convert the UTC string from the DB to the user's local time.
         const d = new Date(date);
-        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-        return d.toISOString().slice(0, 16);
+        return new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
     }
 
     function openEventDetailsModal(event) {
@@ -2634,7 +2628,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const fkCache = state.fkDataCache[col.foreign_key.table_id];
                         if (fkCache && fkCache.rows) {
                             const fkRow = fkCache.rows.find(r => (r.data[fkCache.pkColumn] ?? r.id) == value);
-                            if (fkRow) {
+                            if (fkRow && fkRow.data[fkCache.displayColumn]) {
                                 displayValue = `${fkRow.data[fkCache.displayColumn] || value} <span class="text-gray-400">(FK to ${col.foreign_key.table_id})</span>`;
                             }
                         }
