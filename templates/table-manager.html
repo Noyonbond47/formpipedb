@@ -9,13 +9,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Fira+Code&display=swap" rel="stylesheet">
-    
-    <!-- FullCalendar for Calendar view -->
-    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.9/index.global.min.js"></script>
-    <!-- Tippy.js for event popovers -->
-    <script src="https://unpkg.com/@popperjs/core@2"></script>
-    <script src="https://unpkg.com/tippy.js@6"></script>
-    <!-- CodeMirror for SQL editor -->
 
     <!-- Highlight.js for static code views -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
@@ -23,17 +16,10 @@
 
     <style> 
         body { font-family: 'Inter', sans-serif; } .CodeMirror { font-family: 'Fira Code', monospace; border-radius: 0.375rem; height: 10rem; }
-        :root { /* Fix: Use a class or direct element styling instead of :root for component-specific vars */
-            --fc-border-color: #e2e8f0;
-            --fc-daygrid-event-dot-width: 8px;
-            --fc-list-event-hover-bg-color: #f3f4f6;
-            --fc-today-bg-color: rgba(59, 130, 246, 0.08);
-        }
-        .fc .fc-button-primary { background-color: #2563eb; border-color: #2563eb; }
         .modal { transition: opacity 0.3s ease-in-out; }
         #sidebar, #main-content { transition: all 0.3s ease-in-out; }
-        .sidebar-item-title, #sidebar-header-text, #sidebar-footer-text { transition: opacity 0.2s, width 0.2s; }
-        #sidebar.collapsed .sidebar-item-title, #sidebar.collapsed #sidebar-header-text, #sidebar.collapsed #sidebar-footer-text {
+        .sidebar-item-title, .sidebar-header-text, #sidebar-footer-text { transition: opacity 0.2s, width 0.2s; }
+        #sidebar.collapsed .sidebar-item-title, #sidebar.collapsed .sidebar-header-text, #sidebar.collapsed #sidebar-footer-text {
             opacity: 0;
             width: 0;
             overflow: hidden;
@@ -46,14 +32,16 @@
 <div class="h-screen flex">
     <!-- Collapsible Sidebar -->
     <aside id="sidebar" class="w-72 bg-white border-r flex flex-col shrink-0">
-        <div class="p-4 border-b">
-            <a href="/app" class="text-2xl font-bold text-black">FormPipeDB</a>
-            <div id="sidebar-header-text" class="mt-2">
+        <div class="p-4 border-b overflow-hidden">
+            <div class="sidebar-header-text">
+                <a href="/app" class="text-2xl font-bold text-black">FormPipeDB</a>
+            </div>
+            <div class="sidebar-header-text mt-2">
                 <h1 class="text-2xl font-bold text-gray-800 mt-1 truncate" title="{{ db_name }}">{{ db_name }}</h1>
             </div>
         </div>
         <div class="p-4 border-b">
-            <h2 id="sidebar-header-text" class="text-lg font-semibold text-gray-700">Tables</h2>
+            <h2 class="sidebar-header-text text-lg font-semibold text-gray-700">Tables</h2>
         </div>
         <nav id="table-list" class="flex-1 p-4 space-y-1 overflow-y-auto">
             <!-- Loading state -->
@@ -63,9 +51,7 @@
             </div>
         </nav>
         <div class="p-4 border-t space-y-2 overflow-hidden">
-            <button id="create-table-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg><span class="sidebar-item-title">Create Table</span></button>
-            <button id="import-csv-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-purple-600 text-white hover:bg-purple-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg><span class="sidebar-item-title">Import CSV</span></button>
-            <button id="calendar-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-yellow-500 text-white hover:bg-yellow-600 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg><span class="sidebar-item-title">Calendar</span></button>
+            <button id="create-table-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg><span class="sidebar-item-title">New Table</span></button>
             <button id="view-db-sql-sidebar-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-700 font-semibold"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4M4 7v5c0 2.21 3.582 4 8 4s8-1.79 8-4V7"></path></svg><span class="sidebar-item-title">View DB SQL</span></button>
             <button id="delete-table-btn" class="w-full flex items-center justify-center gap-2 p-2 rounded-md bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed" disabled><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span class="sidebar-item-title">Delete Table</span></button>
         </div>
@@ -82,7 +68,6 @@
             <nav class="flex space-x-6 whitespace-nowrap">
                 <button data-tab="data" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-blue-500 text-blue-600">Data</button>
                 <button data-tab="structure" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Structure</button>
-                <button data-tab="integrations" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Integrations</button>
                 <button data-tab="table-sql" class="table-tab-btn py-2 px-1 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">SQL</button>
             </nav>
         </div>
@@ -120,44 +105,6 @@
             </div>
         </div>
 
-        <div id="integrations-tab-content" class="table-tab-content hidden space-y-6">
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <h2 class="text-xl font-semibold text-gray-800 shrink-0">Webhook Integrations</h2>
-                <button id="create-webhook-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-semibold">Create New Webhook</button>
-            </div>
-            <div id="webhooks-list-container" class="space-y-4 min-h-[6rem]">
-                <!-- Webhooks will be rendered here by JS -->
-            </div>
-
-            <div class="pt-6 mt-6 border-t">
-                <h2 class="text-xl font-semibold text-gray-800">Calendar Automation</h2>
-                <div id="calendar-sync-container" class="mt-4">
-                    <!-- Calendar sync UI will be rendered here -->
-                </div>
-            </div>
-        </div>
-
-        <div id="calendar-sync-form-template" class="hidden">
-            <form class="bg-white rounded-lg shadow-sm border p-6">
-                <div class="flex justify-between items-start">
-                    <h4 class="font-semibold text-gray-800">Automatic Table Sync</h4>
-                    <div class="flex items-center">
-                        <span class="text-sm font-medium text-gray-700 mr-3">Enable Sync</span>
-                        <label for="calendar-sync-enabled" class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" value="" id="calendar-sync-enabled" class="sr-only peer">
-                            <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-blue-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                        </label>
-                    </div>
-                </div>
-                <p class="text-sm text-gray-600 mt-1">Automatically create or update a calendar event for every row in this table.</p>
-                <div id="calendar-sync-mapping-fields" class="mt-4 space-y-4 border-t pt-4"></div>
-                <div class="mt-6 flex justify-end gap-4">
-                    <button type="button" id="delete-calendar-sync-btn" class="text-red-600 hover:underline text-sm font-semibold hidden">Disable and Remove Sync</button>
-                    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-semibold disabled:bg-blue-300" disabled>Save Sync Settings</button>
-                </div>
-            </form>
-        </div>
-
         <div id="data-tab-content" class="table-tab-content">
             <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
                 <div class="w-full md:w-1/3">
@@ -187,25 +134,6 @@
         </div>
     </main>
 
-    <div id="calendar-view" class="flex-1 p-4 md:p-8 overflow-auto hidden">
-        <div class="bg-white p-6 rounded-lg shadow-lg">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold text-gray-800">Calendar</h2>
-            </div>
-            <div id="calendar"></div>
-            <!-- Container for events of a selected day -->
-            <div id="selected-day-events-container" class="mt-6 hidden">
-                <div class="bg-white p-4 rounded-lg shadow-md border">
-                    <div class="flex justify-between items-center mb-3 pb-3 border-b">
-                        <h3 id="selected-day-header" class="text-lg font-semibold text-gray-800">Events for...</h3>
-                        <button id="add-event-for-selected-day-btn" class="bg-blue-600 text-white px-3 py-1 rounded-md text-sm font-semibold hover:bg-blue-700">Add Event</button>
-                    </div>
-                    <div id="selected-day-events-list" class="space-y-2 max-h-60 overflow-y-auto"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <div id="placeholder-content" class="flex-1 flex items-center justify-center text-gray-500">
         Select a table to view its structure and data.
     </div>
@@ -224,8 +152,9 @@
         </div>
         <div class="border-b">
             <nav class="flex space-x-1 p-2 bg-gray-100">
-                <button type="button" data-tab="gui" class="create-table-tab-btn flex-1 p-2 text-sm font-medium rounded-md bg-white shadow">GUI Builder</button>
+                <button type="button" data-tab="gui" class="create-table-tab-btn flex-1 p-2 text-sm font-medium rounded-md bg-white shadow">From Scratch</button>
                 <button type="button" data-tab="sql" class="create-table-tab-btn flex-1 p-2 text-sm font-medium rounded-md">From SQL</button>
+                <button type="button" data-tab="csv" class="create-table-tab-btn flex-1 p-2 text-sm font-medium rounded-md">From CSV</button>
             </nav>
         </div>
         <div id="gui-create-tab" class="create-table-tab-content p-6 space-y-4 overflow-y-auto">
@@ -237,9 +166,41 @@
             <p class="text-sm text-gray-600">Paste a single `CREATE TABLE` statement below.</p>
             <textarea id="create-table-sql-input" class="w-full h-64 p-2 border rounded-md font-mono text-sm" placeholder="CREATE TABLE products (...);"></textarea>
         </div>
+        <div id="csv-create-tab" class="create-table-tab-content hidden p-6 space-y-4 overflow-y-auto">
+            <!-- Step 1: File Upload -->
+            <div id="import-step-1" class="space-y-4">
+                <div>
+                    <label for="import-table-name" class="block text-sm font-medium text-gray-700">New Table Name</label>
+                    <input id="import-table-name" type="text" placeholder="e.g., customers" required class="mt-1 w-full p-2 border rounded-md">
+                </div>
+                <div>
+                    <label for="import-csv-file" class="block text-sm font-medium text-gray-700">CSV File (with headers)</label>
+                    <input id="import-csv-file" type="file" accept=".csv" required class="mt-1 w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                </div>
+            </div>
+            <!-- Step 2: Review Columns -->
+            <div id="import-step-2" class="space-y-4 hidden">
+                <p class="text-sm text-gray-600">Review the detected columns and their inferred data types. You can make changes before importing.</p>
+                <div class="border rounded-lg overflow-hidden">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="p-2 text-left font-semibold">Original Header</th>
+                                <th class="p-2 text-left font-semibold">New Column Name (Sanitized)</th>
+                                <th class="p-2 text-left font-semibold">Data Type</th>
+                                <th class="p-2 text-center font-semibold">PK</th>
+                            </tr>
+                        </thead>
+                        <tbody id="csv-review-tbody" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
         <div class="p-6 mt-auto border-t bg-gray-50 flex justify-end gap-4">
             <button id="cancel-create-table-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
             <button id="submit-create-table-btn" type="button" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed" disabled>Create Table</button>
+            <button id="import-csv-next-btn" type="button" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-semibold hidden">Review Columns</button>
+            <button id="import-csv-submit-btn" type="button" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 font-semibold hidden">Create & Import</button>
         </div>
     </form>
 </div>
@@ -295,63 +256,11 @@
     <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
         <h3 class="text-lg font-semibold mb-4">Confirm Table Deletion</h3>
         <p class="text-gray-700">Are you sure you want to delete the table "<strong id="modal-table-name"></strong>"? This will permanently delete all of its data. This action cannot be undone.</p>
-        <div class="mt-4 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-            <label class="flex items-center text-sm">
-                <input id="keep-calendar-events-checkbox" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2">
-                <span class="font-medium text-gray-800">Keep associated calendar events (unlink them from this table).</span>
-            </label>
-        </div>
         <div class="mt-8 flex justify-end gap-4">
             <button id="cancel-delete-table-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
             <button id="confirm-delete-table-btn" class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700">Delete</button>
         </div>
     </div>
-</div>
-
-<div id="import-csv-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
-    <form id="import-csv-form" class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-        <div class="p-4 border-b">
-            <h3 class="text-xl font-semibold">Import Table from CSV</h3>
-        </div>
-        
-        <!-- Step 1: File Upload -->
-        <div id="import-step-1" class="p-6 space-y-4">
-            <div>
-                <label for="import-table-name" class="block text-sm font-medium text-gray-700">New Table Name</label>
-                <input id="import-table-name" type="text" placeholder="e.g., customers" required class="mt-1 w-full p-2 border rounded-md">
-            </div>
-            <div>
-                <label for="import-csv-file" class="block text-sm font-medium text-gray-700">CSV File (with headers)</label>
-                <input id="import-csv-file" type="file" accept=".csv" required class="mt-1 w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-            </div>
-        </div>
-
-        <!-- Step 2: Review Columns -->
-        <div id="import-step-2" class="p-6 space-y-4 overflow-y-auto hidden">
-            <p class="text-sm text-gray-600">Review the detected columns and their inferred data types. You can make changes before importing.</p>
-            <div class="border rounded-lg overflow-hidden">
-                <table class="min-w-full text-sm">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="p-2 text-left font-semibold">Original Header</th>
-                            <th class="p-2 text-left font-semibold">New Column Name (Sanitized)</th>
-                            <th class="p-2 text-left font-semibold">Data Type</th>
-                            <th class="p-2 text-center font-semibold">PK</th>
-                        </tr>
-                    </thead>
-                    <tbody id="csv-review-tbody" class="divide-y">
-                        <!-- Rows will be injected by JS -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <div class="p-4 mt-auto border-t bg-gray-50 flex justify-end gap-4">
-            <button id="cancel-import-csv-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
-            <button id="import-csv-next-btn" type="button" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-semibold">Review Columns</button>
-            <button id="import-csv-submit-btn" type="submit" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 font-semibold hidden">Create Table & Import</button>
-        </div>
-    </form>
 </div>
 
 <div id="import-rows-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
@@ -387,122 +296,6 @@
             <button id="close-summary-modal-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Close</button>
         </div>
     </div>
-</div>
-
-<div id="create-event-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
-    <form id="create-event-form" class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div class="p-4 border-b">
-            <h3 class="text-xl font-semibold">Create Event from Existing Row</h3>
-        </div>
-        <div class="p-6 space-y-4 overflow-y-auto">
-            <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Source Table</label>
-                    <select id="event-source-table-select" required class="mt-1 block w-full p-2 border rounded-md bg-white"></select>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Source Row</label>
-                    <select id="event-source-row-select" required class="mt-1 block w-full p-2 border rounded-md bg-white" disabled></select>
-                </div>
-            </div>
-            <div class="border-t pt-4 mt-4">
-                <h4 class="text-md font-semibold text-gray-800">Event Details</h4>
-                <div class="space-y-3 mt-2">
-                    <div>
-                        <label for="create-event-title" class="block text-sm font-medium text-gray-700">Event Title <span class="text-red-500">*</span></label>
-                        <input type="text" id="create-event-title" required class="mt-1 block w-full p-2 border rounded-md">
-                    </div>
-                    <div>
-                        <label for="create-event-start-time" class="block text-sm font-medium text-gray-700">Start Date/Time <span class="text-red-500">*</span></label>
-                        <input type="datetime-local" id="create-event-start-time" required class="mt-1 block w-full p-2 border rounded-md">
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="p-4 mt-auto border-t bg-gray-50 flex justify-end gap-4">
-            <button id="cancel-create-event-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
-            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Create Event</button>
-        </div>
-    </form>
-</div>
-
-<!-- Event Details/Edit Modal -->
-<div id="event-details-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
-    <form id="event-details-form" class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div class="p-4 border-b flex justify-between items-center">
-            <h3 class="text-xl font-semibold">Event Details</h3>
-            <button id="close-event-details-btn" type="button" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
-        </div>
-        <div class="p-6 space-y-4 overflow-y-auto">
-            <input type="hidden" id="edit-event-id">
-            <div>
-                <label for="edit-event-title" class="block text-sm font-medium text-gray-700">Event Title</label>
-                <input type="text" id="edit-event-title" required class="mt-1 block w-full p-2 border rounded-md">
-            </div>
-            <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <label for="edit-event-start-time" class="block text-sm font-medium text-gray-700">Start Time</label>
-                    <input type="datetime-local" id="edit-event-start-time" required class="mt-1 block w-full p-2 border rounded-md">
-                </div>
-                <div>
-                    <label for="edit-event-end-time" class="block text-sm font-medium text-gray-700">End Time (Optional)</label>
-                    <input type="datetime-local" id="edit-event-end-time" class="mt-1 block w-full p-2 border rounded-md">
-                </div>
-            </div>
-            <div>
-                <label for="edit-event-description" class="block text-sm font-medium text-gray-700">Description</label>
-                <textarea id="edit-event-description" rows="3" class="mt-1 block w-full p-2 border rounded-md"></textarea>
-            </div>
-            <!-- This section will be populated with the full source row data -->
-            <div id="event-source-data-container" class="hidden pt-4 mt-4 border-t">
-                <h4 class="text-md font-semibold text-gray-800">Source Data from <span id="event-source-table-name" class="font-mono"></span></h4>
-                <div id="event-source-data-details" class="mt-2 space-y-1 text-sm font-mono bg-gray-50 p-3 rounded-md"></div>
-            </div>
-            <div>
-                <label class="flex items-center"><input id="edit-event-completed" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"> Mark as Completed</label>
-            </div>
-        </div>
-        <div class="p-4 mt-auto border-t bg-gray-50 flex justify-between items-center">
-            <button id="delete-event-btn" type="button" class="bg-red-100 text-red-700 px-4 py-2 rounded-md hover:bg-red-200 font-semibold">Delete Event</button>
-            <div class="flex gap-4">
-                <button id="cancel-edit-event-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
-                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Save Changes</button>
-            </div>
-        </div>
-    </form>
-</div>
-
-<div id="send-to-calendar-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-40">
-    <form id="send-to-calendar-form" class="bg-white rounded-lg shadow-xl w-full max-w-lg">
-        <div class="p-4 border-b">
-            <h3 class="text-xl font-semibold">Send Row to Calendar</h3>
-        </div>
-        <div class="p-6 space-y-4">
-            <p class="text-sm text-gray-600">Map the columns from your table to the calendar event fields.</p>
-            <input type="hidden" id="calendar-source-row-id">
-            
-            <div>
-                <label class="block text-sm font-medium text-gray-700">Event Title <span class="text-red-500">*</span></label>
-                <select id="calendar-title-col" required class="mt-1 block w-full p-2 border rounded-md bg-white"></select>
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700">Start Date/Time <span class="text-red-500">*</span></label>
-                <select id="calendar-start-col" required class="mt-1 block w-full p-2 border rounded-md bg-white"></select>
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700">End Date/Time (Optional)</label>
-                <select id="calendar-end-col" class="mt-1 block w-full p-2 border rounded-md bg-white"></select>
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700">Description (Optional)</label>
-                <select id="calendar-desc-col" class="mt-1 block w-full p-2 border rounded-md bg-white"></select>
-            </div>
-        </div>
-        <div class="p-4 mt-auto border-t bg-gray-50 flex justify-end gap-4">
-            <button id="cancel-send-to-calendar-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
-            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Create Event</button>
-        </div>
-    </form>
 </div>
 
 <script>
@@ -545,6 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const createTableTabButtonsInModal = document.querySelectorAll('#create-table-modal .create-table-tab-btn');
     const guiCreateTab = document.getElementById('gui-create-tab');
     const sqlCreateTab = document.getElementById('sql-create-tab');
+    const csvCreateTab = document.getElementById('csv-create-tab');
     const addColumnToModalBtn = document.getElementById('add-column-to-modal-btn');
     const deleteTableModal = document.getElementById('delete-table-modal');
     const modalTableName = document.getElementById('modal-table-name');
@@ -563,11 +357,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const dataTbody = document.getElementById('data-tbody');
     const exportCsvBtn = document.getElementById('export-csv-btn');
     const searchInput = document.getElementById('row-search-input');
-    const importCsvBtn = document.getElementById('import-csv-btn');
     const viewDbSqlSidebarBtn = document.getElementById('view-db-sql-sidebar-btn');
-    const importCsvModal = document.getElementById('import-csv-modal');
-    const importCsvForm = document.getElementById('import-csv-form');
-    const cancelImportCsvBtn = document.getElementById('cancel-import-csv-btn');
+    // CSV import elements are now part of the create table modal
     const importCsvNextBtn = document.getElementById('import-csv-next-btn');
     const importCsvSubmitBtn = document.getElementById('import-csv-submit-btn');
     const importCsvFile = document.getElementById('import-csv-file');
@@ -580,24 +371,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const cancelImportRowsBtn = document.getElementById('cancel-import-rows-btn');
     const importSummaryModal = document.getElementById('import-summary-modal');
     const closeSummaryModalBtn = document.getElementById('close-summary-modal-btn');
-    const createWebhookBtn = document.getElementById('create-webhook-btn');
-    const webhooksListContainer = document.getElementById('webhooks-list-container');
     const sidebar = document.getElementById('sidebar');
     const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
-    const calendarBtn = document.getElementById('calendar-btn');
-    const calendarView = document.getElementById('calendar-view');
-    const sendToCalendarModal = document.getElementById('send-to-calendar-modal');
-    const cancelSendToCalendarBtn = document.getElementById('cancel-send-to-calendar-btn');
-    const createEventModal = document.getElementById('create-event-modal');
-    const cancelCreateEventBtn = document.getElementById('cancel-create-event-btn');
-    const eventDetailsModal = document.getElementById('event-details-modal');
 
 
     let dataFetchController = new AbortController();
-    let selectedDateElement = null; // To track the highlighted day cell
 
     const importRowsCsvFile = document.getElementById('import-rows-csv-file');
-    let calendar;
 
     function showError(message, error = null) {
         const banner = document.getElementById('error-banner');
@@ -662,39 +442,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {
             return `Server returned status ${response.status}. Response: ${errorText.substring(0, 500)}`;
         }
-    }
-
-    /**
-     * Helper functions for auto-matching webhook fields.
-     */
-    function normalizeString(str) {
-        if (!str) return '';
-        return str.toLowerCase().replace(/[\s_-]/g, '');
-    }
-
-    function findBestMatch(tableColumnName, incomingFields) {
-        const normalizedTableCol = normalizeString(tableColumnName);
-        let bestMatch = null;
-        let highestScore = 0;
-
-        for (const field of incomingFields) {
-            const normalizedField = normalizeString(field);
-            let score = 0;
-
-            if (normalizedTableCol === normalizedField) {
-                score = 100; // Perfect match
-            } else if (normalizedTableCol.includes(normalizedField) || normalizedField.includes(normalizedTableCol)) {
-                // Prioritize longer matches to avoid 'id' matching 'grid'
-                const similarity = Math.min(normalizedTableCol.length, normalizedField.length) / Math.max(normalizedTableCol.length, normalizedField.length);
-                score = 50 * similarity; // Substring match, weighted by similarity
-            }
-
-            if (score > highestScore) {
-                highestScore = score;
-                bestMatch = field;
-            }
-        }
-        return bestMatch;
     }
 
     function debounce(func, timeout = 300){
@@ -797,7 +544,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             mainContent.classList.remove('hidden');
             placeholderContent.classList.add('hidden');
-            calendarView.classList.add('hidden');
             deleteTableBtn.disabled = false;
             tableTabContainer.classList.remove('hidden');
             document.querySelector('.table-tab-btn[data-tab="data"]').click();
@@ -805,9 +551,6 @@ document.addEventListener('DOMContentLoaded', () => {
             // Reset to page 1 whenever a new table is selected
             renderStructure(state.selectedTable.columns);
             renderTableSql(state.selectedTable);
-            // Pass the full table object, not just the ID
-            fetchAndRenderCalendarSync(state.selectedTable);
-            fetchAndRenderWebhooks(state.selectedTable.id);
         }
     }
 
@@ -915,9 +658,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const actionsTd = document.createElement('td');
         actionsTd.className = 'p-3 text-center flex items-center justify-center gap-3';
         actionsTd.innerHTML = `
-            <button data-row-id="${row.id}" class="send-to-calendar-btn text-gray-400 hover:text-yellow-600" title="Send to Calendar">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-            </button>
             <button data-row-id="${row.id}" class="delete-row-btn text-gray-400 hover:text-red-600" title="Delete Row">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
             </button>
@@ -1014,268 +754,6 @@ document.addEventListener('DOMContentLoaded', () => {
         hljs.highlightElement(codeElement);
     }
 
-    async function fetchAndRenderWebhooks(tableId) {
-        webhooksListContainer.innerHTML = `<div class="text-sm text-gray-500">Loading integrations...</div>`;
-        try {
-            const response = await fetchWithAuth(`/api/v1/tables/${tableId}/webhooks`);
-            if (!response.ok) throw new Error('Failed to fetch webhooks');
-            const webhooks = await response.json();
-            renderWebhooks(webhooks);
-        } catch (error) {
-            console.error(error);
-            webhooksListContainer.innerHTML = `<div class="text-sm text-red-500">Error loading integrations.</div>`;
-        }
-    }
-
-    async function fetchAndRenderCalendarSync(table) {
-        const container = document.getElementById('calendar-sync-container');
-        container.innerHTML = `<div class="text-sm text-gray-500">Loading calendar settings...</div>`;
-        try {
-            const response = await fetchWithAuth(`/api/v1/tables/${table.id}/calendar-sync`);
-            
-            if (!response.ok) throw new Error(await getErrorFromResponse(response));
-            
-            // The API returns 200 OK with a null body if no config is found.
-            // response.json() handles this correctly and will resolve to null.
-            const config = await response.json();
-            renderCalendarSyncForm(config, table);
-        } catch (error) {
-            // Don't log to console if it's a 404, which is a valid state (no config found)
-            // The API now returns 200 with null body for this case, so this check is less critical but good practice.
-            if (!error.message.includes("404")) console.error("Error in fetchAndRenderCalendarSync:", error);
-            container.innerHTML = `
-                <div class="bg-red-50 border border-red-200 text-red-800 text-sm p-4 rounded-lg">
-                    <p class="font-bold">Error loading calendar settings.</p>
-                    <p class="mt-2 text-xs font-mono bg-red-100 p-2 rounded">Details: ${error.message}</p>
-                </div>`;
-        }
-    }
-
-    function renderCalendarSyncForm(config, table) {
-        const container = document.getElementById('calendar-sync-container');
-        const template = document.getElementById('calendar-sync-form-template');
-        container.innerHTML = template.innerHTML;
-
-        const form = container.querySelector('form');
-        const mappingContainer = form.querySelector('#calendar-sync-mapping-fields');
-        const enabledToggle = form.querySelector('#calendar-sync-enabled');
-        const deleteBtn = form.querySelector('#delete-calendar-sync-btn');
-
-        // Fix: Handle case where config is null
-        const currentMapping = config ? config.column_mapping : {};
-        const isEnabled = config ? config.is_enabled : false;
-
-        const columns = table.columns.filter(c => !c.is_primary_key);
-        const dateLikeColumns = columns.filter(c => ['timestamp', 'text', 'date', 'real', 'integer'].includes(c.type));
-
-        const fields = [
-            { id: 'start_time_column', label: 'Start Date/Time', required: true, options: dateLikeColumns },
-            { id: 'end_time_column', label: 'End Date/Time', required: false, options: dateLikeColumns },
-        ];
-
-        mappingContainer.innerHTML = fields.map(field => `
-            <div class="grid grid-cols-3 gap-4 items-center">
-                <label for="sync-${field.id}" class="text-sm font-medium text-gray-700">${field.label} ${field.required ? '<span class="text-red-500">*</span>' : ''}</label>
-                <select id="sync-${field.id}" data-mapping-key="${field.id}" class="col-span-2 p-2 border rounded-md bg-white calendar-sync-select" ${field.required ? 'required' : ''}>
-                    <option value="">-- Select Column --</option>
-                    ${field.options.map(c => `<option value="${c.name}">${c.name}</option>`).join('')}
-                </select>
-            </div>
-        `).join('');
-
-        // Add a listener to enable the save button only when the required field is filled
-        const startSelect = form.querySelector('#sync-start_time_column');
-        const saveBtn = form.querySelector('button[type="submit"]');
-        startSelect.addEventListener('change', () => { saveBtn.disabled = !startSelect.value; });
-
-        enabledToggle.checked = isEnabled;
-        if (config) deleteBtn.classList.remove('hidden');
-        for (const [key, value] of Object.entries(currentMapping)) {
-            const select = form.querySelector(`[data-mapping-key="${key}"]`);
-            if (select) select.value = value;
-        }
-
-        // Initial check for the save button state
-        saveBtn.disabled = !startSelect.value;
-
-        form.addEventListener('submit', handleSaveCalendarSync);
-        deleteBtn.addEventListener('click', handleDeleteCalendarSync);
-    }
-
-    async function handleSaveCalendarSync(e) {
-        e.preventDefault();
-        const form = e.target;
-        const payload = {
-            is_enabled: form.querySelector('#calendar-sync-enabled').checked,
-            column_mapping: {}
-        };
-        form.querySelectorAll('select[data-mapping-key]').forEach(s => {
-            payload.column_mapping[s.dataset.mappingKey] = s.value || null;
-        });
-
-        const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/calendar-sync`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (response.ok) {
-            fetchAndRenderCalendarSync(state.selectedTable);
-            if (calendar) calendar.refetchEvents(); // Explicitly refresh calendar on sync change
-            } else {
-                showError('Failed to save sync settings.');
-            }
-    }
-
-    async function handleDeleteCalendarSync() {
-        if (confirm('Are you sure you want to remove the calendar sync for this table?')) {
-            const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/calendar-sync`, { method: 'DELETE' });
-            if (response.ok) {
-                fetchAndRenderCalendarSync(state.selectedTable);
-                if (calendar) calendar.refetchEvents(); // Explicitly refresh calendar
-            } else {
-                showError('Failed to delete sync settings.');
-            }
-        }
-    }
-
-    function renderWebhooks(webhooks) {
-        webhooksListContainer.innerHTML = '';
-        if (webhooks.length === 0) {
-            webhooksListContainer.innerHTML = `<div class="text-center p-6 border-2 border-dashed rounded-lg text-gray-500">
-                    <h3 class="font-semibold">No webhooks yet.</h3>
-                    <p class="mt-1 text-sm">Create a webhook to start receiving data from external forms.</p>
-                    <div class="mt-4 text-xs text-left bg-gray-100 p-3 rounded-md max-w-lg mx-auto">
-                        <p class="font-semibold text-gray-600">Pro Tip:</p>
-                        <p class="text-gray-500 mt-1">For best results, ensure your table has columns that match the fields you expect to receive (e.g., columns named <code class="bg-gray-200 text-gray-700 px-1 rounded font-mono">name</code>, <code class="bg-gray-200 text-gray-700 px-1 rounded font-mono">email</code>, <code class="bg-gray-200 text-gray-700 px-1 rounded font-mono">message</code>, etc.). This makes field mapping easier after you receive your first test submission.</p>
-                    </div>
-                </div>`;
-            return;
-        }
-        webhooks.forEach(webhook => {
-            const webhookCard = document.createElement('div');
-            webhookCard.className = 'bg-white rounded-lg shadow-sm border p-4';
-            webhookCard.dataset.webhookId = webhook.id;
-            webhookCard.innerHTML = renderSingleWebhook(webhook);
-            webhooksListContainer.appendChild(webhookCard);
-        });
-    }
-
-    function renderSingleWebhook(webhook) {
-        const webhookUrl = `${window.location.origin}/api/v1/webhooks/incoming/${webhook.webhook_token}`;
-        const statusColors = {
-            listening: 'bg-blue-100 text-blue-800',
-            active: 'bg-green-100 text-green-800',
-            disabled: 'bg-gray-100 text-gray-800'
-        };
-
-        let contentHtml = '';
-        if (webhook.status === 'listening' && webhook.sample_payload) {
-            // State: Ready for mapping
-            const incomingFields = Object.keys(webhook.sample_payload);
-            const tableColumns = state.selectedTable.columns.filter(c => !c.is_primary_key);
-
-            const mappingFieldsHtml = tableColumns.map(col => {
-                // Find the best match for the current table column among the incoming fields.
-                const bestMatch = findBestMatch(col.name, incomingFields);
-                return `
-                    <div class="grid grid-cols-2 gap-4 items-center">
-                        <label class="text-right font-medium text-gray-700">${col.name} <span class="font-mono text-xs text-purple-600">(${col.type})</span></label>
-                        <select data-table-col="${col.name}" class="p-2 border rounded-md bg-white">
-                            <option value="">-- Don't Import --</option>
-                            ${incomingFields.map(h => `<option value="${h}" ${h === bestMatch ? 'selected' : ''}>${h}</option>`).join('')}
-                        </select>
-                    </div>
-                `;
-            }).join('');
-
-            contentHtml = `
-                <form class="webhook-mapping-form">
-                    <h4 class="font-semibold text-gray-800">Map Incoming Fields to Table Columns</h4>
-                    <p class="text-sm text-gray-600 mt-1">We received a test submission. Match the fields from your form to the columns in your table.</p>
-                    <div class="mt-4 space-y-2 border-t pt-4">
-                        ${mappingFieldsHtml}
-                    </div>
-                    <div class="mt-4 flex justify-end">
-                        <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 font-semibold">Save and Activate</button>
-                    </div>
-                </form>
-            `;
-        } else if (webhook.status === 'listening') {
-            // State: Listening for first submission
-            contentHtml = `
-                <div class="text-center p-4 bg-blue-50 rounded-md">
-                    <h4 class="font-semibold text-blue-800">Listening for data...</h4>
-                    <p class="text-sm text-blue-700 mt-1">To complete setup, submit a test entry from your form (e.g., from WordPress) or send a sample payload.</p>
-                    <div class="mt-4 flex justify-center items-center gap-4">
-                        <button data-webhook-url="${webhookUrl}" class="send-test-webhook-btn text-sm bg-white border border-blue-600 text-blue-600 px-3 py-1 rounded-md hover:bg-blue-50">Send Test Data</button>
-                        <button data-webhook-id="${webhook.id}" class="refresh-webhook-btn text-sm text-blue-600 hover:underline">Check for data</button>
-                    </div>
-                </div>
-            `;
-        } else if (webhook.status === 'active') {
-            // State: Active and running
-            const fieldMapping = webhook.field_mapping || {};
-            const hasMapping = Object.keys(fieldMapping).length > 0;
-
-            const mappingHtml = hasMapping
-                ? Object.entries(fieldMapping).map(([tableCol, formField]) => `
-                    <div class="flex items-center gap-2">
-                        <span class="font-mono text-sm text-gray-500">${formField}</span>
-                        <span class="text-gray-400">&rarr;</span>
-                        <span class="font-mono text-sm font-semibold text-gray-800">${tableCol}</span>
-                    </div>
-                `).join('')
-                : '<p class="text-sm text-amber-700">No fields are currently mapped. This webhook will not insert any data.</p>';
-
-            contentHtml = `
-                <div class="p-4 bg-green-50 rounded-md">
-                    <div class="flex justify-between items-center">
-                        <h4 class="font-semibold text-green-800">Webhook is Active</h4>
-                        <div class="flex items-center gap-2">
-                            <button data-webhook-id="${webhook.id}" data-status="listening" class="toggle-webhook-status-btn text-sm bg-white border border-blue-600 text-blue-600 px-3 py-1 rounded-md hover:bg-blue-50">Re-map Fields</button>
-                            <button data-webhook-id="${webhook.id}" data-status="disabled" class="toggle-webhook-status-btn text-sm bg-gray-200 text-gray-800 px-3 py-1 rounded-md hover:bg-gray-300">Pause</button>
-                        </div>
-                    </div>
-                    <p class="text-sm text-green-700 mt-2">This webhook is live and will insert data into your table based on the following mapping:</p>
-                    <div class="mt-3 space-y-1">${mappingHtml}</div>
-                </div>
-            `;
-        } else if (webhook.status === 'disabled') {
-            // State: Disabled
-            contentHtml = `
-                <div class="p-4 bg-gray-50 rounded-md">
-                    <div class="flex justify-between items-center">
-                        <h4 class="font-semibold text-gray-800">Webhook is Disabled</h4>
-                        <button data-webhook-id="${webhook.id}" data-status="active" class="toggle-webhook-status-btn text-sm bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700">Resume</button>
-                    </div>
-                    <p class="text-sm text-gray-600 mt-1">This webhook is currently disabled and will not process any incoming data.</p>
-                </div>
-            `;
-        }
-
-        return `
-            <div class="flex justify-between items-start">
-                <div>
-                    <p class="text-sm font-semibold text-gray-500">Webhook URL</p>
-                    <div class="flex items-center gap-2 mt-1">
-                        <input type="text" readonly value="${webhookUrl}" class="w-full max-w-md p-2 font-mono text-xs bg-gray-100 border rounded-md">
-                        <button data-url="${webhookUrl}" class="copy-webhook-url-btn p-2 rounded-md bg-gray-200 hover:bg-gray-300" title="Copy URL">
-                            <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                        </button>
-                    </div>
-                </div>
-                <div class="flex items-center gap-4">
-                    <span class="text-xs font-medium px-2 py-1 rounded-full ${statusColors[webhook.status]}">${webhook.status.toUpperCase()}</span>
-                    <button data-webhook-id="${webhook.id}" class="delete-webhook-btn text-gray-400 hover:text-red-600" title="Delete Webhook">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    </button>
-                </div>
-            </div>
-            <div class="mt-4 pt-4 border-t">${contentHtml}</div>
-        `;
-    }
-
     tableTabButtons.forEach(button => {
         button.addEventListener('click', () => {
             const tab = button.dataset.tab;
@@ -1315,11 +793,21 @@ document.addEventListener('DOMContentLoaded', () => {
             // Show/hide tab content
             guiCreateTab.classList.toggle('hidden', tab !== 'gui');
             sqlCreateTab.classList.toggle('hidden', tab !== 'sql');
+            csvCreateTab.classList.toggle('hidden', tab !== 'csv');
+
+            // Show/hide footer buttons based on tab
+            submitCreateTableBtn.classList.toggle('hidden', tab === 'csv');
+            importCsvNextBtn.classList.toggle('hidden', tab !== 'csv' || importStep2.classList.contains('hidden') === false);
+            importCsvSubmitBtn.classList.toggle('hidden', tab !== 'csv' || importStep2.classList.contains('hidden') === true);
+
+            if (tab === 'csv') {
+                checkImportCsvNextButtonState();
+            } else {
+                validateCreateTableForm();
+            }
 
         });
     });
-
-
     // Modal Logic
 
     function openModal(modal) {
@@ -1407,6 +895,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const isValid = tableName && allColumnsNamed;
         submitCreateTableBtn.disabled = !isValid;
     }
+    
+    function resetCsvImportForm() {
+        document.getElementById('import-table-name').value = '';
+        document.getElementById('import-csv-file').value = '';
+        importStep1.classList.remove('hidden');
+        importStep2.classList.add('hidden');
+        checkImportCsvNextButtonState();
+    }
 
     function resetCreateTableModal() {
         document.getElementById('new-table-name').value = '';
@@ -1414,6 +910,15 @@ document.addEventListener('DOMContentLoaded', () => {
         columnsList.innerHTML = '';
         columnsList.appendChild(createColumnRow(true)); // Add default PK
         validateCreateTableForm(); // Set initial button state
+
+        // Reset CSV tab as well
+        resetCsvImportForm();
+
+        // Reset to the first tab
+        createTableTabButtonsInModal[0].click();
+
+        // Reset SQL tab
+        document.getElementById('create-table-sql-input').value = '';
     }
 
     // This is a more robust way to handle the submit button click, especially when
@@ -1424,7 +929,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function handleCreateTableSubmit(e) {
         e.preventDefault();
-        const activeTab = document.querySelector('#create-table-modal .create-table-tab-btn.bg-white').dataset.tab;
+        const activeTab = document.querySelector('#create-table-modal .create-table-tab-btn.bg-white')?.dataset.tab;
         let payload;
         let url = `/api/v1/databases/${state.dbId}/tables`;
         let method = 'POST';
@@ -1432,7 +937,11 @@ document.addEventListener('DOMContentLoaded', () => {
         submitCreateTableBtn.disabled = true;
         submitCreateTableBtn.textContent = 'Creating...';
 
-        if (activeTab === 'gui') {
+        if (activeTab === 'csv') {
+            // The CSV import has its own submit button and logic, so this one shouldn't be active.
+            // This is a safeguard.
+            return;
+        } else if (activeTab === 'gui') {
             const tableName = document.getElementById('new-table-name').value.trim();
             const columnRows = document.querySelectorAll('#new-columns-list .column-row');
             
@@ -1495,8 +1004,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function handleDeleteTable() {
         if (!state.selectedTable) return;
-        const keepEvents = document.getElementById('keep-calendar-events-checkbox').checked;
-        const url = `/api/v1/tables/${state.selectedTable.id}?keep_calendar_events=${keepEvents}`;
+        const url = `/api/v1/tables/${state.selectedTable.id}`;
         try {
             const response = await fetchWithAuth(url, { method: 'DELETE' });
             if (!response.ok) {
@@ -1535,10 +1043,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(errorDetail);
             }
             
-            // FIX: Explicitly refetch both the data grid and the calendar events.
-            if (calendar) calendar.refetchEvents();
-            // FIX: Refresh the data grid to show the new row at the top.
-            // The previous implementation was missing this.
+            // Refresh the data grid to show the new row at the top.
             await fetchAndRenderData(state.selectedTable.id, 1, searchInput.value.trim());
 
         } catch (error) {
@@ -1561,8 +1066,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 // This is more robust than just removing the row from the UI,
                 // as it correctly handles pagination.
                 await fetchAndRenderData(state.selectedTable.id, state.pagination.currentPage, searchInput.value.trim());
-                // FIX: Explicitly refresh calendar
-                if (calendar) calendar.refetchEvents();
             } catch (error) {
                 showError(error.message || 'Failed to delete row.', error);
             }
@@ -1664,8 +1167,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 feedbackElement.style.backgroundColor = '';
             }, 1500);
 
-            // FIX: Explicitly refresh calendar on successful row update
-            if (calendar) calendar.refetchEvents();
         } catch (error) {
             showError(`Error saving data: ${error.message}`, error); // Revert UI on failure
             fetchAndRenderData(state.selectedTable.id); // Revert UI on failure
@@ -1792,19 +1293,6 @@ document.addEventListener('DOMContentLoaded', () => {
         openModal(importRowsModal);
         closeModal(importSummaryModal);
     });
-    cancelImportRowsBtn.addEventListener('click', () => closeModal(importRowsModal));
-
-    importCsvBtn.addEventListener('click', () => {
-        importCsvForm.reset();
-        importStep1.classList.remove('hidden');
-        importStep2.classList.add('hidden');
-        importCsvNextBtn.classList.remove('hidden');
-        importCsvSubmitBtn.classList.add('hidden');
-        importCsvNextBtn.disabled = true;
-        openModal(importCsvModal);
-    });
-    cancelImportCsvBtn.addEventListener('click', () => closeModal(importCsvModal));
-
     function checkImportCsvNextButtonState() {
         const file = importCsvFile.files[0];
         const tableName = importTableName.value.trim();
@@ -1821,7 +1309,7 @@ document.addEventListener('DOMContentLoaded', () => {
     importTableName.addEventListener('input', checkImportCsvNextButtonState);
 
     importCsvNextBtn.addEventListener('click', async () => {
-        const file = importCsvFile.files[0];
+        const file = document.getElementById('import-csv-file').files[0];
         const tableName = importTableName.value.trim();
         if (!file || !tableName) {
             showError('Table name and CSV file are required.');
@@ -1887,10 +1375,10 @@ document.addEventListener('DOMContentLoaded', () => {
         reader.readAsText(file);
     });
 
-    importCsvForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
+    importCsvSubmitBtn.addEventListener('click', async () => {
         const tableName = importTableName.value.trim();
 
+        // This logic is now triggered by its own button, not a form submit.
         // Gather column definitions from the review step
         const columns = [];
         csvReviewTbody.querySelectorAll('tr').forEach(tr => {
@@ -1929,7 +1417,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const errorDetail = await getErrorFromResponse(response);
                 throw new Error(errorDetail);
                 }
-                closeModal(importCsvModal);
+                closeModal(createTableModal);
                 const newTable = await response.json();
                 await fetchDbIdAndTables();
                 const newTableLink = tableList.querySelector(`a[data-table-id="${newTable.id}"]`);
@@ -1941,8 +1429,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 importCsvSubmitBtn.textContent = 'Create Table & Import';
             }
         };
-        fileReader.readAsText(importCsvFile.files[0]);
+        fileReader.readAsText(document.getElementById('import-csv-file').files[0]);
     });
+
+    cancelImportRowsBtn.addEventListener('click', () => closeModal(importRowsModal));
 
     importRowsCsvFile.addEventListener('change', () => {
         const file = importRowsCsvFile.files[0];
@@ -2105,9 +1595,6 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelDeleteTableBtn.addEventListener('click', () => closeModal(deleteTableModal));
     confirmDeleteTableBtn.addEventListener('click', handleDeleteTable);
     
-    cancelCreateEventBtn.addEventListener('click', () => closeModal(createEventModal));
-
-    cancelSendToCalendarBtn.addEventListener('click', () => closeModal(sendToCalendarModal));
     editColumnForm.addEventListener('submit', handleEditColumnSubmit);
     cancelEditColumnBtn.addEventListener('click', () => closeModal(editColumnModal));
 
@@ -2135,11 +1622,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const rowId = deleteBtn.dataset.rowId;
             handleDeleteRow(rowId);
         }
-        const sendToCalendarBtn = e.target.closest('.send-to-calendar-btn');
-        if (sendToCalendarBtn) {
-            const rowId = sendToCalendarBtn.dataset.rowId;
-            openSendToCalendarModal(rowId);
-        }
     });
 
     document.getElementById('copy-table-sql-btn').addEventListener('click', (e) => {
@@ -2154,19 +1636,6 @@ document.addEventListener('DOMContentLoaded', () => {
     viewDbSqlBtn.addEventListener('click', handleViewDbSql);
     viewDbSqlSidebarBtn.addEventListener('click', handleViewDbSql);
     closeDbSqlModalBtn.addEventListener('click', () => closeModal(viewDbSqlModal));
-
-    calendarBtn.addEventListener('click', () => {
-        mainContent.classList.add('hidden');
-        placeholderContent.classList.add('hidden');
-        calendarView.classList.remove('hidden');
-
-        tableList.querySelectorAll('a').forEach(a => a.classList.remove('bg-blue-100', 'text-blue-700', 'font-semibold'));
-        // Keep selected table state for "Create New Event"
-        // state.selectedTable = null; 
-        deleteTableBtn.disabled = true;
-
-        calendar.render();
-    });
 
     // Centralized listener for all data grid cell updates
     dataTbody.addEventListener('change', (e) => {

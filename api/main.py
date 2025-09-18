@@ -3,11 +3,7 @@
 
 import os
 from pathlib import Path
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 import io, csv
-import secrets
 import re
 from fastapi import FastAPI, Request, Header, HTTPException, status, Depends, Query
 from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
@@ -24,13 +20,6 @@ from postgrest import APIError
 # Vercel will inject these from your project settings
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
-SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-
-SMTP_HOST = os.environ.get("SMTP_HOST")
-SMTP_PORT = os.environ.get("SMTP_PORT")
-SMTP_USER = os.environ.get("SMTP_USER")
-SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")
-CONTACT_FORM_RECIPIENT = os.environ.get("CONTACT_FORM_RECIPIENT")
 HCAPTCHA_SITE_KEY = os.environ.get("HCAPTCHA_SITE_KEY")
 
 # Get the root directory of the project
@@ -137,76 +126,8 @@ class SqlImportRequest(BaseModel):
     description: Optional[str] = Field(None, max_length=500)
     script: str
 
-class ContactForm(BaseModel):
-    sender_name: str = Field(..., min_length=1)
-    sender_email: str = Field(..., min_length=1)
-    message: str = Field(..., min_length=1)
-
-# --- Webhook Models ---
-class WebhookResponse(BaseModel):
-    id: int
-    created_at: str
-    table_id: int
-    webhook_token: str # This is a UUID but will be sent as a string
-    status: str
-    sample_payload: Optional[dict[str, Any]] = None
-    field_mapping: Optional[dict[str, str]] = None
-
-class WebhookUpdateRequest(BaseModel):
-    # Only allow these specific status updates from the user
-    status: Optional[str] = Field(None, pattern="^(active|disabled|listening)$")
-    field_mapping: Optional[dict[str, str]] = None
-
 class SqlTableCreateRequest(BaseModel):
     script: str
-
-# --- Calendar Models ---
-class CalendarEventResponse(BaseModel):
-    id: int
-    title: str
-    start_time: datetime
-    end_time: Optional[datetime] = None
-    description: Optional[str] = None
-    is_completed: bool
-    source_table_id: Optional[int] = None
-    source_row_id: Optional[int] = None
-    created_at: datetime
-
-class CalendarEventWithDetailsResponse(CalendarEventResponse):
-    source_table_name: Optional[str] = None
-    source_row_data: Optional[Dict[str, Any]] = None
-
-class CalendarEventUpdate(BaseModel):
-    title: Optional[str] = Field(None, min_length=1)
-    start_time: Optional[str] = None
-    end_time: Optional[str] = None
-    description: Optional[str] = None
-    is_completed: Optional[bool] = None
-
-class CalendarEventCreate(BaseModel):
-    title: str
-    start_time: str
-    end_time: Optional[str] = None
-    description: Optional[str] = None
-    is_completed: bool = False
-    source_table_id: int
-    source_row_id: int
-
-class RowToCalendarRequest(BaseModel):
-    title_column: Optional[str] = None
-    start_time_column: str
-    end_time_column: Optional[str] = None
-    description_column: Optional[str] = None # This is fine as optional
-
-class CalendarSyncConfig(BaseModel):
-    is_enabled: bool
-    column_mapping: RowToCalendarRequest
-
-class CalendarSyncConfigResponse(BaseModel):
-    id: int
-    table_id: int
-    is_enabled: bool
-    column_mapping: Dict[str, Any]
 
 # --- Reusable Dependencies ---
 # This dependency handles getting the user's token, validating it, and providing the user object.
@@ -724,15 +645,6 @@ async def delete_user_database( # pragma: no cover
     try:
         supabase = auth_details["client"]
 
-        # Before deleting the database, which cascades to tables, we need to handle calendar events.
-        # We will unlink all calendar events associated with ALL tables in this database.
-        # This prevents orphaned data and makes deletion cleaner.
-        # The RPC function will find all tables for the user in the given database and DELETE their events.
-        # This is a more robust fix than unlinking.
-        supabase.rpc('delete_calendar_events_for_database', {
-            'p_database_id': database_id,
-        }).execute()
-
         # The RLS policy ensures the user can only match their own database ID.
         # The 'returning="representation"' ensures data is returned to check if a row was actually deleted.
         response = supabase.table("user_databases").delete(returning="representation").eq("id", database_id).execute()
@@ -746,26 +658,13 @@ async def delete_user_database( # pragma: no cover
 @app.delete("/api/v1/tables/{table_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_database_table(
     table_id: int, 
-    auth_details: dict = Depends(get_current_user_details),
-    keep_calendar_events: bool = Query(False, description="If true, unlinks calendar events instead of deleting them.")
+    auth_details: dict = Depends(get_current_user_details)
 ):
     """
     Deletes a table and all its associated rows.
-    Can optionally preserve associated calendar events by unlinking them.
     """
     try:
         supabase = auth_details["client"]
-
-        if keep_calendar_events:
-            # Unlink events: Set source_table_id and source_row_id to NULL for all events from this table.
-            # This preserves them as standalone calendar events.
-            supabase.table("calendar_events").update({
-                "source_table_id": None,
-                "source_row_id": None
-            }).eq("source_table_id", table_id).execute()
-
-        # Now delete the table. If keep_calendar_events was false, the database's
-        # ON DELETE CASCADE will automatically delete the linked calendar events.
         response = supabase.table("user_tables").delete(returning="representation").eq("id", table_id).execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found or you do not have permission to delete it.")
@@ -885,63 +784,19 @@ async def create_table_row(
     """
     Creates a new, empty row for a table.
     """
-    from datetime import datetime, timezone
-
     try:
         supabase = auth_details["client"]
         user = auth_details["user"]
         
-        # --- FIX: When creating a new row, check for calendar sync and create the event immediately. ---
-        new_data = {} # Start with an empty data object.
-        
-        # Check if the table has an active calendar sync configuration.
-        sync_config_res = supabase.table("calendar_sync_configs").select("is_enabled, column_mapping").eq("table_id", table_id).maybe_single().execute()
-
-        if sync_config_res and sync_config_res.data and sync_config_res.data.get("is_enabled"):
-            # If sync is on, pre-populate the start_time field with today's date.
-            mapping_data = sync_config_res.data["column_mapping"]
-            start_time_col = mapping_data.get("start_time_column")
-            if start_time_col: # This check is correct here.
-                # Use timezone-aware current time and format it as YYYY-MM-DD.
-                today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-                new_data[start_time_col] = today_str
-
-        # 1. Create the new row in the table.
         new_row_data = {
             "user_id": user.id,
             "table_id": table_id,
-            "data": new_data
+            "data": {} # Start with an empty data object.
         }
         row_response = supabase.table("table_rows").insert(new_row_data, returning="representation").execute()
         if not row_response.data:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to create row. This may be due to a database policy violation.")
-
-        created_row = row_response.data[0]
-
-        # 2. If sync was enabled, create the corresponding calendar event now.
-        if sync_config_res and sync_config_res.data and sync_config_res.data.get("is_enabled") and new_data:
-            table_schema_res = await get_single_table(table_id, auth_details)
-            table_name = table_schema_res['name']
-            # FIX: Correctly get the start_time_column from the mapping data.
-            # The previous code was incorrectly looking for 'title_column'.
-            mapping_data = sync_config_res.data["column_mapping"]
-            start_time_col = mapping_data.get("start_time_column")
-            
-            event_title = f"{table_name} - New Row" # A sensible default title.
-            event_payload = {
-                "user_id": user.id,
-                "source_table_id": table_id,
-                "source_row_id": created_row['id'],
-                "title": event_title,
-                "start_time": new_data[start_time_col], # Use the date we just set.
-            }
-            # Upsert the event. This is safe and ensures no duplicates.
-            supabase.table("calendar_events").upsert(
-                event_payload, 
-                on_conflict="user_id, source_table_id, source_row_id"
-            ).execute()
-
-        return created_row
+        return row_response.data[0]
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create row: {str(e)}")
     except Exception as e:
@@ -954,62 +809,12 @@ async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict 
     """
     try:
         supabase = auth_details["client"]
-        user = auth_details["user"]
 
         # First, update the row data as requested.
         response = supabase.table("table_rows").update({"data": row_data.data}, returning="representation").eq("id", row_id).execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Row not found or access denied.") # pragma: no cover
         
-        updated_row = response.data[0]
-        table_id = updated_row['table_id']
-
-        # --- FIX: Manually trigger calendar sync logic ---
-        # Check if the table has an active calendar sync configuration.
-        sync_config_res = supabase.table("calendar_sync_configs").select("is_enabled, column_mapping").eq("table_id", table_id).maybe_single().execute()
-
-        if sync_config_res and sync_config_res.data and sync_config_res.data.get("is_enabled"):
-            mapping_data = sync_config_res.data["column_mapping"]
-            mapping = RowToCalendarRequest(**mapping_data)
-
-            # For automated sync, the event title should be the table name.
-            try:
-                table_schema_res = await get_single_table(table_id, auth_details)
-                table_name = table_schema_res['name']
-            except HTTPException as e:
-                # This can happen if the row being updated belongs to a table not in the current DB context.
-                # In this case, we just skip the calendar sync for this row.
-                return await get_single_row(row_id, auth_details)
-            table_schema = TableResponse(**table_schema_res)
-            
-            # Find a good column to represent the "row name" for the event title
-            pk_col_name = next((col.name for col in table_schema.columns if col.is_primary_key), 'id')
-            row_name_col = _find_best_title_column(table_schema.columns)
-            
-            new_row_data = updated_row['data']
-            start_time = new_row_data.get(mapping.start_time_column)
-            # Use the actual PK value from the data blob for the row name fallback.
-            row_pk_value = new_row_data.get(pk_col_name, updated_row['id'])
-            row_name = new_row_data.get(row_name_col, f"Row {row_pk_value}") if row_name_col else f"Row {row_pk_value}"
-            event_title = f"{table_name} - {row_name}"
-
-            # Only proceed if the essential start time field has data.
-            if event_title and start_time:
-                event_payload = {
-                    "user_id": user.id,
-                    "source_table_id": table_id,
-                    "source_row_id": row_id,
-                    "title": event_title,
-                    "start_time": str(start_time),
-                    "end_time": str(new_row_data.get(mapping.end_time_column)) if mapping.end_time_column and new_row_data.get(mapping.end_time_column) else None,
-                    "description": str(new_row_data.get(mapping.description_column)) if mapping.description_column and new_row_data.get(mapping.description_column) else None,
-                }
-                # Upsert the event. This creates it if it doesn't exist or updates it if it does.
-                supabase.table("calendar_events").upsert(
-                    event_payload, 
-                    on_conflict="user_id, source_table_id, source_row_id"
-                ).execute()
-
         return await get_single_row(row_id, auth_details)
 
     except APIError as e:
@@ -1024,12 +829,6 @@ async def delete_table_row(row_id: int, auth_details: dict = Depends(get_current
     """
     try:
         supabase = auth_details["client"]
-
-        # --- FIX: Delete associated calendar event before deleting the row ---
-        # This is a "best-effort" operation. If the row isn't synced, this does nothing.
-        # We do this before deleting the row itself.
-        supabase.table("calendar_events").delete().eq("source_row_id", row_id).execute()
-
         # Now, delete the row itself.
         response = supabase.table("table_rows").delete(returning="representation").eq("id", row_id).execute()
         if not response.data:
@@ -1065,445 +864,6 @@ async def _delete_item(supabase: Client, table_name: str, item_id: int, item_typ
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete {item_type_name.lower()}: {str(e)}")
 
 
-# --- Calendar Management Endpoints ---
-
-@app.get("/api/v1/calendar/events", response_model=List[CalendarEventWithDetailsResponse])
-async def get_calendar_events(
-    start_date: str, # ISO 8601 format: YYYY-MM-DD
-    end_date: str,   # ISO 8601 format: YYYY-MM-DD
-    db_id: int,      # The database ID to filter by
-    auth_details: dict = Depends(get_current_user_details)
-):
-    """
-    Fetches all calendar events for the user within a given date range,
-    including the full source row data if available.
-    """
-    supabase = auth_details["client"]
-    try:
-        # This RPC function joins calendar_events with table_rows and user_tables
-        # to return a much richer dataset for the calendar UI.
-        # You will need to add this function to your Supabase SQL Editor.
-        response = supabase.rpc('get_calendar_events_with_details', {
-            'p_start_date': start_date, 
-            'p_end_date': end_date,
-            'p_db_id': db_id
-        }).execute()
-        return response.data
-    except APIError as e:
-        # An RPC function that returns SETOF can result in an APIError if no rows are returned.
-        # This is not a true server error, but an expected outcome for date ranges with no events.
-        # We catch the error and return an empty list, which is the correct response for the client.
-        # This prevents the 500 error on the frontend.
-        print(f"Info: RPC 'get_calendar_events_with_details' returned no rows, which is acceptable. Error: {e.message}")
-        return []
-
-@app.post("/api/v1/calendar/events", response_model=CalendarEventResponse, status_code=status.HTTP_201_CREATED)
-async def create_calendar_event(event_data: CalendarEventCreate, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Creates a new calendar event linked to an existing source row.
-    """
-    supabase = auth_details["client"]
-    user = auth_details["user"]
-    try:
-        new_event_data = event_data.dict()
-        new_event_data["user_id"] = user.id
-
-        # RLS on table_rows will ensure the user owns the source row, preventing unauthorized linking.
-        # We don't need to explicitly check it here.
-
-        response = supabase.table("calendar_events").insert(new_event_data, returning="representation").execute()
-        if not response.data:
-            raise APIError("Failed to create event.", code="500", message="Insert operation returned no data.")
-        return response.data[0]
-    except APIError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create event: {str(e)}")
-
-@app.post("/api/v1/rows/{row_id}/send-to-calendar", response_model=CalendarEventResponse, status_code=status.HTTP_201_CREATED)
-async def create_event_from_row(row_id: int, mapping: RowToCalendarRequest, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Creates a calendar event by extracting data from an existing table row based on a provided column mapping.
-    """
-    supabase = auth_details["client"]
-    user = auth_details["user"]
-    try:
-        # 1. Fetch the source row data
-        row_res = supabase.table("table_rows").select("table_id, data").eq("id", row_id).single().execute()
-        if not row_res.data:
-            raise HTTPException(status_code=404, detail="Source row not found.")
-        
-        row_data = row_res.data['data']
-        table_id = row_res.data['table_id']
-
-        # 2. Determine the title column to use
-        title_col_name = mapping.title_column
-        if not title_col_name:
-            # If no title column is specified in the mapping, find the best one automatically.
-            table_schema_dict = await get_single_table(table_id, auth_details)
-            table_schema = TableResponse(**table_schema_dict)
-            title_col_name = _find_best_title_column(table_schema.columns)
-
-        if not title_col_name:
-            raise HTTPException(status_code=400, detail="Could not automatically determine a title column for this table.")
-
-        # 3. Extract data based on the mapping
-        title = row_data.get(title_col_name)
-        start_time = row_data.get(mapping.start_time_column)
-
-        if not title or not start_time:
-            raise HTTPException(status_code=400, detail="Title and start time columns must exist in the row data and have values.")
-
-        # 4. Construct the new event
-        new_event_data = {
-            "user_id": user.id,
-            "title": str(title),
-            "start_time": str(start_time),
-            "end_time": row_data.get(mapping.end_time_column) if mapping.end_time_column else None,
-            "description": str(row_data.get(mapping.description_column)) if mapping.description_column else None,
-            "source_table_id": table_id,
-            "source_row_id": row_id
-        }
-
-        # 5. Insert the new event
-        response = supabase.table("calendar_events").insert(new_event_data, returning="representation").execute()
-        return response.data[0]
-
-    except APIError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create event: {str(e)}")
-
-@app.put("/api/v1/calendar/events/{event_id}", response_model=CalendarEventResponse)
-async def update_calendar_event(event_id: int, update_data: CalendarEventUpdate, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Updates a calendar event. If the event is linked to a table row via auto-sync,
-    it will also update the data in the source row, enabling bi-directional sync.
-    """
-    supabase = auth_details["client"]
-    try:
-        payload = update_data.dict(exclude_unset=True)
-        if not payload:
-            raise HTTPException(status_code=400, detail="No update data provided.")
-
-        # --- Bi-directional Sync Logic ---
-        # 1. Get the event's source info first to see if it's linked to a row.
-        event_res = supabase.table("calendar_events").select("source_table_id, source_row_id").eq("id", event_id).single().execute()
-        if event_res.data and event_res.data.get("source_table_id") and event_res.data.get("source_row_id"):
-            source_table_id = event_res.data["source_table_id"]
-            source_row_id = event_res.data["source_row_id"]
-
-            # 2. Get the sync config for the source table to know the column mapping.
-            sync_config_res = supabase.table("calendar_sync_configs").select("column_mapping").eq("table_id", source_table_id).maybe_single().execute()
-            
-            # Only write back to the source table if a sync config exists.
-            if sync_config_res.data and sync_config_res.data.get("column_mapping"):
-                mapping = sync_config_res.data["column_mapping"]
-                
-                # 3. Fetch the original row data.
-                source_row_res = supabase.table("table_rows").select("data").eq("id", source_row_id).single().execute()
-                if source_row_res.data:
-                    updated_row_data = source_row_res.data['data'].copy()
-                    
-                    # 4. Map calendar changes back to the row data fields.
-                    if 'title' in payload and mapping.get('title_column'): updated_row_data[mapping['title_column']] = payload['title']
-                    if 'start_time' in payload and mapping.get('start_time_column'): updated_row_data[mapping['start_time_column']] = payload['start_time']
-                    if 'end_time' in payload and mapping.get('end_time_column'): updated_row_data[mapping['end_time_column']] = payload['end_time']
-                    if 'description' in payload and mapping.get('description_column'): updated_row_data[mapping['description_column']] = payload['description']
-                    
-                    # 5. Update the source row in the database.
-                    supabase.table("table_rows").update({"data": updated_row_data}).eq("id", source_row_id).execute()
-
-        # --- Original Logic: Update the calendar event itself ---
-        response = supabase.table("calendar_events").update(payload, returning="representation").eq("id", event_id).execute()
-        if not response.data:
-            raise HTTPException(status_code=404, detail="Event not found or access denied.")
-        return response.data[0]
-    except APIError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update event: {str(e)}")
-
-@app.delete("/api/v1/calendar/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_calendar_event(event_id: int, auth_details: dict = Depends(get_current_user_details)):
-    """Deletes a calendar event."""
-    supabase = auth_details["client"]
-    await _delete_item(supabase, "calendar_events", event_id, "Event")
-
-@app.get("/api/v1/tables/{table_id}/calendar-sync", response_model=Optional[CalendarSyncConfigResponse])
-async def get_calendar_sync_config(table_id: int, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Gets the automatic calendar sync configuration for a table.
-    """
-    supabase = auth_details["client"]
-    try:
-        response = supabase.table("calendar_sync_configs").select("id, table_id, is_enabled, column_mapping").eq("table_id", table_id).maybe_single().execute()
-        # .maybe_single() can result in response.data being None if no row is found.
-        # We also check if the response object itself is valid before accessing .data.
-        # This handles cases where no config exists, preventing an error.
-        if not response or response.data is None:
-            return None
-        return CalendarSyncConfigResponse(**response.data)
-    except APIError as e:
-        # This handles specific database errors (e.g., table not found)
-        raise HTTPException(status_code=500, detail=f"Database error: {e.message}")
-    except Exception as e:
-        # This is a general fallback for any other unexpected errors, like data validation issues.
-        raise HTTPException(status_code=500, detail=f"An unexpected server error occurred while fetching calendar config: {str(e)}")
-
-@app.post("/api/v1/tables/{table_id}/calendar-sync", response_model=CalendarSyncConfigResponse)
-async def create_or_update_calendar_sync_config(table_id: int, config_data: CalendarSyncConfig, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Creates or updates the automatic calendar sync configuration for a table.
-    If sync is enabled, this will also perform a backfill, creating calendar
-    events for all existing rows in the table.
-    """
-    supabase = auth_details["client"]
-    user = auth_details["user"]
-    try:
-        # Upsert ensures we create a new config or update an existing one for the table.
-        upsert_payload = {
-            "user_id": user.id,
-            "table_id": table_id,
-            "is_enabled": config_data.is_enabled,
-            "column_mapping": config_data.column_mapping.dict(exclude_unset=True)
-        }
-        response = supabase.table("calendar_sync_configs").upsert(
-            upsert_payload, 
-            on_conflict="table_id", 
-            returning="representation"
-        ).execute()
-        
-        saved_config = response.data[0]
-
-        # If sync was just enabled, trigger a backfill of existing rows to the calendar.
-        if config_data.is_enabled:
-            # 1. Fetch all rows from the source table.
-            all_rows = await _get_all_table_rows_for_sync(table_id, auth_details)
-            
-            # 2. Prepare calendar events from these rows.
-            events_to_upsert = []
-            mapping = config_data.column_mapping
-
-            # For automated sync, the event title should be the table name.
-            table_schema_res = await get_single_table(table_id, auth_details)
-            table_name = table_schema_res['name']
-            table_schema = TableResponse(**table_schema_res)
-            pk_col_name = next((col.name for col in table_schema.columns if col.is_primary_key), 'id')
-            row_name_col = _find_best_title_column(table_schema.columns)
-            
-            for row in all_rows:
-                row_data = row['data']
-                start_time = row_data.get(mapping.start_time_column)
-                
-                row_pk_value = row_data.get(pk_col_name, row['id'])
-                row_name = row_data.get(row_name_col, f"Row {row_pk_value}") if row_name_col else f"Row {row_pk_value}"
-                event_title = f"{table_name} - {row_name}"
-
-                # FIX: Only skip rows if the essential start_time is missing.
-                # Optional fields like end_time or description should not prevent event creation.
-                if not start_time:
-                    continue
-
-                # Build the event payload, handling optional fields gracefully.
-                events_to_upsert.append({
-                    "user_id": user.id, "source_table_id": table_id, "source_row_id": row['id'], # Use the top-level 'id'
-                    "title": event_title, "start_time": str(start_time),
-                    "end_time": str(row_data.get(mapping.end_time_column)) if mapping.end_time_column and row_data.get(mapping.end_time_column) else None, # Safely get end_time
-                    "description": str(row_data.get(mapping.description_column)) if mapping.description_column and row_data.get(mapping.description_column) else None, # Safely get description
-                })
-
-            # 3. Bulk upsert the events. This creates new ones and updates existing ones based on the source row.
-            # This relies on a UNIQUE constraint on (user_id, source_table_id, source_row_id) in the calendar_events table.
-            if events_to_upsert:
-                supabase.table("calendar_events").upsert(
-                    events_to_upsert, 
-                    on_conflict="user_id, source_table_id, source_row_id"
-                ).execute()
-
-        return saved_config
-    except APIError as e:
-        raise HTTPException(status_code=400, detail=f"Could not save sync config: {str(e)}")
-
-def _find_best_title_column(columns: List[ColumnDefinition]) -> Optional[str]:
-    """
-    Finds the best column to use for an event title if not specified.
-    Searches for common names and falls back to the primary key.
-    """
-    # Prioritized search for common title-like column names
-    for name_pattern in ['title', 'name', 'subject', 'task', 'event', 'label']:
-        for col in columns:
-            if name_pattern in col.name.lower():
-                return col.name
-    
-    # Fallback to the first text-like column
-    for col in columns:
-        if col.type == 'text':
-            return col.name
-
-    # Final fallback to the primary key
-    pk_col = next((col.name for col in columns if col.is_primary_key), None)
-    if pk_col:
-        return pk_col
-
-    return None
-
-async def _get_all_table_rows_for_sync(table_id: int, auth_details: dict) -> List[Dict[str, Any]]:
-    """
-    Internal helper to fetch all rows for a table for backend processes like calendar backfill.
-    It fetches the raw, unmodified data.
-    """
-    supabase = auth_details["client"]
-
-    # RLS on table_rows ensures user can only access rows they own.
-    response = supabase.table("table_rows").select("id, data").eq("table_id", table_id).order("id").execute()
-    
-    if not response.data:
-        return []
-
-    return response.data
-
-@app.delete("/api/v1/tables/{table_id}/calendar-sync", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_calendar_sync_config(table_id: int, auth_details: dict = Depends(get_current_user_details)):
-    """Deletes the calendar sync configuration for a table."""
-    supabase = auth_details["client"]
-    try:
-        # RLS ensures the user can only delete their own sync configs.
-        response = supabase.table("calendar_sync_configs").delete(returning="representation").eq("table_id", table_id).execute()
-        if not response.data:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sync config not found or access denied.")
-    except APIError as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete sync config: {str(e)}")
-
-# --- Webhook Management Endpoints ---
-
-@app.post("/api/v1/tables/{table_id}/webhooks", response_model=WebhookResponse, status_code=status.HTTP_201_CREATED)
-async def create_webhook_for_table(table_id: int, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Creates a new, unique webhook receiver for a specific table.
-    """
-    supabase = auth_details["client"]
-    user = auth_details["user"]
-    try:
-        # RLS on user_tables ensures the user owns the table they're creating a webhook for.
-        # We don't need to check existence here because the INSERT RLS policy on public_webhooks does it.
-        new_webhook_data = {
-            "user_id": user.id,
-            "table_id": table_id,
-            # The webhook_token and status have default values in the DB ('listening').
-        }
-        response = supabase.table("public_webhooks").insert(new_webhook_data, returning="representation").execute()
-        return response.data[0]
-    except APIError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create webhook: {str(e)}")
-
-@app.get("/api/v1/tables/{table_id}/webhooks", response_model=List[WebhookResponse])
-async def get_webhooks_for_table(table_id: int, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Retrieves all webhooks configured for a specific table.
-    """
-    supabase = auth_details["client"]
-    try:
-        # RLS ensures user can only see webhooks for tables they own.
-        response = supabase.table("public_webhooks").select("*").eq("table_id", table_id).order("created_at").execute()
-        return response.data
-    except APIError as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-
-@app.put("/api/v1/webhooks/{webhook_id}", response_model=WebhookResponse)
-async def update_webhook(webhook_id: int, update_data: WebhookUpdateRequest, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Updates a webhook's status or field mapping.
-    """
-    supabase = auth_details["client"]
-    try:
-        # RLS on public_webhooks ensures the user can only update their own webhooks.
-        payload = update_data.dict(exclude_unset=True)
-        if not payload:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No update data provided.")
-        
-        # If user is resetting the webhook to re-map, clear out old config.
-        if payload.get("status") == "listening":
-            payload["sample_payload"] = None
-            payload["field_mapping"] = None
-        
-        response = supabase.table("public_webhooks").update(payload, returning="representation").eq("id", webhook_id).execute()
-        if not response.data:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found or access denied.")
-        return response.data[0]
-    except APIError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update webhook: {str(e)}")
-
-@app.delete("/api/v1/webhooks/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_webhook(webhook_id: int, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Deletes a specific webhook.
-    """
-    supabase = auth_details["client"]
-    try:
-        # RLS ensures the user can only delete their own webhooks.
-        response = supabase.table("public_webhooks").delete(returning="representation").eq("id", webhook_id).execute()
-        if not response.data:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found or access denied.")
-    except APIError as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete webhook: {str(e)}")
-
-# --- Public Incoming Webhook Endpoint ---
-
-@app.post("/api/v1/webhooks/incoming/{webhook_token}", status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
-async def handle_incoming_webhook(webhook_token: str, request: Request):
-    """
-    Public, unauthenticated endpoint to receive data from third-party services.
-    It's hidden from the auto-generated API docs.
-    """
-    if not SUPABASE_SERVICE_ROLE_KEY:
-        raise HTTPException(status_code=503, detail="Webhook processing is not configured on the server.")
-
-    # Use the service role key to bypass RLS and look up the webhook config.
-    supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-    
-    # 1. Find the webhook configuration
-    try:
-        webhook_config_res = supabase_admin.table("public_webhooks").select("*").eq("webhook_token", webhook_token).single().execute()
-        webhook_config = webhook_config_res.data
-    except APIError:
-        # This happens if .single() finds no rows or more than one row.
-        raise HTTPException(status_code=404, detail="Webhook not found.")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Webhook lookup failed: {str(e)}")
-
-    # 2. Check webhook status and handle payload
-    if webhook_config['status'] == 'disabled':
-        return {"status": "ok", "message": "Webhook is disabled."} # Return 202 still, don't leak info.
-    
-    try:
-        payload = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON payload.")
-
-    if webhook_config['status'] == 'listening':
-        try:
-            supabase_admin.table("public_webhooks").update({"sample_payload": payload}).eq("id", webhook_config['id']).execute()
-            return {"status": "ok", "message": "Sample payload received."}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to save sample payload: {str(e)}")
-
-    elif webhook_config['status'] == 'active':
-        field_mapping = webhook_config.get('field_mapping')
-        if not field_mapping:
-            return {"status": "ok", "message": "Webhook is active but has no field mapping."}
-
-        transformed_data = {table_col: payload.get(form_field) for table_col, form_field in field_mapping.items() if form_field in payload}
-        
-        if not transformed_data:
-            return {"status": "ok", "message": "No mappable data found in payload."}
-
-        try:
-            insert_payload = { "user_id": webhook_config['user_id'], "table_id": webhook_config['table_id'], "data": transformed_data }
-            insert_response = supabase_admin.table("table_rows").insert(insert_payload, returning="representation").execute()
-
-            return {"status": "ok", "message": "Data inserted."}
-        except Exception as e:
-            # Don't expose internal DB errors. Log this for debugging.
-            print(f"Webhook insert error for token {webhook_token}: {str(e)}")
-            raise HTTPException(status_code=500, detail="Failed to process data.")
-    
-    return {"status": "ok", "message": "Request received."}
-
 @app.delete("/api/v1/users/me", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_current_user(auth_details: dict = Depends(get_current_user_details)):
     """
@@ -1511,6 +871,7 @@ async def delete_current_user(auth_details: dict = Depends(get_current_user_deta
     This is an irreversible action. Requires the service_role key.
     Assumes that user data in public tables is set to cascade delete.
     """
+    SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
     if not SUPABASE_SERVICE_ROLE_KEY:
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
@@ -1775,46 +1136,6 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
         if new_db_id:
             await delete_user_database(new_db_id, auth_details)
         raise HTTPException(status_code=400, detail=f"Failed to import SQL script: {str(e)}. The new database has been rolled back.")
-
-@app.post("/api/v1/contact")
-async def handle_contact_form(form_data: ContactForm):
-    """
-    Handles submissions from the public contact form and sends an email.
-    """
-    # Check if the server is configured to send emails
-    if not all([SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, CONTACT_FORM_RECIPIENT]):
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Contact form is not configured on the server."
-        )
-
-    # Create the email message
-    msg = MIMEMultipart()
-    msg['From'] = SMTP_USER
-    msg['To'] = CONTACT_FORM_RECIPIENT
-    msg['Subject'] = f"New Contact Form Submission from {form_data.sender_name}"
-
-    body = f"""
-You have received a new message from your website's contact form:
-
-Name: {form_data.sender_name}
-Email: {form_data.sender_email}
-
-Message:
-{form_data.message}
-    """
-    msg.attach(MIMEText(body, 'plain'))
-
-    # Send the email using smtplib
-    try:
-        server = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT))
-        server.starttls()  # Secure the connection
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        server.sendmail(SMTP_USER, CONTACT_FORM_RECIPIENT, msg.as_string())
-        server.quit()
-        return {"message": "Message sent successfully!"}
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send message.")
 
 # --- SEO / Static File Routes ---
 @app.get("/robots.txt", response_class=FileResponse)
