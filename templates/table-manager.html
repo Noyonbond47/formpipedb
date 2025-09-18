@@ -966,8 +966,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleCreateTableSubmit(e) {
         e.preventDefault();
         const activeTab = document.querySelector('#create-table-modal .create-table-tab-btn.bg-white')?.dataset.tab;
-        let payload;
-        let url = `/api/v1/databases/${state.dbId}/tables`;
+        let payload, url;
         let method = 'POST';
 
         submitCreateTableBtn.disabled = true;
@@ -978,6 +977,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // This is a safeguard.
             return;
         } else if (activeTab === 'gui') {
+            // Use the new, more robust endpoint that finds the database by name.
+            url = `/api/v1/databases/by-name/${encodeURIComponent(state.dbName)}/tables`;
             const tableName = document.getElementById('new-table-name').value.trim();
             const columnRows = document.querySelectorAll('#new-columns-list .column-row');
             
@@ -1006,7 +1007,10 @@ document.addEventListener('DOMContentLoaded', () => {
             payload = { name: tableName, columns };
 
         } else { // activeTab === 'sql'
-            url = `/api/v1/databases/${state.dbId}/create-table-from-sql`;
+            // This endpoint still requires an ID. Ensure it's available.
+            if (!state.dbId) throw new Error("Database ID not loaded. Cannot create table from SQL.");
+            
+            url = `/api/v1/databases/${state.dbId}/create-table-from-sql`; // This endpoint still requires an ID
             const sqlScript = document.getElementById('create-table-sql-input').value.trim();
             payload = { script: sqlScript };
         }
