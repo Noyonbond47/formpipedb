@@ -377,13 +377,12 @@ async def create_table_from_sql(database_id: int, sql_data: SqlTableCreateReques
     table_name = raw_table_name.lower()
     columns_defs = []
     table_level_fks = []
-
-    # Split columns by comma, but be careful not to split inside parentheses (e.g., for VARCHAR(255) or DEFAULT functions)
-    # This regex is more robust for this task.
-    for col_line in re.split(r',(?![^()]*\))', columns_str):
+ 
+    # This regex splits columns by comma, but correctly ignores commas inside parentheses.
+    for col_line in re.split(r',(?![^()]*\))', columns_str.strip()):
         col_line = col_line.strip()
         if not col_line: continue
-
+ 
         # Clean up common redundant keywords from broken SQL dumps
         col_line = re.sub(r'\b(NOT NULL)\s+\1\b', r'\1', col_line, flags=re.IGNORECASE)
         col_line = re.sub(r'\b(UNIQUE)\s+\1\b', r'\1', col_line, flags=re.IGNORECASE)
@@ -409,14 +408,24 @@ async def create_table_from_sql(database_id: int, sql_data: SqlTableCreateReques
         if not parts: continue
 
         col_name = parts[0].strip('`"\'')
-        type_and_constraints = " ".join(parts[1:]).strip()
+        type_and_constraints = " ".join(parts[1:]).strip() 
 
-        # --- FIX: Use the robust type extraction and normalization ---
+        # --- FIX: Use the robust type extraction and DO NOT normalize ---
         raw_col_type = _extract_sql_type(type_and_constraints)
+
+        # --- FIX: Add parsing for inline foreign keys ---
+        inline_fk_match = re.search(r'REFERENCES\s+[`"]?(\w+)[`"]?\s*\(([`"]?\w+[`"]?)\)', type_and_constraints, re.IGNORECASE)
+        if inline_fk_match:
+            ref_table_name, ref_col = inline_fk_match.groups()
+            table_level_fks.append({
+                "source_col": col_name,
+                "ref_table_name": ref_table_name.strip('`"'),
+                "ref_col": ref_col.strip('`"\'')
+            })
 
         columns_defs.append(ColumnDefinition(
             name=col_name,
-            type=normalize_sql_type(raw_col_type),
+            type=raw_col_type, # Use the original, full type
             is_primary_key="PRIMARY KEY" in type_and_constraints.upper(),
             is_unique="UNIQUE" in type_and_constraints.upper() and "PRIMARY KEY" not in type_and_constraints.upper(), # A PK is implicitly unique
             is_not_null="NOT NULL" in type_and_constraints.upper()
@@ -671,21 +680,6 @@ def _extract_sql_type(col_def_str: str) -> str:
     # It stops at the first known constraint keyword.
     match = re.match(r'^\s*([a-zA-Z_]+(?:\(\s*\d+(?:\s*,\s*\d+)?\s*\))?)', col_def_str, re.IGNORECASE)
     return match.group(1) if match else 'TEXT'
-
-def normalize_sql_type(sql_type: str) -> str:
-    """Maps common SQL data types to the simplified types used by the app."""
-    s_type = sql_type.lower()
-    if 'int' in s_type:
-        return 'integer'
-    if 'char' in s_type or 'text' in s_type:
-        return 'text'
-    if 'real' in s_type or 'float' in s_type or 'double' in s_type or 'numeric' in s_type or 'decimal' in s_type:
-        return 'real'
-    if 'bool' in s_type:
-        return 'boolean'
-    if 'time' in s_type or 'date' in s_type:
-        return 'timestamp'
-    return 'text' # Default to text if no match
 
 @app.post("/api/v1/databases/{database_id}/import-csv", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
 async def import_table_from_csv(database_id: int, import_data: CsvImportRequest, auth_details: dict = Depends(get_current_user_details)):
@@ -1231,28 +1225,30 @@ async def _parse_and_execute_insert(statement: str, created_tables_map: dict, db
     
     # Find all value tuples like (...), (...), (...) using a more robust, non-greedy regex
     values_part = statement[header_match.end():].strip()
-    value_tuples_str = re.findall(r'\((.*?)\)', values_part)
+    # This regex finds all top-level parenthesized groups, correctly handling nested parentheses.
+    value_tuples_str = re.findall(r'\(((?:[^)(]+|\((?:[^)(]+|\([^)(]*\))*\))*)\)', values_part)
 
     rows_to_insert = []
     for values_str in value_tuples_str:
-        # Use the csv module to handle commas and quotes within values
-        values_reader = csv.reader([values_str], skipinitialspace=True)
-        values = next(values_reader)
+        # This regex splits by comma, but respects commas inside single-quoted strings.
+        # It handles values like 'a,b', 123, 'c' -> ["'a,b'", ' 123', " 'c'"]
+        values = re.split(r",(?=(?:[^']*'[^']*')*[^']*$)", values_str)
         
         if len(columns) == len(values):
             # Attempt to convert numeric strings to actual numbers
             typed_values = []
             for v in values:
+                clean_v = v.strip()
                 try:
-                    typed_values.append(int(v))
+                    # Try to convert to int first
+                    typed_values.append(int(clean_v))
                 except ValueError:
                     try:
-                        typed_values.append(float(v))
+                        # Then try to convert to float
+                        typed_values.append(float(clean_v))
                     except ValueError:
-                        # This is the key fix: strip leading/trailing quotes from string values
-                        # that the CSV parser might leave.
-                        clean_v = v.strip().strip("'\"")
-                        typed_values.append(clean_v)
+                        # If it fails, treat it as a string, stripping the outer quotes.
+                        typed_values.append(clean_v.strip("'\""))
             
             rows_to_insert.append({"user_id": user.id, "table_id": table_id, "data": dict(zip(columns, typed_values))})
 
@@ -1293,7 +1289,10 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
             if not statement.upper().startswith("CREATE TABLE"):
                 continue
 
-            create_match = re.search(r'CREATE TABLE\s+[`"]?(\w+)[`"]?\s*\((.+)\)', statement, re.DOTALL | re.IGNORECASE)
+            # --- FIX: Use a more precise regex to capture only the CREATE TABLE statement ---
+            # This regex finds 'CREATE TABLE', captures the name, and then correctly matches
+            # the content within the first top-level pair of parentheses. It stops before any trailing semicolon.
+            create_match = re.search(r'CREATE TABLE\s+(?:IF NOT EXISTS\s+)?[`"]?(\w+)[`"]?\s*\(((?:[^)(]+|\((?:[^)(]+|\([^)(]*\))*\))*)\)', statement, re.DOTALL | re.IGNORECASE)
             if not create_match: continue
             
             raw_table_name, columns_str = create_match.groups()
@@ -1302,14 +1301,15 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
             columns_defs = []
             table_level_fks = []
 
-            for col_line in columns_str.split(','):
+            # This regex splits columns by comma, but correctly ignores commas inside parentheses.
+            for col_line in re.split(r',(?![^()]*\))', columns_str.strip()):
                 col_line = col_line.strip()
                 if not col_line: continue
 
                 # Check for table-level FOREIGN KEY constraint: FOREIGN KEY (col) REFERENCES other_table(other_col)
                 fk_match = re.search(r'FOREIGN KEY\s*\(([`"]?\w+[`"]?)\)\s*REFERENCES\s*[`"]?(\w+)[`"]?\s*\(([`"]?\w+[`"]?)\)', col_line, re.IGNORECASE)
                 if fk_match:
-                    source_col, ref_table, ref_col = fk_match.groups()
+                    source_col, ref_table, ref_col = fk_match.groups() # ref_table is the table name
                     table_level_fks.append({
                         "source_col": source_col.strip('`"'),
                         "ref_table": ref_table.strip('`"'),
@@ -1327,12 +1327,22 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
 
                 col_name = parts[0].strip('`"')
                 type_and_constraints = " ".join(parts[1:]).strip()
-                # --- FIX: Use the robust type extraction ---
+                # --- FIX: Use the robust type extraction and DO NOT normalize ---
                 col_type = _extract_sql_type(type_and_constraints)
+
+                # --- FIX: Add parsing for inline foreign keys ---
+                inline_fk_match = re.search(r'REFERENCES\s+[`"]?(\w+)[`"]?\s*\(([`"]?\w+[`"]?)\)', type_and_constraints, re.IGNORECASE)
+                if inline_fk_match:
+                    ref_table, ref_col = inline_fk_match.groups()
+                    table_level_fks.append({
+                        "source_col": col_name,
+                        "ref_table": ref_table.strip('`"'),
+                        "ref_col": ref_col.strip('`"')
+                    })
 
                 columns_defs.append(ColumnDefinition(
                     name=col_name,
-                    type=normalize_sql_type(col_type),
+                    type=col_type, # Use the original, full type
                     is_primary_key="PRIMARY KEY" in type_and_constraints.upper(),
                     is_unique="UNIQUE" in type_and_constraints.upper(),
                     is_not_null="NOT NULL" in type_and_constraints.upper()
@@ -1361,7 +1371,9 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
             made_changes = False
             for fk in schema["foreign_keys"]:
                 target_column = next((c for c in table_to_update.columns if c.name == fk["source_col"]), None)
-                referenced_table_id = created_tables_map.get(fk["ref_table"])
+                # --- FIX: Use the sanitized (lowercase) table name for the lookup ---
+                # The created_tables_map uses lowercase keys, so we must look up with a lowercase key.
+                referenced_table_id = created_tables_map.get(fk["ref_table"].lower())
                 if target_column and referenced_table_id:
                     target_column.foreign_key = ForeignKeyDefinition(table_id=referenced_table_id, column_name=fk["ref_col"])
                     made_changes = True
