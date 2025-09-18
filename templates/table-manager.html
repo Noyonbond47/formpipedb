@@ -111,7 +111,7 @@
                     <input type="search" id="row-search-input" placeholder="Search rows..." class="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none">
                 </div>
                 <div class="flex gap-2 w-full md:w-auto">
-                    <button id="add-row-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Add Row</button>
+                    <button id="add-row-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-semibold">Add Row</button>
                     <button id="import-rows-btn" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 flex-grow">Import Rows</button>
                     <button id="export-csv-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 ml-2">Export to CSV</button>
                 </div>
@@ -123,7 +123,7 @@
                     </svg>
                 </div>
                 <table class="min-w-full text-sm">
-                    <thead class="bg-gray-50 sticky top-0">
+                    <thead id="data-table-header" class="bg-gray-50 sticky top-0 z-10">
                     </thead>
                     <tbody id="data-tbody" class="divide-y">
                     </tbody>
@@ -160,7 +160,7 @@
         <div id="gui-create-tab" class="create-table-tab-content p-6 space-y-4 overflow-y-auto">
             <input id="new-table-name" type="text" placeholder="Table Name (e.g., users)" required class="w-full p-2 border rounded-md">
             <div id="new-columns-list" class="space-y-2 pt-2"></div>
-            <button id="add-column-to-modal-btn" type="button" class="text-sm text-blue-600 hover:underline mt-2">+ Add Column</button>
+            <button id="add-column-to-modal-btn" type="button" class="text-sm text-blue-600 hover:underline mt-2 font-semibold">+ Add Column</button>
         </div>
         <div id="sql-create-tab" class="create-table-tab-content hidden p-6 space-y-4 overflow-y-auto">
             <p class="text-sm text-gray-600">Paste a single `CREATE TABLE` statement below.</p>
@@ -649,7 +649,7 @@ document.addEventListener('DOMContentLoaded', () => {
             thead.innerHTML = '';
             tbody.innerHTML = '';
             
-            const headerRow = document.createElement('tr');
+            const headerRow = document.getElementById('data-table-header').insertRow();
             headerRow.innerHTML = '<th class="p-3 w-24">Actions</th>';
             columns.forEach(col => {
                 const th = document.createElement('th');
@@ -657,7 +657,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 th.textContent = col.name;
                 headerRow.appendChild(th);
             });
-            thead.appendChild(headerRow);
             
             if (rows.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="${columns.length + 1}" class="p-8 text-center text-gray-500">No data in this table.</td></tr>`;
@@ -679,15 +678,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function renderRow(row, columns) {
+    function renderRow(row, columns, isNew = false) {
         const tr = document.createElement('tr');
-        tr.dataset.rowId = row.id;
+        if (isNew) {
+            tr.dataset.isNew = 'true';
+            tr.classList.add('bg-yellow-50'); // Style for new, unsaved rows
+        } else {
+            tr.dataset.rowId = row.id;
+        }
 
         const actionsTd = document.createElement('td');
         actionsTd.className = 'p-3 text-center flex items-center justify-center gap-3';
         actionsTd.innerHTML = `
-            <button data-row-id="${row.id}" class="delete-row-btn text-gray-400 hover:text-red-600" title="Delete Row">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            <button class="save-row-btn text-gray-400 hover:text-green-600" title="Save Row">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+            </button>
+            <button class="delete-row-btn text-gray-400 hover:text-red-600" title="${isNew ? 'Cancel' : 'Delete Row'}">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
         `;
         tr.appendChild(actionsTd);
@@ -697,7 +704,7 @@ document.addEventListener('DOMContentLoaded', () => {
             td.className = 'p-1';
             td.dataset.columnName = col.name;
 
-            const cellValue = row.data ? (row.data[col.name] ?? '') : '';
+            const cellValue = !isNew && row.data ? (row.data[col.name] ?? '') : '';
 
             if (col.foreign_key) {
                 const fkInfo = col.foreign_key;
@@ -721,9 +728,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } else {
                 if (col.is_primary_key) {
-                    td.textContent = `(${cellValue})`;
-                    td.className = 'p-3';
-                } else if (col.type === 'boolean') {
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.value = cellValue;
+                    input.className = 'w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 editable-cell-input';
+                    input.readOnly = col.is_auto_increment;
+                    input.classList.toggle('bg-gray-100', col.is_auto_increment);
+                    td.appendChild(input);
+                } else if (col.type === 'boolean') { // --- BOOLEAN ---
                     const select = document.createElement('select');
                     select.className = 'w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 boolean-select';
                     const isTrue = ['true', 't', '1', true].includes(String(cellValue).toLowerCase());
@@ -734,14 +746,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         <option value="false" ${isFalse ? 'selected' : ''}>False</option>
                     `;
                     td.appendChild(select);
-                } else if (col.type === 'timestamp') {
+                } else if (col.type === 'timestamp' || col.type === 'date') { // --- DATE/TIMESTAMP ---
                     const input = document.createElement('input');
                     input.type = 'date';
                     const dateValue = cellValue ? new Date(cellValue).toISOString().split('T')[0] : '';
                     input.value = dateValue;
                     input.className = 'w-full p-2 border-0 rounded-md bg-white focus:ring-2 focus:ring-blue-500 timestamp-input';
                     td.appendChild(input);
-                } else {
+                } else { // --- TEXT/NUMBER ---
                     const input = document.createElement('input');
                     const inputType = (col.type === 'integer' || col.type === 'real') ? 'number' : 'text';
                     input.type = inputType;
@@ -764,7 +776,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         let createStatement = `CREATE TABLE "${table.name}" (\n`;
         const columnDefs = table.columns.map(col => {
-            let parts = [`  "${col.name}"`, (col.type || 'TEXT').toUpperCase()]; // Use a Set to prevent duplicate constraints.
+            let parts = [`  "${col.name}"`, (col.is_auto_increment ? 'SERIAL' : (col.type || 'TEXT')).toUpperCase()];
             const constraints = new Set();
             if (col.is_primary_key) constraints.add("PRIMARY KEY");
             if (col.is_not_null) constraints.add("NOT NULL");
@@ -872,9 +884,9 @@ document.addEventListener('DOMContentLoaded', () => {
         div.className = 'column-row grid grid-cols-12 gap-2 items-center border-t pt-2';
         div.innerHTML = `
             <div class="col-span-12 grid grid-cols-12 gap-2 items-center">
-                <input type="text" data-key="name" placeholder="column_name" required class="col-span-3 p-2 border rounded-md" ${isPk ? 'value="id" readonly' : ''}>
+                <input type="text" data-key="name" placeholder="column_name" required class="col-span-3 p-2 border rounded-md" ${isPk ? 'value="id"' : ''}>
                 <select data-key="type" class="col-span-2 p-2 border rounded-md bg-white" ${isPk ? 'disabled' : ''}>
-                    ${isPk ? '<option value="serial" selected>SERIAL (PK)</option>' : `
+                    ${isPk ? '<option value="integer" selected>INTEGER (PK)</option>' : `
                     <option value="text" selected>TEXT</option>
                     <option value="integer">INTEGER</option>
                     <option value="real">REAL</option>
@@ -885,8 +897,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     `}
                 </select>
                 <div class="col-span-3 flex items-center justify-around text-xs">
+                    <label class="flex flex-col items-center" title="Set this as an auto-incrementing primary key. The type will become SERIAL."><input data-key="is_auto_increment" type="checkbox" class="h-4 w-4 rounded" ${isPk ? 'checked' : 'disabled'}><span>Auto-Inc</span></label>
                     <label class="flex flex-col items-center"><input data-key="is_not_null" type="checkbox" class="h-4 w-4 rounded" ${isPk ? 'checked disabled' : ''}><span>Not Null</span></label>
-                    <label class="flex flex-col items-center"><input data-key="is_unique" type="checkbox" class="h-4 w-4 rounded" ${isPk ? 'checked disabled' : ''}><span>Unique</span></label>
+                    <label class="flex flex-col items-center"><input data-key="is_unique" type="checkbox" class="h-4 w-4 rounded" ${isPk ? 'checked disabled' : ''}><span>Unique</span></label> 
                 </div>
             </div>
             <div class="col-span-12 mt-2 pl-1">
@@ -981,6 +994,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     name: row.querySelector('[data-key="name"]').value,
                     type: row.querySelector('[data-key="type"]').value,
                     is_primary_key: row.querySelector('[data-key="is_primary_key"]').value === 'true',
+                    is_auto_increment: row.querySelector('[data-key="is_auto_increment"]').checked,
                     is_not_null: row.querySelector('[data-key="is_not_null"]').checked,
                     is_unique: row.querySelector('[data-key="is_unique"]').checked,
                     foreign_key: fk
@@ -1047,33 +1061,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function handleAddRow() {
         if (!state.selectedTable) return;
-
-        addRowBtn.disabled = true;
-        addRowBtn.textContent = 'Adding...';
-        
-        try {
-            const response = await fetchWithAuth(`/api/v1/tables/${state.selectedTable.id}/rows`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }, // The backend now expects a `data` object, even if it's empty.
-                body: JSON.stringify({ data: {} })
-            });
-            if (!response.ok) {
-                const errorDetail = await getErrorFromResponse(response);
-                throw new Error(errorDetail);
-            }
-            // Refresh the data grid to show the new row at the top.
-            await fetchAndRenderData(state.selectedTable.id, 1, searchInput.value.trim());
-
-        } catch (error) {
-            showError(error.message || 'Failed to add row. Please check the console for details.', error);
-        } finally {
-            addRowBtn.disabled = false;
-            addRowBtn.textContent = 'Add Row';
-        }
+        const columns = state.selectedTable.columns.sort((a, b) => a.is_primary_key ? -1 : 1);
+        const newRowElement = renderRow({}, columns, true);
+        dataTbody.prepend(newRowElement);
     }
 
-    async function handleDeleteRow(rowId) {
-        if (confirm('Are you sure you want to delete this row?')) {
+    async function handleDeleteRow(rowElement) {
+        const isNew = rowElement.dataset.isNew === 'true';
+        
+        if (isNew) {
+            rowElement.remove(); // Just remove from UI if it was never saved
+            return;
+        }
+
+        const rowId = rowElement.dataset.rowId;
+        const confirmationMessage = 'Are you sure you want to delete this row?';
+        if (confirm(confirmationMessage)) {
             try {
                 const response = await fetchWithAuth(`/api/v1/rows/${rowId}`, { method: 'DELETE' });
                 if (!response.ok) {
@@ -1133,38 +1136,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function handleUpdateRow(cellElement) {
-        const tr = cellElement.closest('tr');
-        const rowId = tr.dataset.rowId;
-        if (!rowId) return;
+    async function handleSaveRow(rowElement) {
+        const isNew = rowElement.dataset.isNew === 'true';
+        const rowId = rowElement.dataset.rowId;
 
         const rowData = {};
-        tr.querySelectorAll('td[data-column-name]').forEach(cell => {
+        rowElement.querySelectorAll('td[data-column-name]').forEach(cell => {
             const colName = cell.dataset.columnName;
-            const fkSelect = cell.querySelector('.fk-select');
-            const boolSelect = cell.querySelector('.boolean-select');
-            const dateInput = cell.querySelector('.timestamp-input');
-            const regularInput = cell.querySelector('.editable-cell-input');
-
-            if (fkSelect) {
-                rowData[colName] = fkSelect.value;
-            } else if (boolSelect) {
-                rowData[colName] = boolSelect.value;
-            } else if (dateInput) {
-                rowData[colName] = dateInput.value;
-            } else if (regularInput) {
-                rowData[colName] = regularInput.value;
-            }
+            const input = cell.querySelector('input, select');
+            if (input) rowData[colName] = input.value;
         });
 
-        // If the cell that triggered the update is an input, give it visual feedback
-        const inputElement = cellElement.querySelector('input, select');
-        const feedbackElement = inputElement || cellElement;
         const payload = { data: rowData };
+        const url = isNew ? `/api/v1/tables/${state.selectedTable.id}/rows` : `/api/v1/rows/${rowId}`;
+        const method = isNew ? 'POST' : 'PUT';
+
+        const saveButton = rowElement.querySelector('.save-row-btn');
+        saveButton.disabled = true;
 
         try {
-            const response = await fetchWithAuth(`/api/v1/rows/${rowId}`, {
-                method: 'PUT',
+            const response = await fetchWithAuth(url, {
+                method: method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
@@ -1172,19 +1164,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const errorDetail = await getErrorFromResponse(response);
                 throw new Error(errorDetail);
             }
-            
-            feedbackElement.style.transition = 'background-color 0.5s';
-            feedbackElement.style.backgroundColor = '#dcfce7'; // Tailwind green-100
-            setTimeout(() => {
-                feedbackElement.style.backgroundColor = '';
-            }, 1500);
+
+            // On success, re-fetch the current page to get the saved data and correct pagination
+            await fetchAndRenderData(state.selectedTable.id, state.pagination.currentPage, searchInput.value.trim());
 
         } catch (error) {
             showError(`Save failed: ${error.message}`, error);
-            // Revert UI on failure by re-fetching current page data
-            if (state.selectedTable) {
-                fetchAndRenderData(state.selectedTable.id, state.pagination.currentPage, searchInput.value.trim());
-            }
+            saveButton.disabled = false; // Re-enable button on failure
         }
     }
 
@@ -1638,27 +1624,13 @@ document.addEventListener('DOMContentLoaded', () => {
     exportCsvBtn.addEventListener('click', handleExportCsv);
     dataTbody.addEventListener('click', (e) => {
         const deleteBtn = e.target.closest('.delete-row-btn');
+        const saveBtn = e.target.closest('.save-row-btn');
+
         if (deleteBtn) {
-            const rowId = deleteBtn.dataset.rowId;
-            handleDeleteRow(rowId);
+            handleDeleteRow(deleteBtn.closest('tr'));
         }
-    });
-
-    // Centralized listeners for all data grid cell updates
-    // 'change' is good for selects, date pickers
-    // 'blur' is a fallback for text inputs after focus is lost
-    // 'input' could be used for real-time updates but is often too "chatty"
-    dataTbody.addEventListener('change', (e) => {
-        const target = e.target;
-        if (target.matches('.fk-select, .boolean-select, .timestamp-input, .editable-cell-input')) {
-            handleUpdateRow(target.closest('td'));
-        }
-    });
-
-    dataTbody.addEventListener('blur', (e) => {
-        const target = e.target;
-        if (target.matches('.editable-cell-input')) {
-            handleUpdateRow(target.closest('td'));
+        if (saveBtn) {
+            handleSaveRow(saveBtn.closest('tr'));
         }
     });
 
@@ -1703,6 +1675,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target.classList.contains('fk-checkbox')) {
             const container = e.target.closest('.column-row').querySelector('.fk-options-container');
             container.classList.toggle('hidden', !e.target.checked);
+        }
+        // Auto-increment checkbox logic
+        if (e.target.matches('[data-key="is_auto_increment"]')) {
+            const isChecked = e.target.checked;
+            const row = e.target.closest('.column-row');
+            const typeSelect = row.querySelector('[data-key="type"]');
+            if (isChecked) {
+                typeSelect.innerHTML = '<option value="serial" selected>SERIAL</option>';
+                typeSelect.disabled = true;
+            } else {
+                typeSelect.innerHTML = '<option value="integer" selected>INTEGER</option>'; // Or restore previous options
+                typeSelect.disabled = false;
+            }
         }
         // FK table select
         if (e.target.classList.contains('fk-table-select')) {

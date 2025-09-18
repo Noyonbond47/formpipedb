@@ -58,6 +58,7 @@ class ColumnDefinition(BaseModel):
     type: str = Field(..., min_length=1) 
     is_primary_key: bool = False
     is_unique: bool = False
+    is_auto_increment: bool = False
     is_not_null: bool = False
     foreign_key: Optional[ForeignKeyDefinition] = None
 
@@ -416,6 +417,7 @@ async def create_table_from_sql(database_id: int, sql_data: SqlTableCreateReques
         # --- FIX: Add parsing for inline foreign keys ---
         inline_fk_match = re.search(r'REFERENCES\s+[`"]?(\w+)[`"]?\s*\(([`"]?\w+[`"]?)\)', type_and_constraints, re.IGNORECASE)
         if inline_fk_match:
+            # This logic remains correct
             ref_table_name, ref_col = inline_fk_match.groups()
             table_level_fks.append({
                 "source_col": col_name,
@@ -423,10 +425,15 @@ async def create_table_from_sql(database_id: int, sql_data: SqlTableCreateReques
                 "ref_col": ref_col.strip('`"\'')
             })
 
+        # --- FIX: Detect auto-incrementing primary keys ---
+        is_pk = "PRIMARY KEY" in type_and_constraints.upper()
+        is_auto_increment = ('AUTO_INCREMENT' in type_and_constraints.upper() or 'SERIAL' in raw_col_type.upper())
+
         columns_defs.append(ColumnDefinition(
             name=col_name,
             type=raw_col_type, # Use the original, full type
-            is_primary_key="PRIMARY KEY" in type_and_constraints.upper(),
+            is_primary_key=is_pk,
+            is_auto_increment=is_pk and is_auto_increment,
             is_unique="UNIQUE" in type_and_constraints.upper() and "PRIMARY KEY" not in type_and_constraints.upper(), # A PK is implicitly unique
             is_not_null="NOT NULL" in type_and_constraints.upper()
         ))
@@ -910,6 +917,10 @@ async def get_table_rows(
         # We must convert it to a model to use attribute access.
         table_schema_obj = TableResponse(**table_schema_dict)
         pk_col_name = next((col.name for col in table_schema_obj.columns if col.is_primary_key), None)
+        # --- FIX: Check if the primary key is auto-incrementing ---
+        pk_is_auto_increment = False
+        if pk_col_name:
+            pk_is_auto_increment = next((col.is_auto_increment for col in table_schema_obj.columns if col.name == pk_col_name), False)
 
         # 2. Build the query
         query = supabase.table("table_rows").select("*", count='exact').eq("table_id", table_id)
@@ -928,7 +939,7 @@ async def get_table_rows(
         processed_rows = []
         # Ensure response.data is a list before iterating
         if response.data and isinstance(response.data, list):
-            if pk_col_name:
+            if pk_col_name and pk_is_auto_increment:
                 for i, row in enumerate(response.data):
                     # Calculate the user-visible ID based on pagination
                     user_visible_id = offset + i + 1
@@ -940,8 +951,10 @@ async def get_table_rows(
                         row["data"] = {pk_col_name: user_visible_id}
                     processed_rows.append(row)
             # Fallback if no PK is defined (shouldn't happen with current UI)
-            processed_rows = response.data
-
+            else:
+                # If PK is not auto-increment, the value is already in the data blob.
+                processed_rows = response.data
+ 
         return {"total": response.count, "data": processed_rows}
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
@@ -960,11 +973,15 @@ async def get_all_table_rows(table_id: int, auth_details: dict = Depends(get_cur
         # We must convert it to a model to use attribute access.
         table_schema_obj = TableResponse(**table_schema_dict)
         pk_col_name = next((col.name for col in table_schema_obj.columns if col.is_primary_key), None)
+        # --- FIX: Check if the primary key is auto-incrementing ---
+        pk_is_auto_increment = False
+        if pk_col_name:
+            pk_is_auto_increment = next((col.is_auto_increment for col in table_schema_obj.columns if col.name == pk_col_name), False)
 
         # RLS on table_rows ensures user can only access rows they own.
         response = supabase.table("table_rows").select("*").eq("table_id", table_id).order("id").execute()
 
-        # 2. Process results to inject the user-visible PK
+        # 2. Process results to inject the user-visible PK if it's auto-increment
         processed_rows = []
         if pk_col_name:
             for i, row in enumerate(response.data):
@@ -975,6 +992,7 @@ async def get_all_table_rows(table_id: int, auth_details: dict = Depends(get_cur
                     row["data"] = {pk_col_name: user_visible_id}
                 processed_rows.append(row)
         else:
+            # If PK is not auto-increment, the value is already in the data blob.
             processed_rows = response.data
 
         return processed_rows
@@ -992,12 +1010,14 @@ async def get_all_table_rows(table_id: int, auth_details: dict = Depends(get_cur
         # 1. Get the table schema to find the user-defined primary key column name
         table_schema_dict = await get_single_table(table_id, auth_details)
         table_schema_obj = TableResponse(**table_schema_dict)
-        pk_col_name = next((col.name for col in table_schema_obj.columns if col.is_primary_key), None)
+        pk_col = next((col for col in table_schema_obj.columns if col.is_primary_key), None)
+        pk_col_name = pk_col.name if pk_col else None
+        pk_is_auto_increment = pk_col.is_auto_increment if pk_col else False
 
         # RLS on table_rows ensures user can only access rows they own.
         response = supabase.table("table_rows").select("*").eq("table_id", table_id).order("id").execute()
 
-        # 2. Process results to inject the user-visible PK
+        # 2. Process results to inject the user-visible PK if it's auto-increment
         processed_rows = []
         if pk_col_name:
             for i, row in enumerate(response.data):
@@ -1008,6 +1028,7 @@ async def get_all_table_rows(table_id: int, auth_details: dict = Depends(get_cur
                     row["data"] = {pk_col_name: user_visible_id}
                 processed_rows.append(row)
         else:
+            # If PK is not auto-increment, the value is already in the data blob.
             processed_rows = response.data
 
         return processed_rows
@@ -1403,10 +1424,14 @@ async def import_database_from_sql(import_data: SqlImportRequest, auth_details: 
                         "ref_col": ref_col.strip('`"')
                     })
 
+                is_pk = "PRIMARY KEY" in type_and_constraints.upper()
+                is_auto_increment = ('AUTO_INCREMENT' in type_and_constraints.upper() or 'SERIAL' in col_type.upper())
+
                 columns_defs.append(ColumnDefinition(
                     name=col_name,
                     type=col_type, # Use the original, full type
-                    is_primary_key="PRIMARY KEY" in type_and_constraints.upper(),
+                    is_primary_key=is_pk,
+                    is_auto_increment=is_pk and is_auto_increment,
                     is_unique="UNIQUE" in type_and_constraints.upper(),
                     is_not_null="NOT NULL" in type_and_constraints.upper()
                 ))
