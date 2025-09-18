@@ -374,6 +374,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sidebar = document.getElementById('sidebar');
     const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
 
+    let initialDataLoaded = false;
 
     let dataFetchController = new AbortController();
 
@@ -472,6 +473,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.dbId = currentDb.id;
             state.tables = await tablesResponse.json();
             renderTables(state.tables);
+            initialDataLoaded = true; // Mark that initial data has been successfully loaded
 
         } catch (error) {
             // --- FIX: Update the sidebar to show an error and disable creation ---
@@ -480,6 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
             createTableBtn.title = "Cannot create table: failed to load database details.";
             console.error(error);
             placeholderContent.textContent = `Error: ${error.message}`;
+            initialDataLoaded = false; // Allow a retry on the next auth event
         }
     }
 
@@ -2305,8 +2308,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
             if (session) {
                 localStorage.setItem('supabase_token', session.access_token);
-                // Only fetch initial data on sign in, not on every token refresh
-                if (event !== 'TOKEN_REFRESHED') {
+                // Fetch data if it hasn't been loaded yet. This handles token refresh on initial load.
+                if (!initialDataLoaded) {
                     fetchDbIdAndTables();
                 }
             } else {

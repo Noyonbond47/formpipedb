@@ -166,6 +166,7 @@
             const cancelDeleteAccountBtn = document.getElementById('cancel-delete-account-btn');
             const confirmDeleteAccountBtn = document.getElementById('confirm-delete-account-btn');
             let dbToDeleteId = null;
+            let initialDataLoaded = false;
 
             /**
              * A wrapper for the native fetch function that automatically includes
@@ -215,9 +216,11 @@
                     const response = await fetchWithAuth('/api/v1/databases');
                     if (!response.ok) throw new Error('Failed to fetch databases');
                     const databases = await response.json();
+                    initialDataLoaded = true; // Mark success
                     renderDatabases(databases);
                 } catch (error) {
                     console.error(error);
+                    initialDataLoaded = false; // Allow retry
                     dbListPlaceholder.textContent = 'Could not load databases.';
                 }
             }
@@ -463,8 +466,8 @@
                         document.getElementById('profile-name').textContent = fullName || 'User';
                         document.getElementById('profile-email').textContent = user.email;
 
-                        // Only fetch databases on initial load or sign in, not on every token refresh
-                        if (event !== 'TOKEN_REFRESHED') {
+                        // Fetch data if it hasn't been loaded yet. This handles token refresh on initial load.
+                        if (!initialDataLoaded) {
                             fetchDatabases();
                         }
                     } else {
