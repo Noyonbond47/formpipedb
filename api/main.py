@@ -900,7 +900,7 @@ async def create_table_row(
             # If sync is on, pre-populate the start_time field with today's date.
             mapping_data = sync_config_res.data["column_mapping"]
             start_time_col = mapping_data.get("start_time_column")
-            if start_time_col:
+            if start_time_col: # This check is correct here.
                 # Use timezone-aware current time and format it as YYYY-MM-DD.
                 today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
                 new_data[start_time_col] = today_str
@@ -921,6 +921,10 @@ async def create_table_row(
         if sync_config_res and sync_config_res.data and sync_config_res.data.get("is_enabled") and new_data:
             table_schema_res = await get_single_table(table_id, auth_details)
             table_name = table_schema_res['name']
+            # FIX: Correctly get the start_time_column from the mapping data.
+            # The previous code was incorrectly looking for 'title_column'.
+            mapping_data = sync_config_res.data["column_mapping"]
+            start_time_col = mapping_data.get("start_time_column")
             
             event_title = f"{table_name} - New Row" # A sensible default title.
             event_payload = {
