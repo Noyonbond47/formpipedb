@@ -31,6 +31,7 @@ SMTP_PORT = os.environ.get("SMTP_PORT")
 SMTP_USER = os.environ.get("SMTP_USER")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")
 CONTACT_FORM_RECIPIENT = os.environ.get("CONTACT_FORM_RECIPIENT")
+HCAPTCHA_SITE_KEY = os.environ.get("HCAPTCHA_SITE_KEY")
 
 # Get the root directory of the project
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -1836,14 +1837,22 @@ async def read_root(request: Request):
 async def signup_page(request: Request):
     return templates.TemplateResponse(
         "signup.html", 
-        {"request": request, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY}
+        {
+            "request": request, 
+            "supabase_url": SUPABASE_URL, 
+            "supabase_anon_key": SUPABASE_ANON_KEY,
+            "hcaptcha_site_key": HCAPTCHA_SITE_KEY
+        }
     )
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse(
         "login.html", 
-        {"request": request, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY}
+        {
+            "request": request, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY,
+            "hcaptcha_site_key": HCAPTCHA_SITE_KEY
+        }
     )
 
 @app.get("/forgot-password", response_class=HTMLResponse)

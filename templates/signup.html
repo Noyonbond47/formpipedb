@@ -6,6 +6,7 @@
     <title>Sign Up - FormPipeDB</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
@@ -23,6 +24,9 @@
             <input type="email" id="confirm_email" placeholder="Confirm Email" required class="w-full px-4 py-2 text-gray-700 bg-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
             <input type="password" id="password" placeholder="Password" required class="w-full px-4 py-2 text-gray-700 bg-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
             <input type="password" id="confirm_password" placeholder="Confirm Password" required class="w-full px-4 py-2 text-gray-700 bg-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <div class="flex justify-center">
+                <div class="h-captcha" data-sitekey="{{ hcaptcha_site_key }}"></div>
+            </div>
             <div class="flex items-center">
                 <input type="checkbox" id="terms_agree" name="terms_agree" required>
                 <label for="terms_agree" class="ml-2 text-sm text-gray-600">I agree to the 
@@ -59,6 +63,14 @@
             const confirmPassword = document.getElementById('confirm_password').value;
             const termsAgreed = document.getElementById('terms_agree').checked;
 
+            // Get the hCaptcha response token from the form
+            const formData = new FormData(signupForm);
+            const captchaToken = formData.get('h-captcha-response');
+            if (!captchaToken) {
+                errorMessage.textContent = 'Please complete the captcha.';
+                return;
+            }
+
             // --- Client-side validation ---
             if (email !== confirmEmail) {
                 errorMessage.textContent = 'Emails do not match.';
@@ -79,9 +91,13 @@
                 email: email,
                 password: password,
                 options: {
+                    captchaToken: captchaToken,
                     data: {
                         full_name: fullName
-                    }
+                    },
+                    // Explicitly tell Supabase where to send the user after they click the verification link.
+                    // This will redirect them to your /email-verified page.
+                    emailRedirectTo: `${window.location.origin}/email-verified`
                 }
             });
 

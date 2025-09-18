@@ -1537,6 +1537,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // FIX: Explicitly refetch both the data grid and the calendar events.
             if (calendar) calendar.refetchEvents();
+            // FIX: Refresh the data grid to show the new row at the top.
+            // The previous implementation was missing this.
             await fetchAndRenderData(state.selectedTable.id, 1, searchInput.value.trim());
 
         } catch (error) {
@@ -2592,10 +2594,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function formatDateTimeForInput(date) {
         if (!date) return '';
-        // The datetime-local input expects a format like 'YYYY-MM-DDTHH:mm'.
-        // We need to convert the UTC string from the DB to the user's local time.
+        // The datetime-local input expects a string like 'YYYY-MM-DDTHH:mm' that represents
+        // the user's local time, without any timezone information.
+        // The `date` string from the server is in UTC (e.g., '...Z').
+        // Creating a new Date() object correctly parses this into a date object representing that point in time.
+        // We then need to subtract the timezone offset to get the correct local time representation for the input.
         const d = new Date(date);
-        return new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+        return d.toISOString().slice(0, 16);
     }
 
     function openEventDetailsModal(event) {
