@@ -890,24 +890,51 @@ async def create_table_row(
         supabase = auth_details["client"]
         user = auth_details["user"]
         
-        # --- FIX: Pre-populate data based on calendar sync config ---
-        new_data = {} # Always start with a completely empty dictionary to prevent data bleed.
+        # --- FIX: When creating a new row, check for calendar sync and create the event immediately. ---
+        new_data = {} # Start with an empty data object.
+        
         # Check if the table has an active calendar sync configuration.
         sync_config_res = supabase.table("calendar_sync_configs").select("is_enabled, column_mapping").eq("table_id", table_id).maybe_single().execute()
 
         if sync_config_res and sync_config_res.data and sync_config_res.data.get("is_enabled"):
-            pass # This block is now empty to prevent auto-populating the date.
+            # If sync is on, pre-populate the start_time field with today's date.
+            mapping_data = sync_config_res.data["column_mapping"]
+            start_time_col = mapping_data.get("start_time_column")
+            if start_time_col:
+                # Use timezone-aware current time and format it as YYYY-MM-DD.
+                today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+                new_data[start_time_col] = today_str
 
+        # 1. Create the new row in the table.
         new_row_data = {
             "user_id": user.id,
             "table_id": table_id,
             "data": new_data
         }
-        response = supabase.table("table_rows").insert(new_row_data, returning="representation").execute()
-        if not response.data:
+        row_response = supabase.table("table_rows").insert(new_row_data, returning="representation").execute()
+        if not row_response.data:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to create row. This may be due to a database policy violation.")
 
-        created_row = response.data[0]
+        created_row = row_response.data[0]
+
+        # 2. If sync was enabled, create the corresponding calendar event now.
+        if sync_config_res and sync_config_res.data and sync_config_res.data.get("is_enabled") and new_data:
+            table_schema_res = await get_single_table(table_id, auth_details)
+            table_name = table_schema_res['name']
+            
+            event_title = f"{table_name} - New Row" # A sensible default title.
+            event_payload = {
+                "user_id": user.id,
+                "source_table_id": table_id,
+                "source_row_id": created_row['id'],
+                "title": event_title,
+                "start_time": new_data[start_time_col], # Use the date we just set.
+            }
+            # Upsert the event. This is safe and ensures no duplicates.
+            supabase.table("calendar_events").upsert(
+                event_payload, 
+                on_conflict="user_id, source_table_id, source_row_id"
+            ).execute()
 
         return created_row
     except APIError as e:
@@ -1257,15 +1284,17 @@ async def create_or_update_calendar_sync_config(table_id: int, config_data: Cale
                 row_name = row_data.get(row_name_col, f"Row {row_pk_value}") if row_name_col else f"Row {row_pk_value}"
                 event_title = f"{table_name} - {row_name}"
 
-                # Skip rows that are missing essential data for a calendar event.
-                if not event_title or not start_time:
+                # FIX: Only skip rows if the essential start_time is missing.
+                # Optional fields like end_time or description should not prevent event creation.
+                if not start_time:
                     continue
 
+                # Build the event payload, handling optional fields gracefully.
                 events_to_upsert.append({
                     "user_id": user.id, "source_table_id": table_id, "source_row_id": row['id'], # Use the top-level 'id'
                     "title": event_title, "start_time": str(start_time),
-                    "end_time": str(row_data.get(mapping.end_time_column)) if mapping.end_time_column and row_data.get(mapping.end_time_column) else None,
-                    "description": str(row_data.get(mapping.description_column)) if mapping.description_column and row_data.get(mapping.description_column) else None,
+                    "end_time": str(row_data.get(mapping.end_time_column)) if mapping.end_time_column and row_data.get(mapping.end_time_column) else None, # Safely get end_time
+                    "description": str(row_data.get(mapping.description_column)) if mapping.description_column and row_data.get(mapping.description_column) else None, # Safely get description
                 })
 
             # 3. Bulk upsert the events. This creates new ones and updates existing ones based on the source row.
