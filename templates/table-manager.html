@@ -400,7 +400,10 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     async function fetchWithAuth(url, options = {}) {
         const token = await getAuthToken();
-        if (!token) return; // getAuthToken handles redirection
+        if (!token) {
+            // getAuthToken handles redirection, but we must stop execution here by throwing.
+            throw new Error("Authentication token not available. Redirecting to login.");
+        }
 
         const headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
         return fetch(url, { ...options, headers });
@@ -457,13 +460,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchDbIdAndTables() {
         try {
-            // 1. Fetch all databases to find the ID for the current dbName
-            const dbsResponse = await fetchWithAuth('/api/v1/databases');
-            if (!dbsResponse.ok) throw new Error('Could not fetch databases to find ID.');
-            const databases = await dbsResponse.json();
-            const currentDb = databases.find(db => db.name === state.dbName);
-            
-            if (!currentDb) throw new Error(`Database '${state.dbName}' not found.`);
+            // 1. Fetch the current database directly by its name to get its ID.
+            // This is more robust than fetching all databases and filtering.
+            const dbResponse = await fetchWithAuth(`/api/v1/databases/by-name/${encodeURIComponent(state.dbName)}`);
+            if (!dbResponse.ok) throw new Error(await getErrorFromResponse(dbResponse));
+            const currentDb = await dbResponse.json();
+            if (!currentDb) throw new Error(`Database '${state.dbName}' could not be loaded.`);
 
             // 2. Fetch tables for the found database ID
             const tablesResponse = await fetchWithAuth(`/api/v1/databases/${currentDb.id}/tables`);

@@ -174,7 +174,10 @@
              */
             async function fetchWithAuth(url, options = {}) {
                 const token = await getAuthToken();
-                if (!token) return; // getAuthToken handles redirection
+                if (!token) {
+                    // getAuthToken handles redirection, but we must stop execution here by throwing.
+                    throw new Error("Authentication token not available. Redirecting to login.");
+                }
 
                 const headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
                 return fetch(url, { ...options, headers });

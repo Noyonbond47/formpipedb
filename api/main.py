@@ -214,6 +214,21 @@ async def get_single_database(database_id: int, auth_details: dict = Depends(get
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+@app.get("/api/v1/databases/by-name/{db_name}", response_model=DatabaseResponse)
+async def get_database_by_name(db_name: str, auth_details: dict = Depends(get_current_user_details)):
+    """
+    Fetches a single database by its unique name. RLS policy ensures the user owns it.
+    """
+    try:
+        supabase = auth_details["client"]
+        # The RLS policy on `user_databases` ensures the user can only select their own.
+        response = supabase.table("user_databases").select("*").eq("name", db_name).single().execute()
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Database with name '{db_name}' not found or access denied.")
+        return response.data
+    except APIError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
 @app.get("/api/v1/databases/{database_id}/tables", response_model=List[TableResponse])
 async def get_database_tables(database_id: int, auth_details: dict = Depends(get_current_user_details)):
     """
