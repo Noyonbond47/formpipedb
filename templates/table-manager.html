@@ -231,6 +231,7 @@
                 <select id="edit-column-type" class="mt-1 block w-full p-2 border rounded-md shadow-sm bg-white">
                     <option value="text">TEXT</option>
                     <option value="integer">INTEGER</option>
+                    <option value="date">DATE</option>
                     <option value="real">REAL</option>
                     <option value="boolean">BOOLEAN</option>
                     <option value="timestamp">TIMESTAMP</option>
@@ -879,6 +880,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <option value="real">REAL</option>
                     <option value="boolean">BOOLEAN</option>
                     <option value="timestamp">TIMESTAMP</option>
+                    <option value="date">DATE</option>
                     <option value="jsonb">JSONB</option>
                     `}
                 </select>
@@ -1167,8 +1169,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(payload),
             });
             if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.detail || 'Failed to update row');
+                const errorDetail = await getErrorFromResponse(response);
+                throw new Error(errorDetail);
             }
             
             feedbackElement.style.transition = 'background-color 0.5s';
@@ -1178,8 +1180,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 1500);
 
         } catch (error) {
-            showError(`Error saving data: ${error.message}`, error);
-            fetchAndRenderData(state.selectedTable.id); // Revert UI on failure
+            showError(`Save failed: ${error.message}`, error);
+            // Revert UI on failure by re-fetching current page data
+            if (state.selectedTable) {
+                fetchAndRenderData(state.selectedTable.id, state.pagination.currentPage, searchInput.value.trim());
+            }
         }
     }
 

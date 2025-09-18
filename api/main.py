@@ -1021,23 +1021,29 @@ async def create_table_row(
     auth_details: dict = Depends(get_current_user_details)
 ):
     """
-    Creates a new, empty row for a table.
+    Creates a new row for a table with the provided data.
     """
     try:
         supabase = auth_details["client"]
         user = auth_details["user"]
-        
+
+        # --- FIX: Add validation before inserting ---
+        await _validate_row_data(supabase, table_id, row_data.data)
+
         new_row_data = {
             "user_id": user.id,
             "table_id": table_id,
-            "data": {} # Start with an empty data object.
+            "data": row_data.data
         }
         row_response = supabase.table("table_rows").insert(new_row_data, returning="representation").execute()
         if not row_response.data:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to create row. This may be due to a database policy violation.")
         return row_response.data[0]
     except APIError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create row: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create row: {e.message}")
+    except HTTPException as e:
+        # Re-raise validation errors
+        raise e
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(e)}")
 
@@ -1049,15 +1055,25 @@ async def update_table_row(row_id: int, row_data: RowCreate, auth_details: dict 
     try:
         supabase = auth_details["client"]
 
-        # First, update the row data as requested.
+        # 1. Fetch the row to get its table_id for validation
+        existing_row_res = supabase.table("table_rows").select("table_id").eq("id", row_id).single().execute()
+        if not existing_row_res.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Row not found or access denied.")
+        table_id = existing_row_res.data['table_id']
+
+        # 2. --- FIX: Add validation before updating ---
+        await _validate_row_data(supabase, table_id, row_data.data, row_id=row_id)
+
+        # 3. Update the row data as requested.
         response = supabase.table("table_rows").update({"data": row_data.data}, returning="representation").eq("id", row_id).execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Row not found or access denied.") # pragma: no cover
         
         return await get_single_row(row_id, auth_details)
-
     except APIError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update row: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not update row: {e.message}")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred during row update: {str(e)}")
 
@@ -1092,6 +1108,53 @@ async def get_single_row(row_id: int, auth_details: dict = Depends(get_current_u
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not fetch row: {str(e)}")
 
+async def _validate_row_data(
+    supabase: Client,
+    table_id: int,
+    data: dict,
+    row_id: Optional[int] = None
+):
+    """
+    Validates row data against the table's schema for NOT NULL, UNIQUE, and data type constraints.
+    """
+    # We need a fake auth_details dict to call get_single_table
+    fake_auth_details = {"client": supabase}
+    table_res = await get_single_table(table_id, fake_auth_details)
+    table = TableResponse(**table_res)
+
+    for col in table.columns:
+        value = data.get(col.name)
+
+        # NOT NULL check
+        if col.is_not_null and (value is None or str(value).strip() == ""):
+            raise HTTPException(status_code=400, detail=f"Column '{col.name}' cannot be empty because it is marked as NOT NULL.")
+
+        if value is None or str(value).strip() == "":
+            continue  # Skip further checks for empty, nullable fields
+
+        # Data Type check
+        try:
+            if col.type == "integer": int(value)
+            elif col.type == "real": float(value)
+            elif col.type == "boolean":
+                if str(value).lower() not in ('true', 'false', 't', 'f', '1', '0'):
+                    raise ValueError("Not a valid boolean")
+            elif col.type in ("timestamp", "date"):
+                # Attempt to parse a variety of common date/datetime formats
+                datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail=f"Invalid data format for column '{col.name}'. Expected {col.type.upper()}, but got '{value}'.")
+
+        # Uniqueness check
+        if col.is_unique:
+            # Supabase RPC functions are better for this, but a direct query works.
+            # We check if any other row in this table has the same value for this column.
+            query = supabase.table("table_rows").select("id", count='exact').eq("table_id", table_id).eq(f"data->>{col.name}", str(value))
+            if row_id:  # If updating, exclude the current row from the check
+                query = query.neq("id", row_id)
+            res = query.execute()
+            if res.count > 0:
+                raise HTTPException(status_code=409, detail=f"Value '{value}' for column '{col.name}' already exists. It must be unique.")
 
 async def _delete_item(supabase: Client, table_name: str, item_id: int, item_type_name: str):
     """Generic helper to delete an item from a table by ID, with RLS ensuring ownership."""
