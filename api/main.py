@@ -44,8 +44,10 @@ class DatabaseResponse(BaseModel):
     name: str
     description: Optional[str] = None
 
-    model_config = ConfigDict(extra="ignore")
+    # Add a list of tables to the response, using a forward reference
+    user_tables: List["TableResponse"] = Field(default_factory=list)
 
+    model_config = ConfigDict(extra="ignore")
 class ForeignKeyDefinition(BaseModel):
     table_id: int
     column_name: str
@@ -73,6 +75,10 @@ class TableResponse(BaseModel):
     columns: List[ColumnDefinition]
 
     model_config = ConfigDict(extra="ignore")
+
+
+# After all models are defined, resolve the forward reference in DatabaseResponse
+DatabaseResponse.model_rebuild()
 
 class RowResponse(BaseModel):
     id: int
@@ -221,8 +227,9 @@ async def get_database_by_name(db_name: str, auth_details: dict = Depends(get_cu
     """
     try:
         supabase = auth_details["client"]
-        # The RLS policy on `user_databases` ensures the user can only select their own.
-        response = supabase.table("user_databases").select("*").eq("name", db_name).single().execute()
+        # Use Supabase's ability to fetch related data in a single query.
+        # This fetches the database and all its related tables (user_tables) at once.
+        response = supabase.table("user_databases").select("*, user_tables(*)").eq("name", db_name).single().execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Database with name '{db_name}' not found or access denied.")
         return response.data

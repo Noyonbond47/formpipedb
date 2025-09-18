@@ -468,7 +468,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                // 1. Fetch the current database directly by its name to get its ID.
+                // Fetch the database and its tables in a single, atomic API call.
+                // This is more efficient and eliminates race conditions.
                 const dbResponse = await fetchWithAuth(`/api/v1/databases/by-name/${encodeURIComponent(state.dbName)}`);
 
                 if (dbResponse.status === 404 && attempt < maxRetries) {
@@ -481,16 +482,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     throw new Error(await getErrorFromResponse(dbResponse));
                 }
 
-                const currentDb = await dbResponse.json();
-                if (!currentDb) throw new Error(`Database '${state.dbName}' could not be loaded.`);
-
-                // 2. Fetch tables for the found database ID
-                const tablesResponse = await fetchWithAuth(`/api/v1/databases/${currentDb.id}/tables`);
-                if (!tablesResponse.ok) throw new Error('Could not fetch tables.');
+                const dbWithTables = await dbResponse.json();
+                if (!dbWithTables) throw new Error(`Database '${state.dbName}' could not be loaded.`);
 
                 // --- Success: Set state and exit the loop ---
-                state.dbId = currentDb.id;
-                state.tables = await tablesResponse.json();
+                // The API response now includes the tables under the `user_tables` key.
+                state.dbId = dbWithTables.id;
+                state.tables = dbWithTables.user_tables || [];
                 renderTables(state.tables);
                 initialDataLoaded = true;
                 return; // Exit the function successfully.
