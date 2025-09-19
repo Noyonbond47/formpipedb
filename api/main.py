@@ -8,6 +8,7 @@ import re
 from fastapi import FastAPI, Request, Header, HTTPException, status, Depends, Query
 from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
 from fastapi.templating import Jinja2Templates
+import httpx
 from fastapi.staticfiles import StaticFiles
 from datetime import datetime
 from typing import List, Optional, Any, Dict, Union
@@ -21,6 +22,8 @@ from postgrest import APIError
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 HCAPTCHA_SITE_KEY = os.environ.get("HCAPTCHA_SITE_KEY")
+SITE_URL = os.environ.get("SITE_URL")
+HCAPTCHA_SECRET_KEY = os.environ.get("HCAPTCHA_SECRET_KEY")
 
 # Get the root directory of the project
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -146,6 +149,14 @@ class ContactRequest(BaseModel):
     sender_name: str
     sender_email: EmailStr # This will be a plain str if email-validator is missing
     message: str
+
+class AccountDeletionConfirmation(BaseModel):
+    email: EmailStr
+    password: str
+    confirmation: str = Field(..., pattern=r"^delete my account$")
+    hcaptcha_token: str = Field(..., alias="h-captcha-response")
+    recovery_token: str
+
 
 # --- Reusable Dependencies ---
 # This dependency handles getting the user's token, validating it, and providing the user object.
@@ -1018,33 +1029,94 @@ async def _delete_item(supabase: Client, table_name: str, item_id: int, item_typ
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Could not delete {item_type_name.lower()}: {str(e)}")
 
 
-@app.delete("/api/v1/users/me", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_current_user(auth_details: dict = Depends(get_current_user_details)):
+@app.post("/api/v1/users/me/request-deletion", status_code=status.HTTP_200_OK)
+async def request_account_deletion(auth_details: dict = Depends(get_current_user_details)):
     """
-    Deletes the currently authenticated user's account from auth.users.
-    This is an irreversible action. Requires the service_role key.
-    Assumes that user data in public tables is set to cascade delete.
+    Initiates the account deletion process by sending a confirmation email to the user.
+    This uses Supabase's password recovery flow to send a secure, tokenized link.
     """
+    user = auth_details["user"]
+    supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+    # --- FIX: Use a specific redirect URL for deletion to avoid conflict with password reset ---
+    if not SITE_URL:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Server is not configured with a SITE_URL for email links."
+        )
+    
+    redirect_url = f"{SITE_URL}/confirm-delete"
+
+    try:
+        # We trigger a password reset but direct the user to our custom deletion page
+        # by providing a specific `redirect_to` URL.
+        supabase.auth.reset_password_for_email(
+            user.email,
+            options={"redirect_to": redirect_url}
+        )
+        return {"message": "Deletion confirmation email sent. Please check your inbox."}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not send deletion email: {str(e)}"
+        )
+
+@app.post("/api/v1/users/me/confirm-deletion", status_code=status.HTTP_200_OK)
+async def confirm_account_deletion(form_data: AccountDeletionConfirmation):
+    """
+    Handles the final account deletion after user confirms via the form.
+    This endpoint is unauthenticated but validates the user via multiple factors:
+    1. A valid recovery token from the email link.
+    2. A valid hCaptcha response.
+    3. Correct password.
+    4. Correct confirmation text.
+    """
+    # 1. Check for required server configuration
     SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not SUPABASE_SERVICE_ROLE_KEY:
+    if not SUPABASE_SERVICE_ROLE_KEY or not HCAPTCHA_SECRET_KEY:
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             detail="Server is not configured for user deletion."
         )
 
-    user_id = auth_details["user"].id
-    
-    try:
-        # An admin client is required to delete users.
-        supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-        supabase_admin.auth.admin.delete_user(user_id)
-        
-    except Exception as e:
-        # This could be an APIError or another exception.
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete user account: {str(e)}"
+    # 2. Verify hCaptcha
+    async with httpx.AsyncClient() as client:
+        captcha_res = await client.post(
+            "https://hcaptcha.com/siteverify",
+            data={"secret": HCAPTCHA_SECRET_KEY, "response": form_data.hcaptcha_token}
         )
+        if not captcha_res.json().get("success"):
+            raise HTTPException(status_code=400, detail="Invalid CAPTCHA. Please try again.")
+
+    supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+    try:
+        # 3. Verify the recovery token and get the user ID
+        user_res = supabase.auth.get_user(form_data.recovery_token)
+        if not user_res.user or user_res.user.email.lower() != form_data.email.lower():
+            raise HTTPException(status_code=401, detail="Invalid or expired deletion token.")
+        
+        user_id_to_delete = user_res.user.id
+
+        # 4. Verify the user's password
+        try:
+            supabase.auth.sign_in_with_password({
+                "email": form_data.email,
+                "password": form_data.password
+            })
+        except APIError:
+            raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+        # 5. All checks passed. Proceed with deletion using the admin client.
+        supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        supabase_admin.auth.admin.delete_user(user_id_to_delete)
+
+        return {"message": "Account deleted successfully."}
+
+    except HTTPException as e:
+        raise e # Re-raise validation errors
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 
 @app.get("/api/v1/databases/{database_id}/export-sql", response_class=PlainTextResponse)
@@ -1396,6 +1468,22 @@ async def update_password_page(request: Request):
             "hcaptcha_site_key": HCAPTCHA_SITE_KEY
         }
     )
+
+@app.get("/confirm-delete", response_class=HTMLResponse)
+async def confirm_delete_page(request: Request):
+    return templates.TemplateResponse(
+        "confirm-delete.html",
+        {
+            "request": request,
+            "hcaptcha_site_key": HCAPTCHA_SITE_KEY
+        }
+    )
+
+@app.get("/delete-success", response_class=HTMLResponse)
+async def delete_success_page(request: Request):
+    # This page is shown after a user successfully deletes their account.
+    return templates.TemplateResponse("delete-success.html", {"request": request})
+
 
 @app.get("/email-verified", response_class=HTMLResponse)
 async def email_verified_page(request: Request):
