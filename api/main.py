@@ -328,37 +328,6 @@ async def create_table_by_db_name(db_name: str, table_data: TableCreate, auth_de
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(e)}")
 
-@app.post("/api/v1/databases/by-name/{db_name}/tables", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
-async def create_table_by_db_name(db_name: str, table_data: TableCreate, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Creates a new table within a specific database, identifying the database by its name.
-    This is more robust for UIs where the name is known but the ID might not have been fetched yet.
-    """
-    try:
-        supabase = auth_details["client"]
-        user = auth_details["user"]
-
-        # 1. Get the database ID from its name. RLS ensures the user owns it.
-        db_check = supabase.table("user_databases").select("id").eq("name", db_name).maybe_single().execute()
-        if not db_check.data:
-            raise HTTPException(status_code=404, detail=f"Database '{db_name}' not found or access denied.")
-        
-        database_id = db_check.data['id']
-
-        # 2. Use the existing create_database_table function with the fetched ID.
-        # This avoids duplicating logic. We need to pass the dictionary representation of the model.
-        return await create_database_table(database_id, table_data, auth_details)
-
-    except APIError as e:
-        if "user_tables_database_id_name_key" in str(e):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A table with the name '{table_data.name}' already exists in this database.")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not create table: {str(e)}")
-    except HTTPException as e:
-        # Re-raise HTTPExceptions from called functions
-        raise e
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(e)}")
-
 
 @app.post("/api/v1/databases/{database_id}/create-table-from-sql", response_model=TableResponse, status_code=status.HTTP_201_CREATED)
 async def create_table_from_sql(database_id: int, sql_data: SqlTableCreateRequest, auth_details: dict = Depends(get_current_user_details)):
@@ -963,46 +932,6 @@ async def get_table_rows(
                 processed_rows = response.data
  
         return {"total": response.count, "data": processed_rows}
-    except APIError as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-
-@app.get("/api/v1/tables/{table_id}/all-rows", response_model=List[RowResponse])
-async def get_all_table_rows(table_id: int, auth_details: dict = Depends(get_current_user_details)):
-    """
-    Fetches ALL data rows for a specific table, bypassing pagination.
-    Used for features like CSV export.
-    """
-    try:
-        supabase = auth_details["client"]
-        # 1. Get the table schema to find the user-defined primary key column name
-        table_schema_dict = await get_single_table(table_id, auth_details)
-        # When calling an endpoint function directly, it returns a dict, not a Pydantic model.
-        # We must convert it to a model to use attribute access.
-        table_schema_obj = TableResponse(**table_schema_dict)
-        pk_col_name = next((col.name for col in table_schema_obj.columns if col.is_primary_key), None)
-        # --- FIX: Check if the primary key is auto-incrementing ---
-        pk_is_auto_increment = False
-        if pk_col_name:
-            pk_is_auto_increment = next((col.is_auto_increment for col in table_schema_obj.columns if col.name == pk_col_name), False)
-
-        # RLS on table_rows ensures user can only access rows they own.
-        response = supabase.table("table_rows").select("*").eq("table_id", table_id).order("id").execute()
-
-        # 2. Process results to inject the user-visible PK if it's auto-increment
-        processed_rows = []
-        if pk_col_name:
-            for i, row in enumerate(response.data):
-                user_visible_id = i + 1
-                if row.get("data") is not None:
-                    row["data"][pk_col_name] = user_visible_id
-                else:
-                    row["data"] = {pk_col_name: user_visible_id}
-                processed_rows.append(row)
-        else:
-            # If PK is not auto-increment, the value is already in the data blob.
-            processed_rows = response.data
-
-        return processed_rows
     except APIError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
