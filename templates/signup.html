@@ -46,10 +46,10 @@
         const supabaseAnonKey = '{{ supabase_anon_key }}';
         const hcaptchaSiteKey = '{{ hcaptcha_site_key }}';
         const errorMessage = document.getElementById('error-message');
-
+ 
         // --- FIX: Add a variable to hold the hCaptcha widget ID for resetting ---
         let hcaptchaWidgetId = null;
-
+ 
         // Important: Check if the credentials are provided
         if (!supabaseUrl || !supabaseAnonKey || !hcaptchaSiteKey) {
             console.error("Supabase or hCaptcha credentials missing. Make sure SUPABASE_URL, SUPABASE_ANON_KEY, and HCAPTCHA_SITE_KEY environment variables are set in Vercel.");
@@ -64,12 +64,16 @@
             // Add a callback to get the widget ID when it renders
             captchaDiv.dataset.callback = 'onCaptchaRender';
             captchaContainer.appendChild(captchaDiv);
-
-            window.onCaptchaRender = (token) => { hcaptchaWidgetId = hcaptcha.getWidgetId(); };
+ 
+            window.onCaptchaRender = (token) => {
+                // hcaptcha.getWidgetId() is not reliable on initial load,
+                // so we get the ID from the widget that just rendered.
+                hcaptchaWidgetId = captchaContainer.querySelector('iframe').dataset.hcaptchaWidgetId;
+            };
         }
-
+ 
         const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
-
+ 
         const signupForm = document.getElementById('signup-form');
         signupForm.addEventListener('submit', async (event) => {
             event.preventDefault();
@@ -81,31 +85,32 @@
             const password = document.getElementById('password').value;
             const confirmPassword = document.getElementById('confirm_password').value;
             const termsAgreed = document.getElementById('terms_agree').checked;
-
+ 
             // Get the hCaptcha response token from the form
             const formData = new FormData(signupForm);
             const captchaToken = formData.get('h-captcha-response');
             if (!captchaToken) {
                 errorMessage.textContent = 'Please complete the captcha.';
-                if (hcaptchaWidgetId) hcaptcha.reset(hcaptchaWidgetId);
+                if (hcaptchaWidgetId !== null) hcaptcha.reset(hcaptchaWidgetId);
                 return;
             }
-
+ 
             // --- Client-side validation ---
             if (email !== confirmEmail) {
                 errorMessage.textContent = 'Emails do not match.';
-                if (hcaptchaWidgetId) hcaptcha.reset(hcaptchaWidgetId);
+                if (hcaptchaWidgetId !== null) hcaptcha.reset(hcaptchaWidgetId);
                 return;
             }
-
+ 
             if (password !== confirmPassword) {
                 errorMessage.textContent = 'Passwords do not match.';
-                if (hcaptchaWidgetId) hcaptcha.reset(hcaptchaWidgetId);
+                if (hcaptchaWidgetId !== null) hcaptcha.reset(hcaptchaWidgetId);
                 return;
             }
-
+ 
             if (!termsAgreed) {
                 errorMessage.textContent = 'You must agree to the Terms and Conditions and Privacy Policy.';
+                if (hcaptchaWidgetId !== null) hcaptcha.reset(hcaptchaWidgetId);
                 return;
             }
 
@@ -126,14 +131,14 @@
             if (error) {
                 errorMessage.textContent = error.message;
                 // --- FIX: Reset the CAPTCHA on any submission error ---
-                if (hcaptchaWidgetId) hcaptcha.reset(hcaptchaWidgetId);
+                if (hcaptchaWidgetId !== null) hcaptcha.reset(hcaptchaWidgetId);
             } else if (data.user && data.session) {
                 // User is signed in, likely because email confirmation is disabled.
                 localStorage.setItem('supabase_token', data.session.access_token);
                 window.location.href = '/app';
             } else if (data.user && !data.session) {
                 // User signed up but needs to confirm their email.
-                // --- FIX: Programmatic DOM creation to avoid innerHTML and CSP issues ---
+                // --- FIX: Programmatic DOM creation to avoid innerHTML and potential CSP issues ---
                 signupForm.style.display = 'none';
                 document.querySelector('.text-center h1').textContent = 'Check your email!';
                 const successP = document.querySelector('.text-center p');

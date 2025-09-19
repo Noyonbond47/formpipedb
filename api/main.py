@@ -10,8 +10,8 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from datetime import datetime
-from typing import List, Optional, Any, Dict
-from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Optional, Any, Dict, Union
+from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from supabase import create_client, Client
 from postgrest import APIError
 
@@ -134,6 +134,11 @@ class SqlImportRequest(BaseModel):
 
 class SqlTableCreateRequest(BaseModel):
     script: str
+
+class ContactRequest(BaseModel):
+    sender_name: str
+    sender_email: EmailStr
+    message: str
 
 # --- Reusable Dependencies ---
 # This dependency handles getting the user's token, validating it, and providing the user object.
@@ -1305,6 +1310,23 @@ async def export_database_as_sql(database_id: int, auth_details: dict = Depends(
             sql_script += "\n"
 
     return PlainTextResponse(content=sql_script)
+
+@app.post("/api/v1/contact")
+async def handle_contact_form(contact_data: ContactRequest):
+    """
+    Handles submissions from the public contact form.
+    In a real application, this would trigger an email.
+    For now, we'll just log it to the server console for debugging.
+    This endpoint does not require authentication.
+    """
+    print("--- New Contact Form Submission ---")
+    print(f"From: {contact_data.sender_name} <{contact_data.sender_email}>")
+    print(f"Message: {contact_data.message}")
+    print("---------------------------------")
+    
+    # In a real app, you might add rate limiting here.
+    
+    return {"message": "Message received successfully. Thank you!"}
 
 # This is the helper function from your initial snippet, fully implemented.
 async def _parse_and_execute_insert(statement: str, created_tables_map: dict, db_id: int, supabase: Client, user: Any):

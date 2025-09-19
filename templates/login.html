@@ -59,7 +59,11 @@
             captchaDiv.dataset.callback = 'onCaptchaRender';
             captchaContainer.appendChild(captchaDiv);
 
-            window.onCaptchaRender = (token) => { hcaptchaWidgetId = hcaptcha.getWidgetId(); };
+            window.onCaptchaRender = (token) => {
+                // hcaptcha.getWidgetId() is not reliable on initial load,
+                // so we get the ID from the widget that just rendered.
+                hcaptchaWidgetId = captchaContainer.querySelector('iframe').dataset.hcaptchaWidgetId;
+            };
         }
 
         const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
@@ -77,7 +81,7 @@
             const captchaToken = formData.get('h-captcha-response');
             if (!captchaToken) {
                 errorMessage.textContent = 'Please complete the captcha.';
-                if (hcaptchaWidgetId) hcaptcha.reset(hcaptchaWidgetId);
+                if (hcaptchaWidgetId !== null) hcaptcha.reset(hcaptchaWidgetId);
                 return;
             }
 
@@ -92,7 +96,7 @@
             if (error) {
                 errorMessage.textContent = error.message;
                 // --- Reset the CAPTCHA on any submission error ---
-                if (hcaptchaWidgetId) hcaptcha.reset(hcaptchaWidgetId);
+                if (hcaptchaWidgetId !== null) hcaptcha.reset(hcaptchaWidgetId);
             } else {
                 // Store the token for other pages to use
                 localStorage.setItem('supabase_token', data.session.access_token);
