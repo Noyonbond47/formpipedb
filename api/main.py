@@ -1055,9 +1055,11 @@ async def request_account_deletion(auth_details: dict = Depends(get_current_user
         # Generate a password recovery link that points to our custom deletion page.
         # The link is sent to the user's email automatically.
         response = supabase_admin.auth.admin.generate_link(
-            "recovery",
-            user.email,
-            {"redirect_to": redirect_url}
+            {
+                "type": "recovery",
+                "email": user.email,
+                "redirect_to": redirect_url
+            }
         )
 
         if not response:
