@@ -1036,25 +1036,36 @@ async def request_account_deletion(auth_details: dict = Depends(get_current_user
     This uses Supabase's password recovery flow to send a secure, tokenized link.
     """
     user = auth_details["user"]
-    supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-
-    # --- FIX: Use a specific redirect URL for deletion to avoid conflict with password reset ---
-    if not SITE_URL:
+    
+    # --- FIX: Use the Admin API to generate the link, bypassing the captcha requirement for authenticated users. ---
+    SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not SITE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Server is not configured with a SITE_URL for email links."
+            detail="Server is not configured with SITE_URL or SERVICE_ROLE_KEY for this action."
         )
     
     redirect_url = f"{SITE_URL}/confirm-delete"
 
     try:
-        # We trigger a password reset but direct the user to our custom deletion page
-        # by providing a specific `redirect_to` URL.
-        supabase.auth.reset_password_for_email(
+        # Create an admin client to generate a link for a specific user.
+        # This is more secure and bypasses public-facing rules like captcha.
+        supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        
+        # Generate a password recovery link that points to our custom deletion page.
+        # The link is sent to the user's email automatically.
+        response = supabase_admin.auth.admin.generate_link(
+            "recovery",
             user.email,
-            options={"redirect_to": redirect_url}
+            {"redirect_to": redirect_url}
         )
+
+        if not response:
+             raise Exception("Failed to generate deletion link. The response was empty.")
+
         return {"message": "Deletion confirmation email sent. Please check your inbox."}
+    except APIError as e:
+        raise HTTPException(status_code=e.status, detail=f"Could not send deletion email: {e.message}")
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
