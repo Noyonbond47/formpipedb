@@ -195,12 +195,18 @@
                 return session.access_token;
             }
 
-            function getInitials(fullName) {
+            function getInitials(fullName) { // --- FIX: Make getInitials more robust ---
                 if (!fullName) return '?';
-                const names = fullName.split(' ');
-                const firstInitial = names[0] ? names[0][0] : '';
+                // Split by space and filter out any empty strings from multiple spaces or trailing spaces
+                const names = fullName.trim().split(' ').filter(name => name.length > 0);
+
+                if (names.length === 0) return '?';
+
+                const firstInitial = names[0][0];
+                // If there's more than one name, get the last initial, otherwise use an empty string.
                 const lastInitial = names.length > 1 ? names[names.length - 1][0] : '';
-                return `${firstInitial}${lastInitial}`.toUpperCase();
+
+                return (firstInitial + lastInitial).toUpperCase();
             }
 
 
