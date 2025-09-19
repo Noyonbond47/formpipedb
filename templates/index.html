@@ -103,5 +103,24 @@
         </div>
     </footer>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // These values are injected by your FastAPI/Jinja2 backend from main.py
+        const SUPABASE_URL = "{{ supabase_url }}";
+        const SUPABASE_ANON_KEY = "{{ supabase_anon_key }}";
+
+        // Initialize the Supabase client
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // Listen for authentication state changes
+        supabase.auth.onAuthStateChange((event, session) => {
+            // When a user clicks the password recovery link from their email,
+            // they land on this page and this event is triggered.
+            if (event === 'PASSWORD_RECOVERY') {
+                // Redirect them to the dedicated update password page.
+                window.location.href = '/update-password';
+            }
+        });
+    </script>
 </body>
 </html>

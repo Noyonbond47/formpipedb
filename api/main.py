@@ -1347,7 +1347,13 @@ async def sitemap_xml():
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(
+        "index.html", 
+        {
+            "request": request, 
+            "supabase_url": SUPABASE_URL, 
+            "supabase_anon_key": SUPABASE_ANON_KEY
+        })
 
 @app.get("/signup", response_class=HTMLResponse)
 async def signup_page(request: Request):
