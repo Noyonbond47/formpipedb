@@ -2,10 +2,9 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Confirm Account Deletion - FormPipeDB</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Confirm Account Deletion</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
@@ -14,100 +13,83 @@
 <body class="bg-gray-100 flex items-center justify-center min-h-screen py-12">
     <div class="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
         <div class="text-center">
-            <h1 class="text-3xl font-bold text-gray-900">Confirm Account Deletion</h1>
-            <p class="mt-2 text-sm text-gray-600">This action is permanent and cannot be undone.</p>
+            <h1 class="text-3xl font-bold text-gray-900">
+                Confirm Account Deletion
+            </h1>
+            <p class="mt-2 text-sm text-gray-600">
+                This action is <strong>irreversible</strong>. All your databases, tables, and data will be permanently deleted.
+            </p>
         </div>
         <form id="delete-form" class="space-y-4">
-            <input type="email" id="email" placeholder="Your Email Address" required class="w-full px-4 py-2 text-gray-700 bg-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <input type="password" id="password" placeholder="Your Password" required class="w-full px-4 py-2 text-gray-700 bg-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <input type="password" id="password" placeholder="Your Password" required autocomplete="current-password" class="w-full px-4 py-2 text-gray-700 bg-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <div>
-                <label for="confirmation" class="text-sm text-gray-600">To confirm, please type "delete my account" below:</label>
-                <input type="text" id="confirmation" placeholder="delete my account" required pattern="^delete my account$" class="w-full mt-1 px-4 py-2 text-gray-700 bg-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-            </div>
-            
-            <div class="flex justify-center pt-2">
-                <div class="h-captcha" data-sitekey="{{ hcaptcha_site_key }}"></div>
+                <label for="confirmation" class="text-sm text-gray-600">To confirm, please type <code>delete my account</code> below:</label>
+                <input type="text" id="confirmation" placeholder="delete my account" required autocomplete="off" class="w-full mt-1 px-4 py-2 text-gray-700 bg-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
 
-            <button type="submit" id="submit-btn" class="w-full py-3 font-semibold text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">Delete My Account Permanently</button>
+            <button type="submit" id="delete-button" class="w-full py-3 font-semibold text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                Delete My Account
+            </button>
         </form>
         <p id="error-message" class="text-center text-sm text-red-600"></p>
-        <p id="info-message" class="text-center text-sm text-gray-500"></p>
     </div>
 
     <script>
-        const hcaptchaSiteKey = '{{ hcaptcha_site_key }}';
-        const errorMessage = document.getElementById('error-message');
-        const infoMessage = document.getElementById('info-message');
-        const deleteForm = document.getElementById('delete-form');
-        const submitBtn = document.getElementById('submit-btn');
-        let recoveryToken = null;
-        let hcaptchaWidgetId = null;
+        document.addEventListener("DOMContentLoaded", () => {
+            const deleteForm = document.getElementById("delete-form");
+            const errorMessageDiv = document.getElementById("error-message");
+            const deleteButton = document.getElementById("delete-button");
 
-        window.onload = function() {
-            // hCaptcha callback to get widget ID
-            const captchaDiv = document.querySelector('.h-captcha');
-            if (captchaDiv) {
-                captchaDiv.dataset.callback = 'onCaptchaRender';
-            }
-        };
-
-        window.onCaptchaRender = function() {
-            hcaptchaWidgetId = document.querySelector('.h-captcha iframe').dataset.hcaptchaWidgetId;
-        };
-
-        document.addEventListener('DOMContentLoaded', () => {
-            if (!hcaptchaSiteKey) {
-                errorMessage.textContent = 'Configuration error. hCaptcha is not set up correctly.';
-                deleteForm.style.display = 'none';
+            // A user should only be on this page if they are logged in.
+            // Check for the auth token immediately.
+            const token = localStorage.getItem("supabase.auth.token");
+            if (!token) {
+                errorMessageDiv.textContent = "You are not logged in. Redirecting to login page...";
+                errorMessageDiv.style.display = "block";
+                setTimeout(() => {
+                    window.location.href = "/login";
+                }, 3000);
                 return;
             }
 
-            // Supabase sends the recovery token in the URL fragment like: #access_token=...
-            const hash = window.location.hash.substring(1);
-            const params = new URLSearchParams(hash);
-            recoveryToken = params.get('access_token');
-
-            if (!recoveryToken) {
-                errorMessage.textContent = 'Invalid or missing deletion link. Please request a new one.';
-                deleteForm.style.display = 'none';
-            }
-
-            deleteForm.addEventListener('submit', async (event) => {
+            deleteForm.addEventListener("submit", async (event) => {
                 event.preventDefault();
-                errorMessage.textContent = '';
-                submitBtn.disabled = true;
-                submitBtn.textContent = 'Deleting...';
-
-                const formData = new FormData(deleteForm);
-                const hcaptchaToken = formData.get('h-captcha-response');
+                errorMessageDiv.style.display = "none";
+                deleteButton.disabled = true;
+                deleteButton.textContent = "Deleting...";
 
                 const payload = {
-                    email: document.getElementById('email').value,
-                    password: document.getElementById('password').value,
-                    confirmation: document.getElementById('confirmation').value,
-                    'h-captcha-response': hcaptchaToken,
-                    recovery_token: recoveryToken
+                    password: document.getElementById("password").value,
+                    confirmation: document.getElementById("confirmation").value,
                 };
 
                 try {
-                    const response = await fetch('/api/v1/users/me/confirm-deletion', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
+                    const response = await fetch("/api/v1/users/me/delete", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            // The user is already authenticated, so we send their token.
+                            Authorization: `Bearer ${JSON.parse(token).access_token}`,
+                        },
+                        body: JSON.stringify(payload),
                     });
 
-                    if (!response.ok) {
-                        const err = await response.json();
-                        throw new Error(err.detail || 'An unknown error occurred.');
+                    if (response.ok) {
+                        // Success! Clear local storage and redirect.
+                        localStorage.removeItem("supabase.auth.token");
+                        window.location.href = "/delete-success";
+                    } else {
+                        // Handle errors like wrong password or incorrect confirmation text.
+                        const errorData = await response.json();
+                        errorMessageDiv.textContent = errorData.detail || "An unknown error occurred.";
+                        errorMessageDiv.style.display = "block";
                     }
-
-                    window.location.href = '/delete-success';
                 } catch (error) {
-                    errorMessage.textContent = error.message;
-                    if (hcaptchaWidgetId) hcaptcha.reset(hcaptchaWidgetId);
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'Delete My Account Permanently';
+                    errorMessageDiv.textContent = "A network error occurred. Please try again.";
+                    errorMessageDiv.style.display = "block";
+                } finally {
+                    deleteButton.disabled = false;
+                    deleteButton.textContent = "Delete My Account";
                 }
             });
         });
