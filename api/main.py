@@ -135,9 +135,16 @@ class SqlImportRequest(BaseModel):
 class SqlTableCreateRequest(BaseModel):
     script: str
 
+# --- FIX: Conditionally import EmailStr to prevent crash if 'email-validator' is not installed ---
+try:
+    from pydantic import EmailStr
+except ImportError:
+    # Fallback to a simple string if email-validator is not installed
+    EmailStr = str
+
 class ContactRequest(BaseModel):
     sender_name: str
-    sender_email: EmailStr
+    sender_email: EmailStr # This will be a plain str if email-validator is missing
     message: str
 
 # --- Reusable Dependencies ---
@@ -341,8 +348,8 @@ async def create_table_from_sql(database_id: int, sql_data: SqlTableCreateReques
     if not script.upper().startswith("CREATE TABLE"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Script must be a single CREATE TABLE statement.")
 
-    # A more robust regex to capture the table name and the columns block, even with complex content.
-    create_match = re.search(r'CREATE TABLE\s+(?:IF NOT EXISTS\s+)?[`"]?(\w+)[`"]?\s*\((.*)\)\s*;?', script, re.DOTALL | re.IGNORECASE)
+    # --- FIX: Use the more robust regex from the main SQL import function ---
+    create_match = re.search(r'CREATE TABLE\s+(?:IF NOT EXISTS\s+)?[`"]?(\w+)[`"]?\s*\(((?:[^)(]+|\((?:[^)(]+|\([^)(]*\))*\))*)\)', script, re.DOTALL | re.IGNORECASE)
     if not create_match:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid CREATE TABLE syntax. Could not find table name and column definitions.")
 
