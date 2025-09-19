@@ -1390,7 +1390,11 @@ async def forgot_password_page(request: Request):
 @app.get("/update-password", response_class=HTMLResponse)
 async def update_password_page(request: Request):
     return templates.TemplateResponse(
-        "update-password.html", {"request": request, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY}
+        "update-password.html", 
+        {
+            "request": request, "supabase_url": SUPABASE_URL, "supabase_anon_key": SUPABASE_ANON_KEY,
+            "hcaptcha_site_key": HCAPTCHA_SITE_KEY
+        }
     )
 
 @app.get("/email-verified", response_class=HTMLResponse)
