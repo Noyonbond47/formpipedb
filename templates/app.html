@@ -31,7 +31,7 @@
                     </div>
                     <div class="py-1">
                         <a href="#" id="sign-out-btn" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Sign Out</a>
-                        <a href="#" id="delete-account-btn" class="block px-4 py-2 text-sm text-red-700 hover:bg-red-50">Delete Account</a>
+                        <a href="/confirm-delete" class="block px-4 py-2 text-sm text-red-700 hover:bg-red-50">Delete Account</a>
                     </div>
                 </div>
             </div>
@@ -78,19 +78,6 @@
             <div class="mt-6 flex justify-end gap-4">
                 <button id="cancel-delete-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
                 <button id="confirm-delete-btn" class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700">Delete</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Delete Account Confirmation Modal -->
-    <div id="delete-account-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-            <h3 class="text-lg font-bold text-gray-900 mb-4">Request Account Deletion</h3>
-            <p class="text-sm text-gray-600">To protect your account, deletion is a two-step process. Clicking the button below will send a secure confirmation link to your email address. This link will take you to a page where you can permanently delete your account.</p>
-            <p id="delete-account-status" class="text-sm text-center mt-4"></p>
-            <div class="mt-6 flex justify-end gap-4">
-                <button id="cancel-delete-account-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
-                <button id="confirm-request-deletion-btn" class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 font-semibold">Send Deletion Email</button>
             </div>
         </div>
     </div>
@@ -148,8 +135,6 @@
             const profileBtn = document.getElementById('profile-btn');
             const profileDropdown = document.getElementById('profile-dropdown');
             const signOutBtn = document.getElementById('sign-out-btn');
-            const deleteAccountBtn = document.getElementById('delete-account-btn');
-            const deleteAccountModal = document.getElementById('delete-account-modal');
 
             const importSqlBtn = document.getElementById('import-sql-btn');
             const importSqlModal = document.getElementById('import-sql-modal');
@@ -164,8 +149,6 @@
             const modalDbName = document.getElementById('modal-db-name');
             const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
             const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
-            const cancelDeleteAccountBtn = document.getElementById('cancel-delete-account-btn');
-            const confirmRequestDeletionBtn = document.getElementById('confirm-request-deletion-btn');
             let dbToDeleteId = null;
             let initialDataLoaded = false;
 
@@ -326,31 +309,6 @@
                 }
             }
 
-            async function handleRequestAccountDeletion() {
-                const statusEl = document.getElementById('delete-account-status');
-                statusEl.textContent = '';
-                confirmRequestDeletionBtn.disabled = true;
-                confirmRequestDeletionBtn.textContent = 'Sending...';
-
-                try {
-                    const response = await fetchWithAuth('/api/v1/users/me/request-deletion', { method: 'POST' });
-                    const result = await response.json();
-
-                    if (!response.ok) {
-                        throw new Error(result.detail || 'Failed to send deletion email.');
-                    }
-
-                    closeModal(deleteAccountModal);
-                    alert(result.message || 'Deletion email sent. Please check your inbox to continue.');
-                } catch (error) {
-                    statusEl.className = 'text-sm text-center mt-4 text-red-600';
-                    statusEl.textContent = `Error: ${error.message}`;
-                } finally {
-                    confirmRequestDeletionBtn.disabled = false;
-                    confirmRequestDeletionBtn.textContent = 'Send Deletion Email';
-                }
-            }
-
             async function handleExportSql(dbId, dbName) {
                 try {
                     const response = await fetchWithAuth(`/api/v1/databases/${dbId}/export-sql`);
@@ -433,10 +391,6 @@
             createDbForm.addEventListener('submit', handleCreateDatabase);
             cancelDeleteBtn.addEventListener('click', () => closeModal(deleteModal));
             confirmDeleteBtn.addEventListener('click', handleDeleteDatabase);
-
-            deleteAccountBtn.addEventListener('click', (e) => { e.preventDefault(); openModal(deleteAccountModal); });
-            cancelDeleteAccountBtn.addEventListener('click', () => closeModal(deleteAccountModal));
-            confirmRequestDeletionBtn.addEventListener('click', handleRequestAccountDeletion);
             
             importSqlBtn.addEventListener('click', () => {
                 importSqlForm.reset();
