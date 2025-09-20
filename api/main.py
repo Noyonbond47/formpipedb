@@ -185,7 +185,7 @@ async def get_current_user_details(authorization: str = Header(None)) -> dict:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid token or user not found")
         
         # Return the authenticated client and user details
-        return {"user": user, "client": supabase}
+        return {"user": user, "client": supabase, "token": token}
     except Exception as e:
         # This could be a PostgrestError or another exception
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Invalid token: {str(e)}")
