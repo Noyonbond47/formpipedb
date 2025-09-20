@@ -1046,10 +1046,13 @@ async def delete_own_account(
     try:
         # Call the Supabase RPC function to handle re-authentication and deletion in one atomic step.
         # The function will raise an exception if the password is wrong, which will be caught here.
-        response = await asyncio.to_thread(supabase.rpc, 'reauthenticate_and_delete_user', { # type: ignore
-            'user_id': str(user_id_to_delete),
-            'user_password': form_data.password
-        })
+        # Both the RPC call and its execution must happen in the background thread.
+        def call_rpc_and_execute():
+            return supabase.rpc('reauthenticate_and_delete_user', {
+                'user_id': str(user_id_to_delete),
+                'user_password': form_data.password
+            }).execute()
+        response = await asyncio.to_thread(call_rpc_and_execute)
         
         return {"message": response.data}
     except APIError as e:
