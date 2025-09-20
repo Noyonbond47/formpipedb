@@ -1049,15 +1049,17 @@ async def delete_own_account(
     user_id_to_delete = user.id
 
     try:
-        # 3. Verify the user's password by attempting to sign in.
-        # We use a temporary anonymous client for this check.
-        supabase_anon_client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+        # 3. Verify the user's password by attempting to update their user record
+        # with their current password. This is a secure way to re-authenticate
+        # without triggering public sign-in flows that might require a captcha.
+        # We use the user's own authenticated client from the dependency.
+        supabase_user_client = auth_details["client"]
         try:
-            supabase_anon_client.auth.sign_in_with_password({
-                "email": user.email,
+            # This call will fail with a 401/400 if the password is wrong.
+            supabase_user_client.auth.update_user({
                 "password": form_data.password
             })
-        except APIError:
+        except APIError as e:
             raise HTTPException(status_code=401, detail="Invalid password.")
 
         # 4. All checks passed. Proceed with deletion using the admin client.
