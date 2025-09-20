@@ -1050,20 +1050,23 @@ async def delete_own_account(
     user = auth_details["user"]
     user_id_to_delete = user.id
 
+    # To verify the user's password, we will attempt to sign in with their credentials.
+    # This is a more direct and reliable method than trying to update the password.
+    # We create a temporary, unauthenticated client for this purpose.
+    temp_supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+
     try:
-        # 3. Verify the user's password by attempting to update their user record
-        # with their current password. This is a secure way to re-authenticate
-        # without triggering public sign-in flows that might require a captcha.
-        # We use the user's own authenticated client from the dependency.
-        supabase_user_client: Client = auth_details["client"]
-        token = auth_details["token"]
-        try:
-            # This call will fail with a 401/400 if the password is wrong.
-            # We must first set the session on the auth client using the user's token.
-            # The refresh token is not needed for this operation.
-            await asyncio.to_thread(supabase_user_client.auth.set_session, token, "placeholder")
-            await asyncio.to_thread(supabase_user_client.auth.update_user, {"password": form_data.password})
-        except APIError as e:
+        # 3. Verify the user's password by attempting to sign in.
+        # This call will raise an APIError if the credentials are invalid.
+        await asyncio.to_thread(
+            temp_supabase_client.auth.sign_in_with_password,
+            {
+                "email": user.email,
+                "password": form_data.password
+            }
+        )
+    except APIError:
+        # The sign-in call raises an APIError for invalid credentials.
             raise HTTPException(status_code=401, detail="Invalid password.")
 
         # 4. All checks passed. Proceed with deletion using the admin client.
