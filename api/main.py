@@ -3,6 +3,7 @@
 
 import os
 import asyncio
+from functools import partial
 from pathlib import Path
 import io, csv
 import re
@@ -1058,10 +1059,11 @@ async def delete_own_account(
         try:
             # This call will fail with a 401/400 if the password is wrong.
             # We must pass the user's own JWT to authorize this action.
-            await asyncio.to_thread(
-                supabase_user_client.auth.update_user,
-                {"password": form_data.password}, jwt=auth_details["token"]
-            )
+            # Use functools.partial to correctly pass keyword arguments to the function
+            # being run in the background thread.
+            update_with_jwt = partial(supabase_user_client.auth.update_user, jwt=auth_details["token"])
+            await asyncio.to_thread(update_with_jwt, {"password": form_data.password})
+
         except APIError as e:
             raise HTTPException(status_code=401, detail="Invalid password.")
 
