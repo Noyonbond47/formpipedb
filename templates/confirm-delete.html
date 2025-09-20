@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <title>Confirm Account Deletion</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -35,22 +36,32 @@
     </div>
 
     <script>
-        document.addEventListener("DOMContentLoaded", () => {
+        document.addEventListener("DOMContentLoaded", async () => {
+            const supabaseUrl = '{{ supabase_url }}';
+            const supabaseAnonKey = '{{ supabase_anon_key }}';
+            const supabase = supabaseUrl && supabaseAnonKey ? window.supabase.createClient(supabaseUrl, supabaseAnonKey) : null;
+
             const deleteForm = document.getElementById("delete-form");
             const errorMessageDiv = document.getElementById("error-message");
             const deleteButton = document.getElementById("delete-button");
 
-            // A user should only be on this page if they are logged in.
-            // Check for the auth token immediately.
-            const token = localStorage.getItem("supabase.auth.token");
-            if (!token) {
-                errorMessageDiv.textContent = "You are not logged in. Redirecting to login page...";
+            if (!supabase) {
+                errorMessageDiv.textContent = "Client configuration error. Cannot proceed.";
                 errorMessageDiv.style.display = "block";
-                setTimeout(() => {
-                    window.location.href = "/login";
-                }, 3000);
                 return;
             }
+
+            // Use Supabase to get the current session securely.
+            const { data: { session }, error } = await supabase.auth.getSession();
+
+            if (error || !session) {
+                errorMessageDiv.textContent = "You are not logged in. Redirecting to login page...";
+                errorMessageDiv.style.display = "block";
+                setTimeout(() => { window.location.href = "/login"; }, 3000);
+                return;
+            }
+
+            const token = session.access_token;
 
             deleteForm.addEventListener("submit", async (event) => {
                 event.preventDefault();
@@ -68,18 +79,16 @@
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json",
-                            // The user is already authenticated, so we send their token.
-                            Authorization: `Bearer ${JSON.parse(token).access_token}`,
+                            Authorization: `Bearer ${token}`,
                         },
                         body: JSON.stringify(payload),
                     });
 
                     if (response.ok) {
-                        // Success! Clear local storage and redirect.
-                        localStorage.removeItem("supabase.auth.token");
+                        // On success, sign out completely and redirect.
+                        await supabase.auth.signOut();
                         window.location.href = "/delete-success";
                     } else {
-                        // Handle errors like wrong password or incorrect confirmation text.
                         const errorData = await response.json();
                         errorMessageDiv.textContent = errorData.detail || "An unknown error occurred.";
                         errorMessageDiv.style.display = "block";

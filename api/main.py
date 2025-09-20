@@ -1426,7 +1426,11 @@ async def update_password_page(request: Request):
 async def confirm_delete_page(request: Request):
     return templates.TemplateResponse(
         "confirm-delete.html",
-        {"request": request},
+        {
+            "request": request,
+            "supabase_url": SUPABASE_URL,
+            "supabase_anon_key": SUPABASE_ANON_KEY,
+        },
     )
 
 @app.get("/delete-success", response_class=HTMLResponse)
