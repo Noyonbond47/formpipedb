@@ -2,6 +2,7 @@
 # Forcing a Vercel resync on 2025-09-08 at 11:03 PM
 
 import os
+import asyncio
 from pathlib import Path
 import io, csv
 import re
@@ -178,7 +179,7 @@ async def get_current_user_details(authorization: str = Header(None)) -> dict:
         
         # Explicitly validate the JWT to ensure it's not expired or tampered with by fetching the user.
         # This call to Supabase Auth also returns the user's details.
-        user_response = await supabase.auth.get_user(token)
+        user_response = await asyncio.to_thread(supabase.auth.get_user, token)
         user = user_response.user
 
         if not user:
@@ -1057,7 +1058,8 @@ async def delete_own_account(
         try:
             # This call will fail with a 401/400 if the password is wrong.
             # We must pass the user's own JWT to authorize this action.
-            await supabase_user_client.auth.update_user(
+            await asyncio.to_thread(
+                supabase_user_client.auth.update_user,
                 {"password": form_data.password}, jwt=auth_details["token"]
             )
         except APIError as e:
