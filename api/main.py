@@ -1056,9 +1056,10 @@ async def delete_own_account(
         supabase_user_client = auth_details["client"]
         try:
             # This call will fail with a 401/400 if the password is wrong.
-            supabase_user_client.auth.update_user({
-                "password": form_data.password
-            })
+            # We must pass the user's own JWT to authorize this action.
+            supabase_user_client.auth.update_user(
+                {"password": form_data.password}, jwt=auth_details["token"]
+            )
         except APIError as e:
             raise HTTPException(status_code=401, detail="Invalid password.")
 
