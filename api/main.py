@@ -25,7 +25,6 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 HCAPTCHA_SITE_KEY = os.environ.get("HCAPTCHA_SITE_KEY")
 SITE_URL = os.environ.get("SITE_URL")
-HCAPTCHA_SECRET_KEY = os.environ.get("HCAPTCHA_SECRET_KEY")
 
 # Get the root directory of the project
 BASE_DIR = Path(__file__).resolve().parent.parent
