@@ -1055,15 +1055,14 @@ async def delete_own_account(
         # with their current password. This is a secure way to re-authenticate
         # without triggering public sign-in flows that might require a captcha.
         # We use the user's own authenticated client from the dependency.
-        supabase_user_client = auth_details["client"]
+        supabase_user_client: Client = auth_details["client"]
+        token = auth_details["token"]
         try:
             # This call will fail with a 401/400 if the password is wrong.
-            # We must pass the user's own JWT to authorize this action.
-            # Use functools.partial to correctly pass keyword arguments to the function
-            # being run in the background thread.
-            update_with_jwt = partial(supabase_user_client.auth.update_user, jwt=auth_details["token"])
-            await asyncio.to_thread(update_with_jwt, {"password": form_data.password})
-
+            # We must first set the session on the auth client using the user's token.
+            # The refresh token is not needed for this operation.
+            await asyncio.to_thread(supabase_user_client.auth.set_session, token, "placeholder")
+            await asyncio.to_thread(supabase_user_client.auth.update_user, {"password": form_data.password})
         except APIError as e:
             raise HTTPException(status_code=401, detail="Invalid password.")
 
