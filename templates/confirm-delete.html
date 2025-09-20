@@ -90,23 +90,7 @@
                         window.location.href = "/delete-success";
                     } else {
                         const errorData = await response.json();
-                        let message = "An unknown error occurred.";
-
-                        if (errorData.detail) {
-                            // FastAPI/Pydantic validation errors return an array of objects.
-                            if (Array.isArray(errorData.detail)) {
-                                const confirmationError = errorData.detail.find(err => err.loc && err.loc.includes('confirmation'));
-                                if (confirmationError) {
-                                    message = "Incorrect confirmation text. Please type 'delete my account' exactly as shown.";
-                                } else {
-                                    message = errorData.detail[0].msg || "Invalid input provided.";
-                                }
-                            } else {
-                                // Standard string error from our own HTTPExceptions.
-                                message = errorData.detail;
-                            }
-                        }
-                        errorMessageDiv.textContent = message;
+                        errorMessageDiv.textContent = errorData.detail || "An unknown error occurred.";
                         errorMessageDiv.style.display = "block";
                     }
                 } catch (error) {
