@@ -1065,16 +1065,16 @@ async def delete_own_account(
                 "password": form_data.password
             }
         )
-    except APIError:
-        # The sign-in call raises an APIError for invalid credentials.
-            raise HTTPException(status_code=401, detail="Invalid password.")
 
         # 4. All checks passed. Proceed with deletion using the admin client.
         supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-        supabase_admin.auth.admin.delete_user(user_id_to_delete)
+        await asyncio.to_thread(supabase_admin.auth.admin.delete_user, user_id_to_delete)
 
         return {"message": "Account deleted successfully."}
 
+    except APIError:
+        # The sign-in call raises an APIError for invalid credentials.
+        raise HTTPException(status_code=401, detail="Invalid password.")
     except HTTPException as e:
         raise e  # Re-raise validation errors
     except Exception as e:
