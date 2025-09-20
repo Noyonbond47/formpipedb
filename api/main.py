@@ -1038,42 +1038,26 @@ async def delete_own_account(
     password and a confirmation phrase to prove their identity.
     """
     # 1. Check for required server configuration
-    SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not SUPABASE_SERVICE_ROLE_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Server is not configured for user deletion."
-        )
-
-    # 2. Get user from the validated auth token
+    # Get user details from the validated auth token provided by the dependency.
+    supabase = auth_details["client"]
     user = auth_details["user"]
     user_id_to_delete = user.id
 
-    # To verify the user's password, we will attempt to sign in with their credentials.
-    # This is a more direct and reliable method than trying to update the password.
-    # We create a temporary, unauthenticated client for this purpose.
-    temp_supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-
     try:
-        # 3. Verify the user's password by attempting to sign in.
-        # This call will raise an APIError if the credentials are invalid.
-        await asyncio.to_thread(
-            temp_supabase_client.auth.sign_in_with_password,
-            {
-                "email": user.email,
-                "password": form_data.password
-            }
-        )
-
-        # 4. All checks passed. Proceed with deletion using the admin client.
-        supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-        await asyncio.to_thread(supabase_admin.auth.admin.delete_user, user_id_to_delete)
-
-        return {"message": "Account deleted successfully."}
-
-    except APIError:
-        # The sign-in call raises an APIError for invalid credentials.
-        raise HTTPException(status_code=401, detail="Invalid password.")
+        # Call the Supabase RPC function to handle re-authentication and deletion in one atomic step.
+        # The function will raise an exception if the password is wrong, which will be caught here.
+        response = await asyncio.to_thread(supabase.rpc, 'reauthenticate_and_delete_user', { # type: ignore
+            'user_id': str(user_id_to_delete),
+            'user_password': form_data.password
+        })
+        
+        return {"message": response.data}
+    except APIError as e:
+        # The RPC function raises an exception with a clear message on failure.
+        if 'Invalid password' in e.message:
+            raise HTTPException(status_code=401, detail="Invalid password.")
+        else:
+            raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e.message}")
     except HTTPException as e:
         raise e  # Re-raise validation errors
     except Exception as e:
